@@ -1,61 +1,104 @@
-import React, { useState } from 'react';
+// src/components/admin/AdminDashboard.tsx
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { 
-  Users, 
-  GraduationCap, 
-  DollarSign, 
-  TrendingUp, 
-  Calendar, 
-  FileText,
-  UserCheck,
-  AlertCircle,
+import {
+  Users,
   BarChart3,
-  Settings
+  Settings,
+  UserCheck,
+  AlertCircle
 } from 'lucide-react';
 import { RegistrationApproval } from '@/components/admin/RegistrationApproval';
-interface AdminDashboardProps {
-  user: any;
-  logout: () => void;
-}
+import { db } from '@/lib/firebaseConfig';
+import { doc, getDoc, onSnapshot, collection, addDoc, setDoc } from 'firebase/firestore';
+import { useAuth } from '@/components/auth/AuthProvider';
 
-export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, logout }) => {
+export const AdminDashboard: React.FC = () => {
+  const { user, logout } = useAuth(); // ✅ no props, straight from AuthProvider
   const [activeTab, setActiveTab] = useState('overview');
+  const [adminData, setAdminData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
 
-  // Get registration requests count for badge
-  const registrationRequests = JSON.parse(localStorage.getItem('registrationRequests') || '[]');
-  const pendingCount = registrationRequests.filter((r: any) => r.status === 'pending').length;
+  useEffect(() => {
+    if (!user) {
+      setLoading(false);
+      return;
+    }
 
-  // Sample admin data - in real app this would come from Firebase/API
-  const adminData = {
-    stats: {
-      totalStudents: 450,
-      totalTeachers: 25,
-      totalParents: 380,
-      revenue: 1250000,
-      attendance: 94,
-      pendingApplications: pendingCount
-    },
-    recentActivities: [
-      { action: 'New student enrolled', user: 'John Smith', time: '2 hours ago' },
-      { action: 'Payment received', user: 'Parent - Davis', time: '4 hours ago' },
-      { action: 'Teacher added', user: 'Dr. Wilson', time: '1 day ago' },
-      { action: 'Grade report generated', user: 'System', time: '2 days ago' }
-    ],
-    financialSummary: {
-      monthlyRevenue: 125000,
-      outstandingFees: 45000,
-      paidFees: 105000,
-      expenses: 85000
-    },
-    systemAlerts: [
-      { type: 'warning', message: 'Server maintenance scheduled for tonight', priority: 'high' },
-      { type: 'info', message: `${pendingCount} new applications pending approval`, priority: 'medium' },
-      { type: 'success', message: 'Backup completed successfully', priority: 'low' }
-    ]
+    const adminDocRef = doc(db, 'admins', user.uid);
+
+    const fetchData = async () => {
+      try {
+        const docSnap = await getDoc(adminDocRef);
+
+        // ✅ Auto-create admin record if missing
+        if (!docSnap.exists()) {
+          await setDoc(adminDocRef, {
+            uid: user.uid,
+            email: user.email,
+            name: user.displayName || "Admin",
+            role: "admin",
+            createdAt: new Date().toISOString(),
+          });
+        }
+
+        const refreshedSnap = await getDoc(adminDocRef);
+        setAdminData(refreshedSnap.exists() ? refreshedSnap.data() : null);
+      } catch (err) {
+        console.error("Error fetching admin doc:", err);
+        setAdminData(null);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+
+    const unsubscribe = onSnapshot(
+      adminDocRef,
+      (docSnap) => setAdminData(docSnap.exists() ? docSnap.data() : null),
+      (err) => console.error("Snapshot error:", err)
+    );
+
+    return () => unsubscribe();
+  }, [user]);
+
+  // ✅ Helper function: allow admin to create new profiles
+  const createUserProfile = async (role: 'student' | 'teacher' | 'parent', name: string, password: string) => {
+    try {
+      await addDoc(collection(db, `${role}s`), {
+        name,
+        password, // ⚠️ plain text, hash in production
+        role,
+        createdAt: new Date().toISOString(),
+        createdBy: user?.email
+      });
+      alert(`${role} profile created successfully!`);
+    } catch (err) {
+      console.error("Error creating profile:", err);
+      alert("Failed to create profile.");
+    }
   };
+
+  // 🔹 Loading state
+  if (loading) {
+    return <div className="p-6 text-center">Loading dashboard...</div>;
+  }
+
+  // 🔹 Access denied if no admin doc
+  console.log("Auth user:", user?.uid);
+  console.log("Admin data:", adminData);
+  if (!adminData) {
+    return (
+      <div className="p-6 text-center">
+        <p className="text-red-600 font-semibold">Access Denied</p>
+        <p className="text-gray-600 mt-2">No admin record found. Please contact system administrator.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -85,9 +128,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, logout }) 
             <TabsTrigger value="registrations" className="flex items-center gap-2">
               <UserCheck className="w-4 h-4" />
               Registrations
-              {pendingCount > 0 && (
+              {(adminData?.stats?.pendingApplications || 0) > 0 && (
                 <Badge variant="destructive" className="ml-1">
-                  {pendingCount}
+                  {adminData.stats.pendingApplications}
                 </Badge>
               )}
             </TabsTrigger>
@@ -103,82 +146,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, logout }) 
 
           {/* Overview Tab */}
           <TabsContent value="overview" className="space-y-6">
-            {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-6">
-              <Card className="bg-blue-600 text-white">
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-blue-100">Students</p>
-                      <p className="text-2xl font-bold">{adminData.stats.totalStudents}</p>
-                    </div>
-                    <GraduationCap className="w-8 h-8 text-blue-200" />
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="bg-green-600 text-white">
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-green-100">Teachers</p>
-                      <p className="text-2xl font-bold">{adminData.stats.totalTeachers}</p>
-                    </div>
-                    <Users className="w-8 h-8 text-green-200" />
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="bg-orange-600 text-white">
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-orange-100">Parents</p>
-                      <p className="text-2xl font-bold">{adminData.stats.totalParents}</p>
-                    </div>
-                    <Users className="w-8 h-8 text-orange-200" />
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="bg-purple-600 text-white">
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-purple-100">Revenue</p>
-                      <p className="text-2xl font-bold">R{(adminData.stats.revenue / 1000)}k</p>
-                    </div>
-                    <DollarSign className="w-8 h-8 text-purple-200" />
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="bg-indigo-600 text-white">
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-indigo-100">Attendance</p>
-                      <p className="text-2xl font-bold">{adminData.stats.attendance}%</p>
-                    </div>
-                    <TrendingUp className="w-8 h-8 text-indigo-200" />
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="bg-red-600 text-white">
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-red-100">Pending</p>
-                      <p className="text-2xl font-bold">{adminData.stats.pendingApplications}</p>
-                    </div>
-                    <AlertCircle className="w-8 h-8 text-red-200" />
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* System Alerts */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -187,79 +154,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, logout }) 
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                {adminData.systemAlerts.map((alert, index) => (
-                  <div key={index} className={`p-4 rounded-lg border-l-4 ${
-                    alert.type === 'warning' ? 'bg-yellow-50 border-yellow-400' :
-                    alert.type === 'info' ? 'bg-blue-50 border-blue-400' :
-                    'bg-green-50 border-green-400'
-                  }`}>
-                    <div className="flex justify-between items-center">
-                      <p className="text-gray-800">{alert.message}</p>
-                      <Badge variant={
-                        alert.priority === 'high' ? 'destructive' :
-                        alert.priority === 'medium' ? 'secondary' : 'default'
-                      }>
-                        {alert.priority}
-                      </Badge>
+                {adminData?.systemAlerts?.length ? (
+                  adminData.systemAlerts.map((alert: any, index: number) => (
+                    <div key={index} className="p-4 rounded-lg bg-blue-50 border-l-4 border-blue-400">
+                      <div className="flex justify-between items-center">
+                        <p className="text-gray-800">{alert.message}</p>
+                        <Badge>{alert.priority}</Badge>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))
+                ) : (
+                  <p className="text-gray-500">No system alerts yet.</p>
+                )}
               </CardContent>
             </Card>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Financial Overview */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <DollarSign className="w-5 h-5" />
-                    Financial Overview
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex justify-between items-center p-4 bg-green-50 rounded-lg">
-                    <span className="font-medium">Monthly Revenue</span>
-                    <span className="text-xl font-bold text-green-600">
-                      R{adminData.financialSummary.monthlyRevenue.toLocaleString()}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center p-4 bg-blue-50 rounded-lg">
-                    <span className="font-medium">Fees Collected</span>
-                    <span className="text-xl font-bold text-blue-600">
-                      R{adminData.financialSummary.paidFees.toLocaleString()}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center p-4 bg-red-50 rounded-lg">
-                    <span className="font-medium">Outstanding Fees</span>
-                    <span className="text-xl font-bold text-red-600">
-                      R{adminData.financialSummary.outstandingFees.toLocaleString()}
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Recent Activities */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Calendar className="w-5 h-5" />
-                    Recent Activities
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {adminData.recentActivities.map((activity, index) => (
-                    <div key={index} className="flex items-center p-3 bg-gray-50 rounded-lg">
-                      <div className="w-2 h-2 bg-purple-600 rounded-full mr-4"></div>
-                      <div className="flex-1">
-                        <p className="font-medium text-gray-900">{activity.action}</p>
-                        <p className="text-sm text-gray-600">{activity.user}</p>
-                      </div>
-                      <span className="text-xs text-gray-500">{activity.time}</span>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-            </div>
           </TabsContent>
 
           {/* Registrations Tab */}
@@ -267,15 +175,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, logout }) 
             <RegistrationApproval />
           </TabsContent>
 
-          {/* Users Tab */}
+          {/* Users Tab → Create Teachers, Students, Parents */}
           <TabsContent value="users">
             <Card>
               <CardHeader>
                 <CardTitle>User Management</CardTitle>
-                <CardDescription>Manage students, teachers, and parent accounts</CardDescription>
+                <CardDescription>Create student, teacher, and parent profiles</CardDescription>
               </CardHeader>
-              <CardContent>
-                <p className="text-gray-600">User management interface coming soon...</p>
+              <CardContent className="space-y-4">
+                <Button onClick={() => createUserProfile('student', 'John Doe', '123456')}>
+                  ➕ Create Student Profile
+                </Button>
+                <Button onClick={() => createUserProfile('teacher', 'Jane Smith', 'teacher123')}>
+                  ➕ Create Teacher Profile
+                </Button>
+                <Button onClick={() => createUserProfile('parent', 'Mr. Adams', 'parent123')}>
+                  ➕ Create Parent Profile
+                </Button>
               </CardContent>
             </Card>
           </TabsContent>

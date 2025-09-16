@@ -1,64 +1,126 @@
+// src/components/auth/LoginForm.tsx
 import React, { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { GraduationCap, UserPlus } from 'lucide-react';
-import { ParentRegistration } from './ParentRegistration';
+import { GraduationCap } from 'lucide-react';
+import { useAuth } from '@/components/auth/AuthProvider';
+import { useNavigate } from 'react-router-dom';
+import { FcGoogle } from 'react-icons/fc';
+import { db } from '@/lib/firebaseConfig';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 
-interface LoginFormProps {
-  onLogin: (email: string, role: string) => void;
-}
+export const LoginForm: React.FC = () => {
+  const { login, signup, loginWithGoogle } = useAuth();
+  const navigate = useNavigate();
 
-export const LoginForm: React.FC<LoginFormProps> = ({ onLogin }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [role, setRole] = useState<'admin' | 'teacher' | 'student' | 'parent'>('parent');
+  const [name, setName] = useState('');
+  const [childName, setChildName] = useState('');
+  const [childGrade, setChildGrade] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [showRegistration, setShowRegistration] = useState(false);
+  const [isSignup, setIsSignup] = useState(false);
 
-  // Show registration form if user clicks register
-  if (showRegistration) {
-    return <ParentRegistration onBack={() => setShowRegistration(false)} />;
-  }
-  // Demo accounts for easy testing
-  const demoAccounts = [
-    { email: 'student@school.com', role: 'Student', color: 'bg-blue-500' },
-    { email: 'parent@school.com', role: 'Parent', color: 'bg-green-500' },
-    { email: 'teacher@school.com', role: 'Teacher', color: 'bg-orange-500' },
-    { email: 'admin@school.com', role: 'Admin', color: 'bg-purple-500' }
-  ];
-
-  // Handle form submission - authenticate user
-  const handleSubmit = async (e: React.FormEvent) => {
+  // ---------------- Email/Password Login ----------------
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
     setError('');
+    setIsLoading(true);
 
     try {
-      // Demo authentication logic
-      const demoAccount = demoAccounts.find(acc => acc.email === email);
-      
-      if (demoAccount && password === 'demo123') {
-        // Successful login with demo account
-        onLogin(email, demoAccount.role.toLowerCase());
-      } else {
-        // Check if it's a registered user (from approved registrations)
-        const users = JSON.parse(localStorage.getItem('users') || '[]');
-        const user = users.find((u: any) => u.email === email && u.password === password);
-        
-        if (user) {
-          onLogin(email, user.role);
-        } else {
-          setError('Invalid email or password');
+      const loggedUser = await login(email, password);
+
+      // ✅ Fetch role from Firestore
+      const docRef = doc(db, `${role}s`, loggedUser.uid);
+      const snap = await getDoc(docRef);
+
+      if (!snap.exists()) {
+        throw new Error(`No ${role} record found for this account.`);
+      }
+
+      const userData = snap.data();
+      if (userData.role !== role) {
+        throw new Error(`You are registered as ${userData.role}, not ${role}.`);
+      }
+
+      navigate(`/${userData.role}-dashboard`);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // ---------------- Signup (Parent only) ----------------
+  const handleSignup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setIsLoading(true);
+
+    try {
+      if (role !== 'parent') {
+        throw new Error('Only parents can self-register. Contact the school admin.');
+      }
+
+      const newUser = await signup({
+        email,
+        password,
+        role,
+        name,
+        childName,
+        childGrade,
+      });
+
+      navigate(`/parent-dashboard`);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // ---------------- Google Login (Admin + Parent + Others) ----------------
+  const handleGoogleSignIn = async () => {
+    setError('');
+    setIsLoading(true);
+
+    try {
+      const loggedUser = await loginWithGoogle();
+
+      // 🔎 Check if they already exist in any role collection
+      let foundRole: string | null = null;
+      for (const r of ['admins', 'teachers', 'students', 'parents']) {
+        const snap = await getDoc(doc(db, r, loggedUser.uid));
+        if (snap.exists()) {
+          foundRole = snap.data().role;
+          break;
         }
       }
-    } catch (error) {
-      setError('Login failed. Please try again.');
-    }
 
-    setIsLoading(false);
+      // If not found, default to parent (or admin for first setup)
+      if (!foundRole) {
+        // 👇 change default here if you want first Google login to be "admin"
+        foundRole = 'parent';
+        await setDoc(doc(db, `${foundRole}s`, loggedUser.uid), {
+          uid: loggedUser.uid,
+          email: loggedUser.email,
+          name: loggedUser.displayName || '',
+          role: foundRole,
+          createdAt: new Date().toISOString(),
+        });
+      }
+
+      navigate(`/${foundRole}-dashboard`);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -69,89 +131,154 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLogin }) => {
             <GraduationCap className="w-8 h-8 text-blue-600" />
             <span className="text-2xl font-bold text-gray-900">NextGen School</span>
           </div>
-          <CardTitle className="text-xl">Welcome Back</CardTitle>
-          <CardDescription>Sign in to access your dashboard</CardDescription>
+          <CardTitle className="text-xl">
+            {isSignup ? 'Parent Sign Up' : 'Welcome Back'}
+          </CardTitle>
+          <CardDescription>
+            {isSignup
+              ? 'Create your parent account and link your child'
+              : 'Sign in to access your dashboard'}
+          </CardDescription>
         </CardHeader>
 
-        <CardContent className="space-y-6">
+        <CardContent className="space-y-4">
           {error && (
             <Alert variant="destructive">
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={isSignup ? handleSignup : handleLogin} className="space-y-4">
+            {/* Role Selection */}
             <div className="space-y-2">
-              <Label htmlFor="email">Email Address</Label>
-              <Input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="Enter your email"
+              <Label>Select Role</Label>
+              <select
+                value={role}
+                onChange={(e) => setRole(e.target.value as any)}
+                className="w-full border rounded-md p-2"
                 required
-              />
+              >
+                <option value="admin">Admin</option>
+                <option value="teacher">Teacher</option>
+                <option value="student">Student</option>
+                <option value="parent">Parent</option>
+              </select>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter your password"
-                required
-              />
-            </div>
+            {/* Email */}
+            {!isSignup && (
+              <>
+                <div className="space-y-2">
+                  <Label>Email Address</Label>
+                  <Input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                  />
+                </div>
 
-            <Button 
-              type="submit" 
-              className="w-full bg-blue-600 hover:bg-blue-700" 
-              disabled={isLoading}
-            >
-              {isLoading ? 'Signing In...' : 'Sign In'}
-            </Button>
+                <div className="space-y-2">
+                  <Label>Password</Label>
+                  <Input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                  />
+                </div>
+              </>
+            )}
+
+            {/* Extra Fields for Signup */}
+            {isSignup && (
+              <>
+                <div className="space-y-2">
+                  <Label>Parent Full Name</Label>
+                  <Input
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Child Full Name</Label>
+                  <Input
+                    type="text"
+                    value={childName}
+                    onChange={(e) => setChildName(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Child Grade</Label>
+                  <Input
+                    type="text"
+                    value={childGrade}
+                    onChange={(e) => setChildGrade(e.target.value)}
+                    required
+                  />
+                </div>
+              </>
+            )}
+
+            {/* Buttons */}
+            <div className="flex gap-2">
+              <Button
+                type="submit"
+                className="flex-1 bg-blue-600 hover:bg-blue-700"
+                disabled={isLoading}
+              >
+                {isLoading
+                  ? isSignup
+                    ? 'Signing Up...'
+                    : 'Signing In...'
+                  : isSignup
+                  ? 'Sign Up'
+                  : 'Sign In'}
+              </Button>
+
+              {!isSignup && (
+                <Button
+                  type="button"
+                  className="flex-1 flex items-center justify-center gap-2 border border-gray-300 hover:bg-gray-100"
+                  onClick={handleGoogleSignIn}
+                  disabled={isLoading}
+                >
+                  <FcGoogle className="w-5 h-5" />
+                  Google
+                </Button>
+              )}
+            </div>
           </form>
 
-          {/* Registration Link */}
-          <div className="text-center">
-            <p className="text-sm text-gray-600 mb-3">New parent?</p>
-            <Button 
-              variant="outline" 
-              onClick={() => setShowRegistration(true)}
-              className="w-full flex items-center gap-2"
-            >
-              <UserPlus className="w-4 h-4" />
-              Register Your Child
-            </Button>
-          </div>
-
-          {/* Demo Accounts Section */}
-          <div className="border-t pt-6">
-            <h3 className="text-sm font-medium text-gray-700 mb-3 text-center">
-              Demo Accounts (for testing)
-            </h3>
-            <div className="grid grid-cols-2 gap-2">
-              {demoAccounts.map((account) => (
-                <Button
-                  key={account.email}
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setEmail(account.email);
-                    setPassword('demo123');
-                  }}
-                  className="text-xs"
+          {/* Toggle */}
+          <p className="text-sm text-center mt-2">
+            {isSignup ? (
+              <>
+                Already a parent?{' '}
+                <span
+                  onClick={() => setIsSignup(false)}
+                  className="text-blue-600 cursor-pointer"
                 >
-                  {account.role}
-                </Button>
-              ))}
-            </div>
-            <p className="text-xs text-gray-500 text-center mt-2">
-              Click any role to auto-fill login credentials
-            </p>
-          </div>
+                  Sign In
+                </span>
+              </>
+            ) : (
+              <>
+                New parent?{' '}
+                <span
+                  onClick={() => setIsSignup(true)}
+                  className="text-blue-600 cursor-pointer"
+                >
+                  Sign Up
+                </span>
+              </>
+            )}
+          </p>
         </CardContent>
       </Card>
     </div>

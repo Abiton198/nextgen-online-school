@@ -1,104 +1,114 @@
+// src/components/auth/AuthProvider.tsx
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import { auth, db } from '@/lib/firebaseConfig';
+import {
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  GoogleAuthProvider,
+  signInWithPopup,
+  onAuthStateChanged,
+  User
+} from 'firebase/auth';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 
-// Mock user data structure for the school management system
-interface User {
-  id: string;
-  email: string;
-  role: 'student' | 'parent' | 'teacher' | 'admin';
-  name: string;
-  avatar?: string;
-  grade?: string; // For students
-  subjects?: string[]; // For teachers
-  children?: string[]; // For parents - array of student IDs
-}
-
-interface AuthContextType {
-  user: User | null;
-  login: (email: string, password: string) => Promise<void>;
-  logout: () => void;
+interface AuthContextProps {
+  user: any;
   loading: boolean;
+  login: (email: string, password: string) => Promise<any>;
+  signup: (data: any) => Promise<any>;
+  loginWithGoogle: () => Promise<any>;
+  logout: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-// Mock users for demonstration - in real app, this would come from Firebase
-const mockUsers: User[] = [
-  {
-    id: '1',
-    email: 'student@school.com',
-    role: 'student',
-    name: 'Alex Johnson',
-    grade: 'Grade 10'
-  },
-  {
-    id: '2',
-    email: 'parent@school.com',
-    role: 'parent',
-    name: 'Sarah Johnson',
-    children: ['1']
-  },
-  {
-    id: '3',
-    email: 'teacher@school.com',
-    role: 'teacher',
-    name: 'Dr. Smith',
-    subjects: ['Mathematics', 'Physics']
-  },
-  {
-    id: '4',
-    email: 'admin@school.com',
-    role: 'admin',
-    name: 'Principal Davis'
-  }
-];
+const AuthContext = createContext<AuthContextProps | null>(null);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
+  // ---------------- Watch Firebase Auth ----------------
   useEffect(() => {
-    // Simulate checking for existing session
-    const savedUser = localStorage.getItem('school_user');
-    if (savedUser) {
-      setUser(JSON.parse(savedUser));
-    }
-    setLoading(false);
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (!firebaseUser) {
+        setUser(null);
+        setLoading(false);
+        return;
+      }
+
+      const uid = firebaseUser.uid;
+      let userData: any = null;
+
+      // Try to find a Firestore profile in any role collection
+      const roles = ['admins', 'teachers', 'students', 'parents'];
+      for (const collection of roles) {
+        const ref = doc(db, collection, uid);
+        const snap = await getDoc(ref);
+        if (snap.exists()) {
+          userData = { ...firebaseUser, ...snap.data() };
+          break;
+        }
+      }
+
+      // 🚀 Bootstrap: if no role doc exists, auto-create as Admin
+      if (!userData) {
+        console.warn("No profile found for user → creating admin doc automatically");
+        const ref = doc(db, 'admins', uid);
+        await setDoc(ref, {
+          uid,
+          email: firebaseUser.email,
+          role: 'admin',
+          name: firebaseUser.displayName || 'Admin',
+          approved: true,
+          createdAt: new Date().toISOString()
+        });
+        userData = { ...firebaseUser, role: 'admin' };
+      }
+
+      setUser(userData);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
   }, []);
 
-  const login = async (email: string, password: string) => {
-    setLoading(true);
-    
-    // Simulate API call delay
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    // Find user by email (in real app, this would be Firebase Auth)
-    const foundUser = mockUsers.find(u => u.email === email);
-    if (foundUser) {
-      setUser(foundUser);
-      localStorage.setItem('school_user', JSON.stringify(foundUser));
-    } else {
-      throw new Error('Invalid credentials');
-    }
-    
-    setLoading(false);
+  // ---------------- Auth Functions ----------------
+  const login = (email: string, password: string) =>
+    signInWithEmailAndPassword(auth, email, password);
+
+  const signup = async (data: any) => {
+    const cred = await createUserWithEmailAndPassword(auth, data.email, data.password);
+    // Only parents self-register
+    await setDoc(doc(db, 'parents', cred.user.uid), {
+      uid: cred.user.uid,
+      email: data.email,
+      role: 'parent',
+      name: data.name,
+      childName: data.childName,
+      childGrade: data.childGrade,
+      createdAt: new Date().toISOString()
+    });
+    return cred.user;
   };
 
-  const logout = () => {
-    setUser(null);
-    localStorage.removeItem('school_user');
+  const loginWithGoogle = async () => {
+    const provider = new GoogleAuthProvider();
+    const cred = await signInWithPopup(auth, provider);
+    return cred.user;
   };
+
+  const logout = async () => auth.signOut();
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading }}>
+    <AuthContext.Provider
+      value={{ user, loading, login, signup, loginWithGoogle, logout }}
+    >
       {children}
     </AuthContext.Provider>
   );
 };
 
 export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error('useAuth must be used inside AuthProvider');
+  return ctx;
 };
