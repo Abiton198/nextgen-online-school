@@ -15,6 +15,7 @@ import { RegistrationApproval } from '@/components/admin/RegistrationApproval';
 import { db } from '@/lib/firebaseConfig';
 import { doc, getDoc, onSnapshot, collection, addDoc, setDoc } from 'firebase/firestore';
 import { useAuth } from '@/components/auth/AuthProvider';
+import UserManagement from '../admin/UserManagement';
 
 export const AdminDashboard: React.FC = () => {
   const { user, logout } = useAuth(); // ✅ no props, straight from AuthProvider
@@ -89,8 +90,8 @@ export const AdminDashboard: React.FC = () => {
   }
 
   // 🔹 Access denied if no admin doc
-  console.log("Auth user:", user?.uid);
-  console.log("Admin data:", adminData);
+  // console.log("Auth user:", user?.uid);
+  // console.log("Admin data:", adminData);
   if (!adminData) {
     return (
       <div className="p-6 text-center">
@@ -177,23 +178,7 @@ export const AdminDashboard: React.FC = () => {
 
           {/* Users Tab → Create Teachers, Students, Parents */}
           <TabsContent value="users">
-            <Card>
-              <CardHeader>
-                <CardTitle>User Management</CardTitle>
-                <CardDescription>Create student, teacher, and parent profiles</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <Button onClick={() => createUserProfile('student', 'John Doe', '123456')}>
-                  ➕ Create Student Profile
-                </Button>
-                <Button onClick={() => createUserProfile('teacher', 'Jane Smith', 'teacher123')}>
-                  ➕ Create Teacher Profile
-                </Button>
-                <Button onClick={() => createUserProfile('parent', 'Mr. Adams', 'parent123')}>
-                  ➕ Create Parent Profile
-                </Button>
-              </CardContent>
-            </Card>
+            <UserManagement /> 
           </TabsContent>
 
           {/* Settings Tab */}

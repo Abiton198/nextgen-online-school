@@ -21,16 +21,19 @@ interface AuthContextProps {
   login: (email: string, password: string) => Promise<any>;
   signup: (data: any) => Promise<any>;
   loginWithGoogle: () => Promise<any>;
-  loginWithGoogleClassroom: (role: Role) => Promise<{ user: User; accessToken: string | null }>;
+  loginWithGoogleClassroom: (
+    role: Role
+  ) => Promise<{ user: User; accessToken: string | null }>;
   linkClassroomScopes: (user: User, role: Role) => Promise<string | null>;
   logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextProps | null>(null);
 
-// ---------------- Helper: build provider with scopes ----------------
+// ---------------- Helper: build Google provider with Classroom scopes ----------------
 function buildClassroomProvider(role: Role) {
   const provider = new GoogleAuthProvider();
+  // Always allow reading courses
   provider.addScope('https://www.googleapis.com/auth/classroom.courses.readonly');
 
   if (role === 'teacher') {
@@ -53,6 +56,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (!firebaseUser) {
+        // No user logged in
         setUser(null);
         setLoading(false);
         return;
@@ -72,19 +76,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
 
-      // 🚀 Bootstrap: if no role doc exists, auto-create as Admin
+      // 🚀 Bootstrap: if no profile doc exists, try to create Admin doc for this user
       if (!userData) {
-        console.warn("No profile found for user → creating admin doc automatically");
+        console.warn("No profile found for user → checking if admin doc exists");
+
         const ref = doc(db, 'admins', uid);
-        await setDoc(ref, {
-          uid,
-          email: firebaseUser.email,
-          role: 'admin',
-          name: firebaseUser.displayName || 'Admin',
-          approved: true,
-          createdAt: new Date().toISOString()
-        });
-        userData = { ...firebaseUser, role: 'admin' };
+        const snap = await getDoc(ref);
+
+        if (!snap.exists()) {
+          // First-time bootstrap: allow the user to create their own admin profile
+          try {
+            await setDoc(ref, {
+              uid,
+              email: firebaseUser.email,
+              role: 'admin',
+              name: firebaseUser.displayName || 'Admin',
+              approved: true,
+              createdAt: new Date().toISOString()
+            });
+            userData = { ...firebaseUser, role: 'admin' };
+            console.log("✅ Admin doc created for bootstrap user");
+          } catch (err) {
+            console.error("❌ Failed to create admin doc:", err);
+            // Fallback role so app can handle gracefully
+            userData = { ...firebaseUser, role: 'unassigned' };
+          }
+        } else {
+          // If doc exists but wasn’t picked up in role loop, hydrate it
+          userData = { ...firebaseUser, ...snap.data() };
+        }
       }
 
       setUser(userData);
@@ -95,12 +115,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   // ---------------- Auth Functions ----------------
+
+  // Email/password login
   const login = (email: string, password: string) =>
     signInWithEmailAndPassword(auth, email, password);
 
+  // Signup (only parents self-register)
   const signup = async (data: any) => {
     const cred = await createUserWithEmailAndPassword(auth, data.email, data.password);
-    // Only parents self-register
     await setDoc(doc(db, 'parents', cred.user.uid), {
       uid: cred.user.uid,
       email: data.email,
@@ -137,6 +159,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const cred = GoogleAuthProvider.credentialFromResult(res);
       return cred?.accessToken || null;
     } catch (e: any) {
+      // If already linked or reauth required, retry
       if (
         e?.code === 'auth/credential-already-in-use' ||
         e?.code === 'auth/requires-recent-login'
@@ -149,6 +172,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // Logout
   const logout = async () => auth.signOut();
 
   return (
@@ -169,6 +193,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   );
 };
 
+// ---------------- Hook ----------------
 export const useAuth = () => {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error('useAuth must be used inside AuthProvider');
