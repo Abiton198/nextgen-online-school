@@ -6,10 +6,14 @@ import {
   createUserWithEmailAndPassword,
   GoogleAuthProvider,
   signInWithPopup,
+  linkWithPopup,
+  reauthenticateWithPopup,
   onAuthStateChanged,
   User
 } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
+
+type Role = 'teacher' | 'student' | 'parent' | 'admin';
 
 interface AuthContextProps {
   user: any;
@@ -17,10 +21,29 @@ interface AuthContextProps {
   login: (email: string, password: string) => Promise<any>;
   signup: (data: any) => Promise<any>;
   loginWithGoogle: () => Promise<any>;
+  loginWithGoogleClassroom: (role: Role) => Promise<{ user: User; accessToken: string | null }>;
+  linkClassroomScopes: (user: User, role: Role) => Promise<string | null>;
   logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextProps | null>(null);
+
+// ---------------- Helper: build provider with scopes ----------------
+function buildClassroomProvider(role: Role) {
+  const provider = new GoogleAuthProvider();
+  provider.addScope('https://www.googleapis.com/auth/classroom.courses.readonly');
+
+  if (role === 'teacher') {
+    provider.addScope('https://www.googleapis.com/auth/classroom.coursework.students.readonly');
+    provider.addScope('https://www.googleapis.com/auth/classroom.rosters.readonly');
+  }
+  if (role === 'student') {
+    provider.addScope('https://www.googleapis.com/auth/classroom.coursework.me.readonly');
+    provider.addScope('https://www.googleapis.com/auth/classroom.student-submissions.me.readonly');
+  }
+
+  return provider;
+}
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<any>(null);
@@ -90,17 +113,56 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return cred.user;
   };
 
+  // Standard Google login (no extra scopes)
   const loginWithGoogle = async () => {
     const provider = new GoogleAuthProvider();
     const cred = await signInWithPopup(auth, provider);
     return cred.user;
   };
 
+  // Google login with Classroom scopes
+  const loginWithGoogleClassroom = async (role: Role) => {
+    const provider = buildClassroomProvider(role);
+    const res = await signInWithPopup(auth, provider);
+    const cred = GoogleAuthProvider.credentialFromResult(res);
+    const accessToken = cred?.accessToken || null;
+    return { user: res.user, accessToken };
+  };
+
+  // Link/reauth existing Google user with Classroom scopes
+  const linkClassroomScopes = async (user: User, role: Role) => {
+    const provider = buildClassroomProvider(role);
+    try {
+      const res = await linkWithPopup(user, provider);
+      const cred = GoogleAuthProvider.credentialFromResult(res);
+      return cred?.accessToken || null;
+    } catch (e: any) {
+      if (
+        e?.code === 'auth/credential-already-in-use' ||
+        e?.code === 'auth/requires-recent-login'
+      ) {
+        const res = await reauthenticateWithPopup(user, provider);
+        const cred = GoogleAuthProvider.credentialFromResult(res);
+        return cred?.accessToken || null;
+      }
+      throw e;
+    }
+  };
+
   const logout = async () => auth.signOut();
 
   return (
     <AuthContext.Provider
-      value={{ user, loading, login, signup, loginWithGoogle, logout }}
+      value={{
+        user,
+        loading,
+        login,
+        signup,
+        loginWithGoogle,
+        loginWithGoogleClassroom,
+        linkClassroomScopes,
+        logout
+      }}
     >
       {children}
     </AuthContext.Provider>
