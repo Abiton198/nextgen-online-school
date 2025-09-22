@@ -1,18 +1,13 @@
 import React, { useEffect, useState } from "react";
-import { auth, db } from "@/lib/firebaseConfig";
-import {
-  createUserWithEmailAndPassword,
-  sendPasswordResetEmail,
-} from "firebase/auth";
+import { db } from "@/lib/firebaseConfig";
 import {
   collection,
   doc,
   getDocs,
-  setDoc,
   query,
   orderBy,
-  deleteDoc,
 } from "firebase/firestore";
+import { sendPasswordResetEmail, getAuth } from "firebase/auth";
 import { httpsCallable, getFunctions } from "firebase/functions";
 import { useAuth } from "../auth/AuthProvider";
 
@@ -38,7 +33,9 @@ const UserManagement: React.FC = () => {
   const [showUsersCard, setShowUsersCard] = useState(true);
 
   // Form state
-  const [role, setRole] = useState<"student" | "teacher" | "parent">("student");
+  const [role, setRole] = useState<"student" | "teacher" | "parent" | "admin">(
+    "student"
+  );
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
@@ -54,30 +51,27 @@ const UserManagement: React.FC = () => {
   const [filterGrade, setFilterGrade] = useState("");
   const [filterSubject, setFilterSubject] = useState("");
 
-  // Create user
+  // ✅ Create user via Cloud Function
   const handleCreateUser = async () => {
     try {
       setLoading(true);
 
-      const cred = await createUserWithEmailAndPassword(auth, email, password);
-
-      const profileData: any = {
-        uid: cred.user.uid,
-        email,
-        name,
-        role,
-        createdAt: new Date().toISOString(),
-        createdBy: user?.email || "system",
-      };
-
-      if (role === "student") profileData.grade = grade;
-      if (role === "teacher") profileData.subject = subject;
+      const extraData: Record<string, any> = {};
+      if (role === "student") extraData.grade = grade;
+      if (role === "teacher") extraData.subject = subject;
       if (role === "parent") {
-        profileData.childName = childName;
-        profileData.childGrade = childGrade;
+        extraData.childName = childName;
+        extraData.childGrade = childGrade;
       }
 
-      await setDoc(doc(db, `${role}s`, cred.user.uid), profileData);
+      const createFn = httpsCallable(functions, "createUserProfile");
+      await createFn({
+        role,
+        email,
+        password,
+        name,
+        extraData: { ...extraData, createdBy: user?.email || "system" },
+      });
 
       alert(`${role} profile created successfully!`);
       setEmail("");
@@ -100,26 +94,22 @@ const UserManagement: React.FC = () => {
   // Reset password
   const handleResetPassword = async (userEmail: string) => {
     try {
-      await sendPasswordResetEmail(auth, userEmail);
+      await sendPasswordResetEmail(getAuth(), userEmail);
       alert(`Password reset email sent to ${userEmail}`);
     } catch (err: any) {
       alert(`Error: ${err.message}`);
     }
   };
 
-  // Delete user
+  // ✅ Delete user via Cloud Function
   const handleDeleteUser = async (u: any) => {
     if (!window.confirm(`Delete ${u.name} (${u.email})?`)) return;
 
     try {
       setLoading(true);
 
-      // 1. Delete Firestore profile
-      await deleteDoc(doc(db, `${u.role}s`, u.uid));
-
-      // 2. Delete Auth user via Cloud Function
       const delFn = httpsCallable(functions, "deleteUser");
-      await delFn({ targetUid: u.uid });
+      await delFn({ targetUid: u.uid, role: u.role });
 
       alert(`Deleted ${u.role} ${u.name}`);
       fetchUsers();
@@ -135,7 +125,7 @@ const UserManagement: React.FC = () => {
   const fetchUsers = async () => {
     setLoading(true);
     const all: any[] = [];
-    for (const col of ["students", "teachers", "parents"]) {
+    for (const col of ["students", "teachers", "parents", "admins"]) {
       const snap = await getDocs(
         query(collection(db, col), orderBy("createdAt", "desc"))
       );
@@ -185,6 +175,7 @@ const UserManagement: React.FC = () => {
               <option value="student">Student</option>
               <option value="teacher">Teacher</option>
               <option value="parent">Parent</option>
+              <option value="admin">Admin</option>
             </select>
 
             <input
@@ -313,6 +304,7 @@ const UserManagement: React.FC = () => {
                 <option value="student">Students</option>
                 <option value="teacher">Teachers</option>
                 <option value="parent">Parents</option>
+                <option value="admin">Admins</option>
               </select>
               {filterRole === "student" && (
                 <select

@@ -197,7 +197,7 @@ export const LoginForm: React.FC = () => {
         <CardHeader className="text-center">
           <div className="flex items-center justify-center gap-2 mb-4">
             <GraduationCap className="w-8 h-8 text-blue-600" />
-            <span className="text-2xl font-bold text-gray-900">NextGen School</span>
+            <span className="text-2xl font-bold text-gray-900">NextGen Independent Online (CAPS) High School</span>
           </div>
           <CardTitle className="text-xl">{isSignup ? 'Parent Sign Up' : 'Welcome Back'}</CardTitle>
           <CardDescription>

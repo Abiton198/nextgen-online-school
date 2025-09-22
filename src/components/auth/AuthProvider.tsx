@@ -9,11 +9,11 @@ import {
   linkWithPopup,
   reauthenticateWithPopup,
   onAuthStateChanged,
-  User
+  User,
 } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 
-type Role = 'teacher' | 'student' | 'parent' | 'admin';
+type Role = 'teacher' | 'student' | 'parent' | 'admin' | 'unassigned';
 
 interface AuthContextProps {
   user: any;
@@ -56,7 +56,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (!firebaseUser) {
-        // No user logged in
         setUser(null);
         setLoading(false);
         return;
@@ -65,9 +64,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const uid = firebaseUser.uid;
       let userData: any = null;
 
-      // Try to find a Firestore profile in any role collection
-      const roles = ['admins', 'teachers', 'students', 'parents'];
-      for (const collection of roles) {
+      // Try to find a Firestore profile in the correct collection
+      const roleCollections = ['admins', 'teachers', 'students', 'parents'];
+      for (const collection of roleCollections) {
         const ref = doc(db, collection, uid);
         const snap = await getDoc(ref);
         if (snap.exists()) {
@@ -76,35 +75,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
 
-      // 🚀 Bootstrap: if no profile doc exists, try to create Admin doc for this user
       if (!userData) {
-        console.warn("No profile found for user → checking if admin doc exists");
-
-        const ref = doc(db, 'admins', uid);
-        const snap = await getDoc(ref);
-
-        if (!snap.exists()) {
-          // First-time bootstrap: allow the user to create their own admin profile
-          try {
-            await setDoc(ref, {
-              uid,
-              email: firebaseUser.email,
-              role: 'admin',
-              name: firebaseUser.displayName || 'Admin',
-              approved: true,
-              createdAt: new Date().toISOString()
-            });
-            userData = { ...firebaseUser, role: 'admin' };
-            console.log("✅ Admin doc created for bootstrap user");
-          } catch (err) {
-            console.error("❌ Failed to create admin doc:", err);
-            // Fallback role so app can handle gracefully
-            userData = { ...firebaseUser, role: 'unassigned' };
-          }
-        } else {
-          // If doc exists but wasn’t picked up in role loop, hydrate it
-          userData = { ...firebaseUser, ...snap.data() };
-        }
+        // No profile anywhere → mark as unassigned (must be approved by admin)
+        console.warn('⚠️ No profile found for user, assigning role = unassigned');
+        userData = { ...firebaseUser, role: 'unassigned' };
       }
 
       setUser(userData);
@@ -123,6 +97,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Signup (only parents self-register)
   const signup = async (data: any) => {
     const cred = await createUserWithEmailAndPassword(auth, data.email, data.password);
+
+    // Store in parents collection
     await setDoc(doc(db, 'parents', cred.user.uid), {
       uid: cred.user.uid,
       email: data.email,
@@ -130,8 +106,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       name: data.name,
       childName: data.childName,
       childGrade: data.childGrade,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
     });
+
     return cred.user;
   };
 
@@ -159,7 +136,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const cred = GoogleAuthProvider.credentialFromResult(res);
       return cred?.accessToken || null;
     } catch (e: any) {
-      // If already linked or reauth required, retry
       if (
         e?.code === 'auth/credential-already-in-use' ||
         e?.code === 'auth/requires-recent-login'
@@ -185,7 +161,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         loginWithGoogle,
         loginWithGoogleClassroom,
         linkClassroomScopes,
-        logout
+        logout,
       }}
     >
       {children}
