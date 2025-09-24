@@ -1,16 +1,16 @@
-import React from 'react';
-import { AuthProvider, useAuth } from './auth/AuthProvider';
-import LoginForm from './auth/LoginForm';
-import StudentDashboard from './dashboards/StudentDashboard';
-import ParentDashboard from './dashboards/ParentDashboard';
-import TeacherDashboard from './dashboards/TeacherDashboard';
-import AdminDashboard from './dashboards/AdminDashboard';
+// src/AppLayout.tsx
+import React from "react";
+import { AuthProvider, useAuth } from "./auth/AuthProvider";
+import LoginForm from "./auth/LoginForm";
+import ParentDashboard from "./dashboards/ParentDashboard";
+import TeacherDashboard from "./dashboards/TeacherDashboard";
+import PrincipalDashboard from "./dashboards/PrincipalDashboard";
+import AdminDashboard from "./dashboards/AdminDashboard"; // secret login
 
-// Main App Component with Authentication Flow
+// ------------------- Main AppContent -------------------
 const AppContent: React.FC = () => {
   const { user, loading } = useAuth();
 
-  // Show loading spinner while checking authentication
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 flex items-center justify-center">
@@ -22,43 +22,40 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // Show login form if user is not authenticated
   if (!user) {
     return <LoginForm />;
   }
 
-  // Route to appropriate dashboard based on user role
   switch (user.role) {
-    case 'student':
-      return <StudentDashboard />;
-    case 'parent':
+    case "parent":
       return <ParentDashboard />;
-    case 'teacher':
+    case "teacher":
       return <TeacherDashboard />;
-    case 'admin':
-      return <AdminDashboard />;
+    case "principal":
+      return <PrincipalDashboard />;
+    case "admin":
+      return <AdminDashboard />; // secret route
     default:
       return <LoginForm />;
   }
 };
 
-// Main AppLayout component with AuthProvider wrapper
+// ------------------- App Layout -------------------
 const AppLayout: React.FC = () => {
   return (
     <AuthProvider>
-      <div className="font-sans antialiased">
-        {/* Hero Section for Unauthenticated Users */}
-        <div className="hidden" id="hero-section">
+      <div className="font-sans antialiased flex flex-col min-h-screen">
+        {/* Hero Section */}
+        <div id="hero-section" className="flex-1">
           <div className="relative min-h-screen bg-gradient-to-br from-blue-600 via-purple-600 to-indigo-800">
-            {/* Hero Background Image */}
-            <div 
+            <div
               className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-20"
               style={{
-                backgroundImage: 'url(https://d64gsuwffb70l.cloudfront.net/68c31a777600b687984e53d0_1757616805155_a5c804bd.webp)'
+                backgroundImage:
+                  "url(https://d64gsuwffb70l.cloudfront.net/68c31a777600b687984e53d0_1757616805155_a5c804bd.webp)",
               }}
             ></div>
-            
-            {/* Hero Content */}
+
             <div className="relative z-10 flex items-center justify-center min-h-screen px-4">
               <div className="text-center text-white max-w-4xl mx-auto">
                 <h1 className="text-5xl md:text-7xl font-bold mb-6 leading-tight">
@@ -66,49 +63,54 @@ const AppLayout: React.FC = () => {
                   <span className="block text-yellow-300">School Portal</span>
                 </h1>
                 <p className="text-xl md:text-2xl mb-8 text-blue-100 max-w-2xl mx-auto">
-                  Transforming education through innovative technology. Connect students, parents, teachers, and administrators in one comprehensive platform.
+                  Transforming education through innovative technology.
+                  Connecting students, parents, teachers, and principals in one
+                  seamless platform.
                 </p>
-                
+
                 {/* Feature Cards */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mt-12">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-12">
                   <div className="bg-white/10 backdrop-blur-sm rounded-xl p-6 border border-white/20">
-                    <img 
-                      src="https://d64gsuwffb70l.cloudfront.net/68c31a777600b687984e53d0_1757616806119_aaaa43c4.webp" 
-                      alt="Student Portal" 
+                    <img
+                      src="https://d64gsuwffb70l.cloudfront.net/68c31a777600b687984e53d0_1757616806119_aaaa43c4.webp"
+                      alt="Parent Dashboard"
                       className="w-16 h-16 mx-auto mb-4 rounded-lg"
                     />
-                    <h3 className="text-lg font-semibold mb-2">Student Portal</h3>
-                    <p className="text-sm text-blue-100">Access classes, assignments, and track your academic progress</p>
+                    <h3 className="text-lg font-semibold mb-2">
+                      Parent Dashboard
+                    </h3>
+                    <p className="text-sm text-blue-100">
+                      Monitor your child's progress and manage school
+                      engagement.
+                    </p>
                   </div>
-                  
+
                   <div className="bg-white/10 backdrop-blur-sm rounded-xl p-6 border border-white/20">
-                    <img 
-                      src="https://d64gsuwffb70l.cloudfront.net/68c31a777600b687984e53d0_1757616806868_c4dbdfd5.webp" 
-                      alt="Parent Dashboard" 
-                      className="w-16 h-16 mx-auto mb-4 rounded-lg"
-                    />
-                    <h3 className="text-lg font-semibold mb-2">Parent Dashboard</h3>
-                    <p className="text-sm text-blue-100">Monitor your child's progress and manage school payments</p>
-                  </div>
-                  
-                  <div className="bg-white/10 backdrop-blur-sm rounded-xl p-6 border border-white/20">
-                    <img 
-                      src="https://d64gsuwffb70l.cloudfront.net/68c31a777600b687984e53d0_1757616807613_5ea69d49.webp" 
-                      alt="Teacher Tools" 
+                    <img
+                      src="https://d64gsuwffb70l.cloudfront.net/68c31a777600b687984e53d0_1757616807613_5ea69d49.webp"
+                      alt="Teacher Tools"
                       className="w-16 h-16 mx-auto mb-4 rounded-lg"
                     />
                     <h3 className="text-lg font-semibold mb-2">Teacher Tools</h3>
-                    <p className="text-sm text-blue-100">Manage classes, grade assignments, and communicate with parents</p>
+                    <p className="text-sm text-blue-100">
+                      Manage classes, grade assignments, and communicate with
+                      parents.
+                    </p>
                   </div>
-                  
+
                   <div className="bg-white/10 backdrop-blur-sm rounded-xl p-6 border border-white/20">
-                    <img 
-                      src="https://d64gsuwffb70l.cloudfront.net/68c31a777600b687984e53d0_1757616808445_ccccf647.webp" 
-                      alt="Admin Control" 
+                    <img
+                      src="https://d64gsuwffb70l.cloudfront.net/68c31a777600b687984e53d0_1757616806868_c4dbdfd5.webp"
+                      alt="Principal Dashboard"
                       className="w-16 h-16 mx-auto mb-4 rounded-lg"
                     />
-                    <h3 className="text-lg font-semibold mb-2">Admin Control</h3>
-                    <p className="text-sm text-blue-100">Comprehensive school management and analytics dashboard</p>
+                    <h3 className="text-lg font-semibold mb-2">
+                      Principal Dashboard
+                    </h3>
+                    <p className="text-sm text-blue-100">
+                      Approve teachers, oversee students, and ensure smooth
+                      school operations.
+                    </p>
                   </div>
                 </div>
               </div>
@@ -116,8 +118,18 @@ const AppLayout: React.FC = () => {
           </div>
         </div>
 
-        {/* Main Application Content */}
+        {/* Main App */}
         <AppContent />
+
+        {/* Hidden Footer with Admin Login */}
+        <footer className="bg-gray-100 text-center py-4 text-sm text-gray-500">
+          <button
+            onClick={() => (window.location.href = "/admin-login")}
+            className="hover:text-blue-600"
+          >
+            © 2025 NextGen Independent Online School
+          </button>
+        </footer>
       </div>
     </AuthProvider>
   );
