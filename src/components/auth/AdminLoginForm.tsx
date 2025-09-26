@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export const AdminLoginForm: React.FC = () => {
-  const { login } = useAuth();
+  const { login, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
 
   const [email, setEmail] = useState("");
@@ -38,6 +38,27 @@ export const AdminLoginForm: React.FC = () => {
     }
   };
 
+  const handleGoogleLogin = async () => {
+    setError("");
+    setIsLoading(true);
+
+    try {
+      const loggedUser = await loginWithGoogle();
+
+      // Verify user is admin
+      const token = await loggedUser.getIdTokenResult();
+      if (token.claims.role !== "admin") {
+        throw new Error("You are not authorized as admin.");
+      }
+
+      navigate("/admin-dashboard");
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
       <Card className="w-full max-w-md">
@@ -51,6 +72,7 @@ export const AdminLoginForm: React.FC = () => {
             </Alert>
           )}
 
+          {/* Email/Password login */}
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
               <Label>Email</Label>
@@ -75,6 +97,18 @@ export const AdminLoginForm: React.FC = () => {
               {isLoading ? "Signing in..." : "Sign In"}
             </Button>
           </form>
+
+          {/* Divider */}
+          <div className="my-4 text-center text-gray-500 text-sm">or</div>
+
+          {/* Google Login */}
+          <Button
+            onClick={handleGoogleLogin}
+            disabled={isLoading}
+            className="w-full bg-red-600 hover:bg-red-700"
+          >
+            {isLoading ? "Signing in..." : "Sign in with Google"}
+          </Button>
         </CardContent>
       </Card>
     </div>

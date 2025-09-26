@@ -13,7 +13,7 @@ import NotFound from "./pages/NotFound";
 import AdminDashboard from "./components/dashboards/AdminDashboard";
 import TeacherDashboard from "./components/dashboards/TeacherDashboard";
 import StudentDashboard from "./components/dashboards/StudentDashboard";
-import ParentDashboard from "./components/dashboards/ParentDashboard";
+import ParentDashboard from "./components/dashboards/parent/ParentDashboard";
 import { Footer } from "./components/Footer";
 import { AdminLoginForm } from "./components/auth/AdminLoginForm";
 import PendingApprovalScreen from "./components/auth/PendingApprovalScreen";

@@ -1,25 +1,43 @@
-import { onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
-import { doc, onSnapshot } from "firebase/firestore";
-import { auth, db } from "@/lib/firebaseConfig"; // adjust import to your setup
 import React, { createContext, useContext, useEffect, useState } from "react";
+import {
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signOut,
+  User as FirebaseUser,
+  GoogleAuthProvider,
+  signInWithPopup,
+} from "firebase/auth";
+import { doc, onSnapshot, getDoc } from "firebase/firestore";
+import { auth, db } from "@/lib/firebaseConfig";
 
-const AuthContext = createContext<any>(null);
+interface AuthContextType {
+  user: any;
+  loading: boolean;
+  login: (email: string, password: string) => Promise<FirebaseUser>;
+  loginWithGoogle: () => Promise<FirebaseUser>;
+  logout: () => Promise<void>;
+  setUser: React.Dispatch<React.SetStateAction<any>>;
+}
+
+const AuthContext = createContext<AuthContextType | null>(null);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let unsubProfile: (() => void) | null = null;
+
     const unsubAuth = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
       if (!firebaseUser) {
+        // not logged in
         setUser(null);
         setLoading(false);
+        if (unsubProfile) unsubProfile();
         return;
       }
 
       const uid = firebaseUser.uid;
-
-      // collections to check (approved + pending)
       const roleCollections = [
         "admins",
         "principals",
@@ -30,48 +48,84 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         "pendingStudents",
       ];
 
-      let unsubProfile: (() => void) | null = null;
+      // Check each collection once until we find a profile
+      let profileFound = false;
 
       for (const collectionName of roleCollections) {
         const ref = doc(db, collectionName, uid);
+        const snap = await getDoc(ref);
 
-        unsubProfile = onSnapshot(ref, (snap) => {
-          if (snap.exists()) {
-            const data = snap.data();
-            const isPending = collectionName.startsWith("pending");
-            const baseRole = isPending
-              ? collectionName.replace("pending", "").toLowerCase().slice(0, -1) // e.g. pendingTeachers → teacher
-              : collectionName.slice(0, -1); // teachers → teacher
+        if (snap.exists()) {
+          profileFound = true;
 
-            setUser({
-              ...firebaseUser,
-              ...data,
-              role: data.role || baseRole,
-              status: data.status || (isPending ? "pending" : "approved"),
-            });
+          // cleanup previous subscription if any
+          if (unsubProfile) unsubProfile();
+
+          unsubProfile = onSnapshot(ref, (profileSnap) => {
+            if (profileSnap.exists()) {
+              const data = profileSnap.data();
+              const isPending = collectionName.startsWith("pending");
+              const baseRole = isPending
+                ? collectionName.replace("pending", "").toLowerCase().slice(0, -1)
+                : collectionName.slice(0, -1);
+
+              setUser({
+                ...firebaseUser,
+                ...data,
+                role: data.role || baseRole,
+                status: data.status || (isPending ? "pending" : "approved"),
+              });
+            } else {
+              setUser({ ...firebaseUser, role: "unassigned", status: "unknown" });
+            }
             setLoading(false);
-          }
-        });
+          });
 
-        // once we set up a listener for the first existing doc, stop looping
-        break;
+          break;
+        }
       }
 
-      if (!unsubProfile) {
-        console.warn("⚠️ No profile found for user, assigning role = unassigned");
+      if (!profileFound) {
+        // fallback if no Firestore doc yet (new signup)
         setUser({ ...firebaseUser, role: "unassigned", status: "unknown" });
         setLoading(false);
       }
     });
 
-    return () => unsubAuth();
+    return () => {
+      unsubAuth();
+      if (unsubProfile) unsubProfile();
+    };
   }, []);
 
+  // --- Authentication methods ---
+  const login = async (email: string, password: string) => {
+    const { user } = await signInWithEmailAndPassword(auth, email, password);
+    return user;
+  };
+
+  const loginWithGoogle = async () => {
+    const provider = new GoogleAuthProvider();
+    const result = await signInWithPopup(auth, provider);
+    return result.user;
+  };
+
+  const logout = async () => {
+    await signOut(auth);
+    setUser(null);
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, setUser }}>
+    <AuthContext.Provider
+      value={{ user, loading, login, loginWithGoogle, logout, setUser }}
+    >
       {children}
     </AuthContext.Provider>
   );
 };
 
-export const useAuth = () => useContext(AuthContext);
+export const useAuth = () => {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth must be used within an AuthProvider");
+  return ctx;
+};

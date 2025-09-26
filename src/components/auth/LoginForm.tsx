@@ -1,4 +1,3 @@
-// src/components/auth/LoginForm.tsx
 import React, { useState, useEffect } from "react";
 import {
   Card,
@@ -24,21 +23,29 @@ import {
   getDocs,
 } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
+import { signupParent, signupTeacher } from "@/lib/firebaseFunctions";
 
 export const LoginForm: React.FC = () => {
-  const { login, signup, loginWithGoogle } = useAuth();
+  const { login, loginWithGoogle } = useAuth(); // no more signup here
   const navigate = useNavigate();
   const auth = getAuth();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState<"principal" | "teacher" | "parent">("parent");
+  const [role, setRole] = useState<"principal" | "teacher" | "parent" | "student">("parent");
   const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isSignup, setIsSignup] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
+  // ---------- Student-specific ----------
+  const [grades] = useState(["Grade 8", "Grade 9", "Grade 10", "Grade 11", "Grade 12"]);
+  const [selectedGrade, setSelectedGrade] = useState("");
+  const [students, setStudents] = useState<any[]>([]);
+  const [selectedStudentId, setSelectedStudentId] = useState("");
+
+  // ---------- Teacher-specific ----------
   const [subjects, setSubjects] = useState<string[]>([]);
   const [selectedSubject, setSelectedSubject] = useState("");
 
@@ -61,44 +68,24 @@ export const LoginForm: React.FC = () => {
     }
   }, [role]);
 
-  // ---------------- Helper: Unified Registration ----------------
-  const registerUser = async (
-    uid: string,
-    email: string,
-    name: string,
-    role: "principal" | "teacher" | "parent",
-    extra: any = {}
-  ) => {
-    if (role === "principal") {
-      throw new Error("Principals cannot self-register. Contact admin.");
+  // ---------------- Fetch students by grade ----------------
+  useEffect(() => {
+    if (role === "student" && selectedGrade) {
+      const fetchStudents = async () => {
+        const q = collection(db, "students"); // ✅ only approved students
+        const snapshot = await getDocs(q);
+        const list: any[] = [];
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          if (data.grade === selectedGrade) {
+            list.push({ id: docSnap.id, ...data });
+          }
+        });
+        setStudents(list);
+      };
+      fetchStudents();
     }
-
-    if (role === "parent") {
-      await setDoc(doc(db, "parents", uid), {
-        uid,
-        email,
-        name,
-        role: "parent",
-        createdAt: new Date().toISOString(),
-        ...extra,
-      });
-      navigate("/parent-dashboard");
-    }
-
-    if (role === "teacher") {
-      await setDoc(doc(db, "pendingTeachers", uid), {
-        uid,
-        email,
-        name,
-        role: "teacher",
-        subject: extra.subject || null,
-        status: "pending",
-        createdAt: new Date().toISOString(),
-      });
-      alert("Your registration is pending approval by the principal.");
-      navigate("/"); // back to login
-    }
-  };
+  }, [role, selectedGrade]);
 
   // ---------------- Email/Password Login ----------------
   const handleLogin = async (e: React.FormEvent) => {
@@ -107,10 +94,31 @@ export const LoginForm: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const cred = await login(email, password);
-      const uid = cred.user.uid;
+      if (role === "student") {
+        if (!selectedStudentId) throw new Error("Please select your name.");
+        const studentRef = doc(db, "students", selectedStudentId);
+        const studentSnap = await getDoc(studentRef);
 
+        if (!studentSnap.exists()) {
+          throw new Error("No student record found. Contact your parent or principal.");
+        }
+
+        const studentData = studentSnap.data();
+        const emailToUse = studentData.email;
+
+        const cred = await login(emailToUse, password);
+        if (cred.user.uid !== selectedStudentId) {
+          throw new Error("Account mismatch. Please contact your principal.");
+        }
+
+        navigate("/student-dashboard");
+        return;
+      }
+
+      // ---------- Teacher login ----------
       if (role === "teacher") {
+        const cred = await login(email, password);
+        const uid = cred.user.uid;
         const approvedSnap = await getDoc(doc(db, "teachers", uid));
         const pendingSnap = await getDoc(doc(db, "pendingTeachers", uid));
 
@@ -121,13 +129,17 @@ export const LoginForm: React.FC = () => {
         } else {
           throw new Error("No teacher record found.");
         }
-      } else {
-        const snap = await getDoc(doc(db, `${role}s`, uid));
-        if (!snap.exists()) {
-          throw new Error(`No ${role} record found. Contact admin.`);
-        }
-        navigate(`/${role}-dashboard`);
+        return;
       }
+
+      // ---------- Parent / Principal login ----------
+      const cred = await login(email, password);
+      const uid = cred.user.uid;
+      const snap = await getDoc(doc(db, `${role}s`, uid));
+      if (!snap.exists()) {
+        throw new Error(`No ${role} record found. Contact admin.`);
+      }
+      navigate(`/${role}-dashboard`);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -138,14 +150,34 @@ export const LoginForm: React.FC = () => {
   // ---------------- Signup ----------------
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (role === "student") {
+      setError("Students cannot sign up. Please ask your parent to register you.");
+      return;
+    }
+
+    if (role === "principal") {
+      setError("Principals cannot self-register. Contact admin.");
+      return;
+    }
+
     setError("");
     setIsLoading(true);
 
     try {
-      const cred = await signup({ email, password });
-      await registerUser(cred.uid, email, name, role, {
-        subject: selectedSubject,
-      });
+      if (role === "parent") {
+        await signupParent(email, password, { firstName: name, lastName: "" });
+
+        // ✅ Directly go to dashboard (already signed in)
+        navigate("/parent-dashboard");
+      }
+
+      if (role === "teacher") {
+        await signupTeacher(email, password, { name, subject: selectedSubject || null });
+
+        alert("Your teacher account is pending approval by the principal.");
+        navigate("/"); // redirect home
+      }
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -153,7 +185,7 @@ export const LoginForm: React.FC = () => {
     }
   };
 
-  // ---------------- Google Login ----------------
+  // ---------------- Google Login/Signup ----------------
   const handleGoogleSignIn = async () => {
     setError("");
     setIsLoading(true);
@@ -162,29 +194,81 @@ export const LoginForm: React.FC = () => {
       const loggedUser = await loginWithGoogle();
       const uid = loggedUser.uid;
 
-      // 🔎 Check if already approved in Firestore
-      let foundRole: string | null = null;
-      for (const r of ["principals", "teachers", "parents"]) {
-        const snap = await getDoc(doc(db, r, uid));
-        if (snap.exists()) {
-          foundRole = snap.data().role;
-          break;
-        }
-      }
+      // ---------- Student Google Signin ----------
+      if (role === "student") {
+        if (!selectedStudentId) throw new Error("Please select your name.");
+        const studentRef = doc(db, "students", selectedStudentId);
+        const studentSnap = await getDoc(studentRef);
 
-      if (!foundRole) {
-        // Not found → register in correct place
-        await registerUser(
-          uid,
-          loggedUser.email!,
-          loggedUser.displayName || name || "",
-          role,
-          { subject: selectedSubject }
-        );
+        if (!studentSnap.exists()) {
+          throw new Error("No student record found. Contact your parent or principal.");
+        }
+
+        const studentData = studentSnap.data();
+        if (loggedUser.email !== studentData.email) {
+          throw new Error("Google account mismatch. Use the email registered by your parent.");
+        }
+
+        navigate("/student-dashboard");
         return;
       }
 
-      navigate(`/${foundRole}-dashboard`);
+      // ---------- Teacher Google ----------
+      if (role === "teacher") {
+        const approvedSnap = await getDoc(doc(db, "teachers", uid));
+        const pendingSnap = await getDoc(doc(db, "pendingTeachers", uid));
+
+        if (approvedSnap.exists()) {
+          navigate("/teacher-dashboard");
+          return;
+        }
+
+        if (pendingSnap.exists()) {
+          alert("Your teacher account is still pending approval.");
+          navigate("/");
+          return;
+        }
+
+        // new teacher signup → pending
+        await setDoc(doc(db, "pendingTeachers", uid), {
+          uid,
+          email: loggedUser.email!,
+          name: loggedUser.displayName || name || "",
+          role: "teacher",
+          subject: selectedSubject || null,
+          status: "pending",
+          createdAt: new Date().toISOString(),
+        });
+        alert("Your teacher registration is pending approval by the principal.");
+        navigate("/");
+        return;
+      }
+
+      // ---------- Parent Google ----------
+      if (role === "parent") {
+        const parentSnap = await getDoc(doc(db, "parents", uid));
+        if (parentSnap.exists()) {
+          navigate("/parent-dashboard");
+          return;
+        }
+
+        // new parent signup
+        await setDoc(doc(db, "parents", uid), {
+          uid,
+          email: loggedUser.email!,
+          name: loggedUser.displayName || name || "",
+          role: "parent",
+          createdAt: new Date().toISOString(),
+        });
+
+        // ✅ Auto redirect
+        navigate("/parent-dashboard");
+        return;
+      }
+
+      if (role === "principal") {
+        throw new Error("Principals cannot self-register. Contact admin.");
+      }
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -234,41 +318,64 @@ export const LoginForm: React.FC = () => {
               >
                 <option value="principal">Principal</option>
                 <option value="teacher">Teacher</option>
+                <option value="student">Student</option>
                 <option value="parent">Parent</option>
               </select>
             </div>
 
-            {/* Teacher Extra Fields */}
-            {role === "teacher" && isSignup && (
+            {/* Student Login Fields */}
+            {role === "student" && !isSignup && (
+              <>
+                <div className="space-y-2">
+                  <Label>Grade</Label>
+                  <select
+                    value={selectedGrade}
+                    onChange={(e) => setSelectedGrade(e.target.value)}
+                    className="w-full border rounded-md p-2"
+                    required
+                  >
+                    <option value="">-- Select Grade --</option>
+                    {grades.map((g) => (
+                      <option key={g} value={g}>
+                        {g}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Student Name</Label>
+                  <select
+                    value={selectedStudentId}
+                    onChange={(e) => setSelectedStudentId(e.target.value)}
+                    className="w-full border rounded-md p-2"
+                    required
+                  >
+                    <option value="">-- Select Student --</option>
+                    {students.map((stu) => (
+                      <option key={stu.id} value={stu.id}>
+                        {stu.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            )}
+
+            {/* Non-student Email */}
+            {role !== "student" && (
               <div className="space-y-2">
-                <Label>Subject</Label>
-                <select
-                  value={selectedSubject}
-                  onChange={(e) => setSelectedSubject(e.target.value)}
-                  className="w-full border rounded-md p-2"
+                <Label>Email Address</Label>
+                <Input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   required
-                >
-                  <option value="">-- Select Subject --</option>
-                  {subjects.map((subj) => (
-                    <option key={subj} value={subj}>
-                      {subj}
-                    </option>
-                  ))}
-                </select>
+                />
               </div>
             )}
 
-            {/* Email & Password */}
-            <div className="space-y-2">
-              <Label>Email Address</Label>
-              <Input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
-            </div>
-
+            {/* Password */}
             <div className="space-y-2">
               <Label>Password</Label>
               <div className="relative">
@@ -301,6 +408,26 @@ export const LoginForm: React.FC = () => {
               </div>
             )}
 
+            {/* Teacher Signup Fields */}
+            {isSignup && role === "teacher" && (
+              <div className="space-y-2">
+                <Label>Subject</Label>
+                <select
+                  value={selectedSubject}
+                  onChange={(e) => setSelectedSubject(e.target.value)}
+                  className="w-full border rounded-md p-2"
+                  required
+                >
+                  <option value="">-- Select Subject --</option>
+                  {subjects.map((subj) => (
+                    <option key={subj} value={subj}>
+                      {subj}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             {/* Buttons */}
             <div className="flex gap-2">
               <Button
@@ -317,44 +444,46 @@ export const LoginForm: React.FC = () => {
                   : "Sign In"}
               </Button>
 
-              {!isSignup && (
-                <Button
-                  type="button"
-                  className="flex-1 flex items-center justify-center gap-2 border border-gray-300 hover:bg-gray-100"
-                  onClick={handleGoogleSignIn}
-                  disabled={isLoading}
-                >
-                  <FcGoogle className="w-5 h-5" />
-                  Google
-                </Button>
-              )}
+              {/* Google Sign-In button always visible */}
+              <Button
+                type="button"
+                className="flex-1 flex items-center justify-center gap-2 border border-gray-300 hover:bg-gray-100"
+                onClick={handleGoogleSignIn}
+                disabled={isLoading}
+              >
+                <FcGoogle className="w-5 h-5" />
+                Google
+              </Button>
             </div>
 
-            <div className="text-center text-sm text-gray-500 mt-4">
-              {isSignup ? (
-                <span>
-                  Already have an account?{" "}
-                  <button
-                    type="button"
-                    className="text-blue-600"
-                    onClick={() => setIsSignup(false)}
-                  >
-                    Sign In
-                  </button>
-                </span>
-              ) : (
-                <span>
-                  Don’t have an account?{" "}
-                  <button
-                    type="button"
-                    className="text-blue-600"
-                    onClick={() => setIsSignup(true)}
-                  >
-                    Sign Up
-                  </button>
-                </span>
-              )}
-            </div>
+            {/* Toggle Signin/Signup - hidden for students */}
+            {role !== "student" && (
+              <div className="text-center text-sm text-gray-500 mt-4">
+                {isSignup ? (
+                  <span>
+                    Already have an account?{" "}
+                    <button
+                      type="button"
+                      className="text-blue-600"
+                      onClick={() => setIsSignup(false)}
+                    >
+                      Sign In
+                    </button>
+                  </span>
+                ) : (
+                  <span>
+                    Don’t have an account?{" "}
+                    <button
+                      type="button"
+                      className="text-blue-600"
+                      onClick={() => setIsSignup(true)}
+                    >
+                      Sign Up
+                    </button>
+                  </span>
+                )}
+              </div>
+            )}
           </form>
         </CardContent>
       </Card>

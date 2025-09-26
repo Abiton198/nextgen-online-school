@@ -1,4 +1,3 @@
-// src/components/admin/AdminDashboard.tsx
 import React, { useState, useEffect } from "react";
 import {
   Card,
@@ -14,7 +13,7 @@ import { Users, BarChart3, Settings, UserCheck, Trash2, Plus } from "lucide-reac
 import { db } from "@/lib/firebaseConfig";
 import { collection, onSnapshot, doc, getDoc, setDoc } from "firebase/firestore";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { createUserProfile, deleteUserProfile } from "@/lib/firebaseFunctions";
+import { createUserProfile, deleteUserProfile, resetUserPassword } from "@/lib/firebaseFunctions";
 import {
   Dialog,
   DialogContent,
@@ -24,13 +23,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-// import TestComponent from "@/components/admin/TestComponent";
 
 const roleColors: Record<string, string> = {
   teacher: "bg-blue-100 text-blue-800",
   student: "bg-green-100 text-green-800",
   parent: "bg-purple-100 text-purple-800",
   admin: "bg-red-100 text-red-800",
+  principal: "bg-orange-100 text-orange-800",
 };
 
 const AdminDashboard: React.FC = () => {
@@ -39,28 +38,23 @@ const AdminDashboard: React.FC = () => {
   const [adminData, setAdminData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  // 👥 Store all users
   const [allUsers, setAllUsers] = useState<any[]>([]);
-
-  // 🔍 Search + filter states
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
-
-  // 📑 Pagination
   const [currentPage, setCurrentPage] = useState(1);
   const usersPerPage = 10;
-
-  // 🔄 Sorting state
   const [sortField, setSortField] = useState<"name" | "email" | "role">("name");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
 
-  // ➕ Modal State
   const [openModal, setOpenModal] = useState(false);
   const [newRole, setNewRole] = useState("teacher");
   const [newName, setNewName] = useState("");
   const [newEmail, setNewEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [extraField, setExtraField] = useState("");
+
+  const [editModal, setEditModal] = useState(false);
+  const [editUser, setEditUser] = useState<any>(null);
 
   // 🔄 Load admin profile
   useEffect(() => {
@@ -104,9 +98,9 @@ const AdminDashboard: React.FC = () => {
     return () => unsubscribe();
   }, [user]);
 
-  // 👥 Load all users from Firestore
+  // 👥 Load all users
   useEffect(() => {
-    const roles = ["teachers", "students", "parents", "admins"];
+    const roles = ["teachers", "students", "parents", "admins", "principals"];
     const unsubscribers: (() => void)[] = [];
 
     roles.forEach((role) => {
@@ -114,10 +108,16 @@ const AdminDashboard: React.FC = () => {
       const unsub = onSnapshot(q, (snap) => {
         setAllUsers((prev) => {
           const filtered = prev.filter((u) => u.role !== role.slice(0, -1));
-          const updated = snap.docs.map((d) => ({
-            ...d.data(),
-            role: role.slice(0, -1),
-          }));
+          const updated = snap.docs.map((d) => {
+            const data = d.data();
+            return {
+              uid: d.id,
+              name: data.name || "Unnamed",
+              email: data.email || "No Email",
+              role: role.slice(0, -1),
+              ...data,
+            };
+          });
           return [...filtered, ...updated];
         });
       });
@@ -127,12 +127,10 @@ const AdminDashboard: React.FC = () => {
     return () => unsubscribers.forEach((u) => u());
   }, []);
 
-  // 🔄 Filter + Sort users
   const filteredUsers = allUsers.filter((u) => {
     const matchesSearch =
       u.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       u.email?.toLowerCase().includes(searchQuery.toLowerCase());
-
     const matchesRole = roleFilter ? u.role === roleFilter : true;
     return matchesSearch && matchesRole;
   });
@@ -145,12 +143,10 @@ const AdminDashboard: React.FC = () => {
     return 0;
   });
 
-  // 📑 Paginated users
   const totalPages = Math.ceil(sortedUsers.length / usersPerPage);
   const startIndex = (currentPage - 1) * usersPerPage;
   const paginatedUsers = sortedUsers.slice(startIndex, startIndex + usersPerPage);
 
-  // ➕ Create new user
   const handleSubmitCreateUser = async () => {
     try {
       const extraData =
@@ -161,7 +157,7 @@ const AdminDashboard: React.FC = () => {
           : {};
 
       await createUserProfile(
-        newRole as "teacher" | "student" | "parent" | "admin",
+        newRole as "teacher" | "student" | "parent" | "admin" | "principal",
         newEmail,
         newPassword,
         newName,
@@ -180,7 +176,6 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
-  // 🗑️ Delete user
   const handleDeleteUser = async (uid: string, role: string, name: string) => {
     if (!window.confirm(`Delete ${role} "${name}"?`)) return;
     try {
@@ -189,6 +184,18 @@ const AdminDashboard: React.FC = () => {
     } catch (err: any) {
       alert(err.message || "Failed to delete user");
     }
+  };
+
+  const handleEditUser = (user: any) => {
+    setEditUser(user);
+    setEditModal(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editUser) return;
+    const ref = doc(db, `${editUser.role}s`, editUser.uid);
+    await setDoc(ref, editUser, { merge: true });
+    setEditModal(false);
   };
 
   if (loading) return <div className="p-6 text-center">Loading dashboard...</div>;
@@ -225,10 +232,7 @@ const AdminDashboard: React.FC = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="grid w-full grid-cols-4 mb-8">
-            <TabsTrigger value="overview"><BarChart3 className="w-4 h-4" /> Overview
-            
-             {/* <TestComponent /> */}
-            </TabsTrigger>
+            <TabsTrigger value="overview"><BarChart3 className="w-4 h-4" /> Overview</TabsTrigger>
             <TabsTrigger value="registrations"><UserCheck className="w-4 h-4" /> Registrations</TabsTrigger>
             <TabsTrigger value="users"><Users className="w-4 h-4" /> Users</TabsTrigger>
             <TabsTrigger value="settings"><Settings className="w-4 h-4" /> Settings</TabsTrigger>
@@ -242,7 +246,7 @@ const AdminDashboard: React.FC = () => {
                 <CardDescription>All system users</CardDescription>
               </CardHeader>
               <CardContent>
-                {/* 🔍 Search + Filter + Create */}
+                {/* Search + Filter + Create */}
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
                   <input
                     type="text"
@@ -286,7 +290,7 @@ const AdminDashboard: React.FC = () => {
                         <th className="px-4 py-2">Name</th>
                         <th className="px-4 py-2">Email</th>
                         <th className="px-4 py-2">Role</th>
-                        <th className="px-4 py-2">Actions</th>
+                        <th className="px-4 py-2 text-center">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -303,7 +307,17 @@ const AdminDashboard: React.FC = () => {
                               {u.role}
                             </span>
                           </td>
-                          <td className="px-4 py-2 text-center">
+                          <td className="px-4 py-2 text-center flex gap-2 justify-center">
+                            <Button variant="secondary" size="sm" onClick={() => handleEditUser(u)}>
+                              Edit
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => resetUserPassword(u.email)}
+                            >
+                              Reset Password
+                            </Button>
                             <Button
                               variant="destructive"
                               size="sm"
@@ -329,7 +343,6 @@ const AdminDashboard: React.FC = () => {
           <DialogHeader>
             <DialogTitle>Create New User</DialogTitle>
           </DialogHeader>
-
           <div className="space-y-4">
             <div>
               <Label>Role</Label>
@@ -345,26 +358,18 @@ const AdminDashboard: React.FC = () => {
                 ))}
               </select>
             </div>
-
             <div>
               <Label>Full Name</Label>
               <Input value={newName} onChange={(e) => setNewName(e.target.value)} />
             </div>
-
             <div>
               <Label>Email</Label>
               <Input type="email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} />
             </div>
-
             <div>
               <Label>Password</Label>
-              <Input
-                type="password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-              />
+              <Input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
             </div>
-
             {(newRole === "teacher" || newRole === "student") && (
               <div>
                 <Label>{newRole === "teacher" ? "Subject" : "Grade"}</Label>
@@ -372,12 +377,39 @@ const AdminDashboard: React.FC = () => {
               </div>
             )}
           </div>
-
           <DialogFooter>
-            <Button onClick={() => setOpenModal(false)} variant="outline">
-              Cancel
-            </Button>
+            <Button onClick={() => setOpenModal(false)} variant="outline">Cancel</Button>
             <Button onClick={handleSubmitCreateUser}>Create</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ✏️ Edit User Modal */}
+      <Dialog open={editModal} onOpenChange={setEditModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit User</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Full Name</Label>
+              <Input
+                value={editUser?.name || ""}
+                onChange={(e) => setEditUser({ ...editUser, name: e.target.value })}
+              />
+            </div>
+            <div>
+              <Label>Email</Label>
+              <Input
+                type="email"
+                value={editUser?.email || ""}
+                onChange={(e) => setEditUser({ ...editUser, email: e.target.value })}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setEditModal(false)} variant="outline">Cancel</Button>
+            <Button onClick={handleSaveEdit}>Save</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
