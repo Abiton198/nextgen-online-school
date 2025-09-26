@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Card,
   CardContent,
@@ -16,12 +16,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ArrowLeft, UserPlus, GraduationCap } from "lucide-react";
 import { db } from "@/lib/firebaseConfig";
-import { collection, doc, setDoc } from "firebase/firestore";
-import { redirectToPayfast } from "@/utils/payfast";
+import { collection, doc, setDoc, updateDoc } from "firebase/firestore";
+import { redirectToPayfast } from "@/lib/payfast";
 
 interface ParentRegistrationProps {
   onBack: () => void;
@@ -58,6 +57,8 @@ export const ParentRegistration: React.FC<ParentRegistrationProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitMessage, setSubmitMessage] = useState("");
 
+  const [registrationId, setRegistrationId] = useState<string | null>(null);
+
   const handleParentChange = (field: string, value: string) => {
     setParentData((prev) => ({ ...prev, [field]: value }));
   };
@@ -71,9 +72,9 @@ export const ParentRegistration: React.FC<ParentRegistrationProps> = ({
     setIsSubmitting(true);
 
     try {
-      const registrationId = `reg_${Date.now()}`;
+      const regId = `reg_${Date.now()}`;
       const registrationRequest = {
-        id: registrationId,
+        id: regId,
         parentData,
         learnerData,
         status: "pending",
@@ -82,8 +83,9 @@ export const ParentRegistration: React.FC<ParentRegistrationProps> = ({
         submittedBy: parentData.email,
       };
 
-      const ref = doc(collection(db, "registrations"), registrationId);
+      const ref = doc(collection(db, "registrations"), regId);
       await setDoc(ref, registrationRequest);
+      setRegistrationId(regId);
 
       setSubmitMessage(
         "✅ Registration submitted! Redirecting to PayFast checkout..."
@@ -91,7 +93,7 @@ export const ParentRegistration: React.FC<ParentRegistrationProps> = ({
 
       setTimeout(() => {
         redirectToPayfast({
-          registrationId,
+          registrationId: regId,
           parent: {
             firstName: parentData.firstName,
             lastName: parentData.lastName,
@@ -108,6 +110,26 @@ export const ParentRegistration: React.FC<ParentRegistrationProps> = ({
     setIsSubmitting(false);
   };
 
+  // 🔹 Listen for PayFast return notification
+  useEffect(() => {
+    const handlePaymentMessage = async (event: MessageEvent) => {
+      if (event.data?.type === "PAYFAST_PAYMENT_SUCCESS" && registrationId) {
+        try {
+          const ref = doc(db, "registrations", registrationId);
+          await updateDoc(ref, { paymentReceived: true, status: "submitted" });
+          setSubmitMessage("✅ Payment confirmed! Registration completed.");
+        } catch (err) {
+          console.error("Error updating payment:", err);
+        }
+      }
+    };
+
+    window.addEventListener("message", handlePaymentMessage);
+    return () => {
+      window.removeEventListener("message", handlePaymentMessage);
+    };
+  }, [registrationId]);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
       <Card className="w-full max-w-4xl">
@@ -119,7 +141,7 @@ export const ParentRegistration: React.FC<ParentRegistrationProps> = ({
               className="flex items-center gap-2"
             >
               <ArrowLeft className="w-4 h-4" />
-              Back to Login
+              Back
             </Button>
             <div className="flex items-center gap-2 text-blue-600">
               <GraduationCap className="w-6 h-6" />
@@ -254,6 +276,29 @@ export const ParentRegistration: React.FC<ParentRegistrationProps> = ({
                   <SelectItem value="other">Other</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+
+            {/* Declaration */}
+            <div className="border rounded-lg p-6 bg-red-50">
+              <Label className="font-semibold">
+                Declaration (must agree before submitting)
+              </Label>
+              <ul className="list-disc pl-6 text-sm text-gray-700 mb-3">
+                <li>Stable internet connection</li>
+                <li>Working computer + backup PC</li>
+                <li>Uninterrupted power supply</li>
+                <li>Working camera to view child environment</li>
+                <li>
+                  Ability to set up a bank debit order for tuition fees
+                </li>
+              </ul>
+              <label className="flex items-center gap-2">
+                <input type="checkbox" required className="w-4 h-4" />
+                <span>
+                  I hereby declare that I meet the minimum enrolment
+                  requirements
+                </span>
+              </label>
             </div>
 
             <Button

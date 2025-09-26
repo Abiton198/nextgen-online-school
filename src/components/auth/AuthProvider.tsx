@@ -6,6 +6,8 @@ import {
   User as FirebaseUser,
   GoogleAuthProvider,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
 } from "firebase/auth";
 import { doc, onSnapshot, getDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebaseConfig";
@@ -14,81 +16,92 @@ interface AuthContextType {
   user: any;
   loading: boolean;
   login: (email: string, password: string) => Promise<FirebaseUser>;
-  loginWithGoogle: () => Promise<FirebaseUser>;
+  loginWithGoogle: () => Promise<FirebaseUser | void>;
   logout: () => Promise<void>;
   setUser: React.Dispatch<React.SetStateAction<any>>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let unsubProfile: (() => void) | null = null;
 
-    const unsubAuth = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
-      if (!firebaseUser) {
-        // not logged in
-        setUser(null);
-        setLoading(false);
-        if (unsubProfile) unsubProfile();
-        return;
-      }
-
-      const uid = firebaseUser.uid;
-      const roleCollections = [
-        "admins",
-        "principals",
-        "teachers",
-        "students",
-        "parents",
-        "pendingTeachers",
-        "pendingStudents",
-      ];
-
-      // Check each collection once until we find a profile
-      let profileFound = false;
-
-      for (const collectionName of roleCollections) {
-        const ref = doc(db, collectionName, uid);
-        const snap = await getDoc(ref);
-
-        if (snap.exists()) {
-          profileFound = true;
-
-          // cleanup previous subscription if any
+    const unsubAuth = onAuthStateChanged(
+      auth,
+      async (firebaseUser: FirebaseUser | null) => {
+        if (!firebaseUser) {
+          setUser(null);
+          setLoading(false);
           if (unsubProfile) unsubProfile();
+          return;
+        }
 
-          unsubProfile = onSnapshot(ref, (profileSnap) => {
-            if (profileSnap.exists()) {
-              const data = profileSnap.data();
-              const isPending = collectionName.startsWith("pending");
-              const baseRole = isPending
-                ? collectionName.replace("pending", "").toLowerCase().slice(0, -1)
-                : collectionName.slice(0, -1);
+        const uid = firebaseUser.uid;
+        const roleCollections = [
+          "admins",
+          "principals",
+          "teachers",
+          "students",
+          "parents",
+          "pendingTeachers",
+          "pendingStudents",
+        ];
 
-              setUser({
-                ...firebaseUser,
-                ...data,
-                role: data.role || baseRole,
-                status: data.status || (isPending ? "pending" : "approved"),
-              });
-            } else {
-              setUser({ ...firebaseUser, role: "unassigned", status: "unknown" });
-            }
-            setLoading(false);
-          });
+        let profileFound = false;
 
-          break;
+        for (const collectionName of roleCollections) {
+          const ref = doc(db, collectionName, uid);
+          const snap = await getDoc(ref);
+
+          if (snap.exists()) {
+            profileFound = true;
+            if (unsubProfile) unsubProfile();
+
+            unsubProfile = onSnapshot(ref, (profileSnap) => {
+              if (profileSnap.exists()) {
+                const data = profileSnap.data();
+                const isPending = collectionName.startsWith("pending");
+                const baseRole = isPending
+                  ? collectionName.replace("pending", "").toLowerCase().slice(0, -1)
+                  : collectionName.slice(0, -1);
+
+                setUser({
+                  ...firebaseUser,
+                  ...data,
+                  role: data.role || baseRole,
+                  status: data.status || (isPending ? "pending" : "approved"),
+                });
+              } else {
+                setUser({
+                  ...firebaseUser,
+                  role: "unassigned",
+                  status: "unknown",
+                });
+              }
+              setLoading(false);
+            });
+
+            break;
+          }
+        }
+
+        if (!profileFound) {
+          setUser({ ...firebaseUser, role: "unassigned", status: "unknown" });
+          setLoading(false);
         }
       }
+    );
 
-      if (!profileFound) {
-        // fallback if no Firestore doc yet (new signup)
-        setUser({ ...firebaseUser, role: "unassigned", status: "unknown" });
-        setLoading(false);
+    // Handle Google redirect login results
+    getRedirectResult(auth).then((result) => {
+      if (result?.user) {
+        setUser(result.user);
       }
     });
 
@@ -106,8 +119,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const loginWithGoogle = async () => {
     const provider = new GoogleAuthProvider();
-    const result = await signInWithPopup(auth, provider);
-    return result.user;
+    try {
+      // Try popup login first
+      const result = await signInWithPopup(auth, provider);
+      return result.user;
+    } catch (error: any) {
+      console.warn("Popup login failed, falling back to redirect:", error);
+      await signInWithRedirect(auth, provider);
+    }
   };
 
   const logout = async () => {
