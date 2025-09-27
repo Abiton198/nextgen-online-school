@@ -4,7 +4,9 @@ import { getFirestore } from "firebase-admin/firestore";
 
 if (!getApps().length) {
   initializeApp({
-    credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY || "{}")),
+    credential: cert(
+      JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY || "{}")
+    ),
   });
 }
 const db = getFirestore();
@@ -33,14 +35,24 @@ export const handler: Handler = async (event) => {
     const parent = registration?.parent || {};
     const itemName = registration?.purpose || "Tuition Fees";
 
-    const payfastUrl =
-      process.env.NODE_ENV === "production"
-        ? "https://www.payfast.co.za/eng/process"
-        : "https://sandbox.payfast.co.za/eng/process";
+    // 🔄 Sandbox vs Live toggle
+    const isLive = process.env.PAYFAST_MODE === "live";
+
+    const payfastUrl = isLive
+      ? "https://www.payfast.co.za/eng/process"
+      : "https://sandbox.payfast.co.za/eng/process";
+
+    const merchantId = isLive
+      ? process.env.PAYFAST_MERCHANT_ID || ""
+      : "10000100"; // Sandbox default
+
+    const merchantKey = isLive
+      ? process.env.PAYFAST_MERCHANT_KEY || ""
+      : "46f0cd694581a"; // Sandbox default
 
     const params = new URLSearchParams({
-      merchant_id: process.env.PAYFAST_MERCHANT_ID || "",
-      merchant_key: process.env.PAYFAST_MERCHANT_KEY || "",
+      merchant_id: merchantId,
+      merchant_key: merchantKey,
       return_url: `${process.env.SITE_URL}/payment-success?regId=${regId}`,
       cancel_url: `${process.env.SITE_URL}/payment-cancel`,
       notify_url: `${process.env.SITE_URL}/.netlify/functions/payfast-notify`,
