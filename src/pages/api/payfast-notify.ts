@@ -18,7 +18,7 @@ const PAYFAST_VALIDATE_URL =
 
 export const config = {
   api: {
-    bodyParser: false, // important for PayFast signature
+    bodyParser: false, // ⚠️ important for PayFast ITN
   },
 };
 
@@ -34,14 +34,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const data: Record<string, string> = {};
     rawBody.split("&").forEach((pair) => {
       const [key, value] = pair.split("=");
-      data[key] = decodeURIComponent(value || "");
+      if (key) data[key] = decodeURIComponent(value || "");
     });
 
     // 🔑 Step 2: Extract and remove signature
     const receivedSig = data["signature"];
     delete data["signature"];
 
-    // 🔑 Step 3: Rebuild query string for signature
+    // 🔑 Step 3: Rebuild query string for signature verification
     const queryString = Object.keys(data)
       .sort()
       .map((key) => `${key}=${encodeURIComponent(data[key]).replace(/%20/g, "+")}`)
@@ -68,20 +68,29 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     // 🔑 Step 5: Update Firestore if COMPLETE
-    if (data["payment_status"]?.trim().toUpperCase() === "COMPLETE") {
-      const regId = data["m_payment_id"];
-      const amount = data["amount_gross"];
+    const regId = data["m_payment_id"];
+    const paymentStatus = data["payment_status"]?.trim().toUpperCase();
+    const amount = data["amount_gross"];
+    const payfastRef = data["pf_payment_id"];
 
+    if (paymentStatus === "COMPLETE") {
       await admin.firestore().collection("registrations").doc(regId).update({
-        status: "submitted",
+        status: "awaiting_approval", // 👈 move to next stage in flow
         paymentReceived: true,
         paidAt: admin.firestore.FieldValue.serverTimestamp(),
         paidAmount: amount,
-        payfastRef: data["pf_payment_id"],
+        payfastRef,
       });
 
       console.log(`✅ Payment complete for ${regId}, amount: R${amount}`);
     } else {
+      // Optional: mark registration differently (failed / cancelled)
+      await admin.firestore().collection("registrations").doc(regId).update({
+        status: "payment_failed",
+        lastPaymentAttempt: admin.firestore.FieldValue.serverTimestamp(),
+        payfastRef,
+      });
+
       console.warn("⚠️ Payment not complete:", data["payment_status"]);
     }
 
