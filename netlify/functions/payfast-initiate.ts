@@ -1,7 +1,9 @@
 import type { Handler } from "@netlify/functions";
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
-import fetch from "node-fetch"; // Netlify includes this in Node 18+
+
+// no import fetch — Node 18+ has global fetch
+
 
 // init Firebase Admin once
 if (!getApps().length) {
