@@ -1,4 +1,5 @@
 "use client";
+
 import { useState } from "react";
 import { db } from "@/lib/firebaseConfig";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
@@ -14,31 +15,59 @@ export default function PaymentsSection() {
   const [customName, setCustomName] = useState<string>("");
   const [loading, setLoading] = useState(false);
 
+  // Fixed fee mapping
+  const fixedAmounts: Record<string, string> = {
+    registration: "1000.00",
+    fees: "2850.00",
+  };
+
+  const fixedNames: Record<string, string> = {
+    registration: "Registration Fee",
+    fees: "Tuition Fees",
+  };
+
   const handleCheckout = async () => {
     setLoading(true);
 
     try {
-      // 1. Create a Firestore payment record
+      // 1. Resolve correct amount + item name
+      let finalAmount: string;
+      let itemName: string;
+
+      if (purpose === "registration" || purpose === "fees") {
+        finalAmount = fixedAmounts[purpose];
+        itemName = fixedNames[purpose];
+      } else {
+        if (!amount) {
+          alert("Please enter an amount for this payment type.");
+          setLoading(false);
+          return;
+        }
+        finalAmount = parseFloat(amount).toFixed(2);
+        itemName = customName || purpose.charAt(0).toUpperCase() + purpose.slice(1);
+      }
+
+      // 2. Create a Firestore payment record
       const regRef = await addDoc(collection(db, "registrations"), {
         parentId: user?.uid,
         submittedBy: user?.email,
         purpose,
-        customAmount: amount || null,
-        itemName: customName || null,
-        status: "pending",
+        amount: finalAmount,
+        itemName,
+        status: "payment_pending", // consistent with flow
         paymentReceived: false,
         createdAt: serverTimestamp(),
       });
 
-      // 2. Call backend API to get PayFast redirect URL
+      // 3. Call backend API to get PayFast redirect URL
       const res = await fetch("/api/payfast-initiate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           purpose,
-          customAmount: amount,
-          itemName: customName,
-          regId: regRef.id, // important: use Firestore doc ID
+          amount: finalAmount,
+          itemName,
+          regId: regRef.id, // Firestore doc ID
           parent: {
             firstName: user?.displayName?.split(" ")[0] || "Parent",
             lastName: user?.displayName?.split(" ")[1] || "User",
@@ -51,7 +80,7 @@ export default function PaymentsSection() {
 
       const { redirectUrl } = await res.json();
 
-      // 3. Redirect parent to PayFast
+      // 4. Redirect parent to PayFast
       window.location.href = redirectUrl;
     } catch (err) {
       console.error(err);
@@ -96,26 +125,26 @@ export default function PaymentsSection() {
           </select>
         </div>
 
-        {/* Amount */}
-        <div>
-          <label className="block text-sm text-gray-600">
-            Amount (ZAR) {purpose !== "registration" && purpose !== "fees" && "(required)"}
-          </label>
-          <input
-            type="number"
-            step="0.01"
-            placeholder="Enter custom amount"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            className="w-full border rounded p-2 mt-1"
-            required={purpose !== "registration" && purpose !== "fees"}
-          />
-        </div>
+        {/* Amount field – only for variable types */}
+        {!(purpose === "registration" || purpose === "fees") && (
+          <div>
+            <label className="block text-sm text-gray-600">Amount (ZAR)</label>
+            <input
+              type="number"
+              step="0.01"
+              placeholder="Enter custom amount"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              className="w-full border rounded p-2 mt-1"
+              required
+            />
+          </div>
+        )}
 
-        {/* Item name */}
+        {/* Item name for variable payments */}
         {(purpose === "other" || purpose === "event" || purpose === "donation") && (
           <div>
-            <label className="block text-sm text-gray-600">Item Name (optional)</label>
+            <label className="block text-sm text-gray-600">Item Name</label>
             <input
               type="text"
               placeholder="E.g., Science Fair Donation"
