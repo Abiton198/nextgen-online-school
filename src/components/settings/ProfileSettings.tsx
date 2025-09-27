@@ -2,10 +2,18 @@
 
 import { useState, useEffect } from "react";
 import { db, auth, storage } from "@/lib/firebaseConfig";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import {
+  doc,
+  getDoc,
+  setDoc,
+  collection,
+  query,
+  where,
+  getDocs,
+} from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 
-// 🎨 Generate a consistent color from a string (e.g. name or email)
+// 🎨 Generate consistent color
 function stringToColor(str: string) {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
@@ -15,7 +23,7 @@ function stringToColor(str: string) {
   return "#" + "00000".substring(0, 6 - c.length) + c;
 }
 
-// 🅰️ Get initials from name/email
+// 🅰️ Get initials
 function getInitials(name: string, email: string) {
   if (name) {
     const parts = name.split(" ");
@@ -27,14 +35,14 @@ function getInitials(name: string, email: string) {
 }
 
 export default function ProfileSettings() {
-  const [name, setName] = useState("");
+  const [title, setTitle] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [contact, setContact] = useState("");
   const [email, setEmail] = useState("");
   const [address, setAddress] = useState("");
   const [photoURL, setPhotoURL] = useState("");
-  const [role, setRole] = useState<
-    "parent" | "student" | "teacher" | "principal" | "admin" | null
-  >(null);
+  const [children, setChildren] = useState<any[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -43,53 +51,35 @@ export default function ProfileSettings() {
 
   const user = auth.currentUser;
 
-  const getCollectionName = (role: string) => {
-    switch (role) {
-      case "parent": return "parents";
-      case "student": return "students";
-      case "teacher": return "teachers";
-      case "principal": return "principals";
-      case "admin": return "admins";
-      default: return null;
-    }
-  };
-
-  // 🔹 Load profile
+  // 🔹 Load profile + children
   useEffect(() => {
     if (!user) return;
 
     const loadProfile = async () => {
       try {
-        const userRef = doc(db, "users", user.uid);
-        const userSnap = await getDoc(userRef);
+        const parentRef = doc(db, "parents", user.uid);
+        const parentSnap = await getDoc(parentRef);
 
-        if (userSnap.exists()) {
-          const userData = userSnap.data();
-          const userRole = userData.role as
-            | "parent"
-            | "student"
-            | "teacher"
-            | "principal"
-            | "admin";
-
-          setRole(userRole);
-
-          const collectionName = getCollectionName(userRole);
-          if (collectionName) {
-            const refDoc = doc(db, collectionName, user.uid);
-            const snap = await getDoc(refDoc);
-            if (snap.exists()) {
-              const data = snap.data();
-              setName(data.name || "");
-              setContact(data.contact || "");
-              setEmail(data.email || user.email || "");
-              setAddress(data.address || "");
-              setPhotoURL(data.photoURL || "");
-            } else {
-              setEmail(user.email || "");
-            }
-          }
+        if (parentSnap.exists()) {
+          const data = parentSnap.data();
+          setTitle(data.title || "");
+          setFirstName(data.firstName || "");
+          setLastName(data.lastName || "");
+          setContact(data.contact || "");
+          setEmail(data.email || user.email || "");
+          setAddress(data.address || "");
+          setPhotoURL(data.photoURL || "");
+        } else {
+          setEmail(user.email || "");
         }
+
+        // fetch children registered by this parent
+        const q = query(
+          collection(db, "registrations"),
+          where("parentId", "==", user.uid)
+        );
+        const snap = await getDocs(q);
+        setChildren(snap.docs.map((doc) => doc.data().learnerData || {}));
       } catch (err) {
         console.error("Error loading profile:", err);
       }
@@ -101,7 +91,7 @@ export default function ProfileSettings() {
 
   // 🔹 Upload profile picture
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!user || !role || !e.target.files?.[0]) return;
+    if (!user || !e.target.files?.[0]) return;
     setUploading(true);
 
     try {
@@ -111,17 +101,8 @@ export default function ProfileSettings() {
       const url = await getDownloadURL(storageRef);
 
       setPhotoURL(url);
-
-      const collectionName = getCollectionName(role);
-      if (collectionName) {
-        await setDoc(
-          doc(db, collectionName, user.uid),
-          { photoURL: url, updatedAt: new Date().toISOString() },
-          { merge: true }
-        );
-      }
       await setDoc(
-        doc(db, "users", user.uid),
+        doc(db, "parents", user.uid),
         { photoURL: url, updatedAt: new Date().toISOString() },
         { merge: true }
       );
@@ -135,27 +116,14 @@ export default function ProfileSettings() {
 
   // 🔹 Remove profile picture
   const handleRemovePicture = async () => {
-    if (!user || !role) return;
+    if (!user) return;
     try {
-      // Delete from Firebase Storage
       const storageRef = ref(storage, `profilePictures/${user.uid}`);
-      await deleteObject(storageRef).catch(() => {
-        // ignore if file doesn't exist
-      });
+      await deleteObject(storageRef).catch(() => {});
 
       setPhotoURL("");
-
-      // Update Firestore
-      const collectionName = getCollectionName(role);
-      if (collectionName) {
-        await setDoc(
-          doc(db, collectionName, user.uid),
-          { photoURL: "", updatedAt: new Date().toISOString() },
-          { merge: true }
-        );
-      }
       await setDoc(
-        doc(db, "users", user.uid),
+        doc(db, "parents", user.uid),
         { photoURL: "", updatedAt: new Date().toISOString() },
         { merge: true }
       );
@@ -167,23 +135,21 @@ export default function ProfileSettings() {
 
   // 🔹 Save updated profile
   const handleSave = async () => {
-    if (!user || !role) return;
+    if (!user) return;
     setSaving(true);
 
     try {
-      const collectionName = getCollectionName(role);
-      if (!collectionName) return;
-
-      const refDoc = doc(db, collectionName, user.uid);
       await setDoc(
-        refDoc,
-        { name, contact, email, address, photoURL, updatedAt: new Date().toISOString() },
-        { merge: true }
-      );
-
-      await setDoc(
-        doc(db, "users", user.uid),
-        { name, contact, email, address, photoURL, updatedAt: new Date().toISOString() },
+        doc(db, "parents", user.uid),
+        {
+          title,
+          firstName,
+          lastName,
+          contact,
+          address,
+          photoURL,
+          updatedAt: new Date().toISOString(),
+        },
         { merge: true }
       );
 
@@ -199,15 +165,16 @@ export default function ProfileSettings() {
 
   if (loading) return <p>Loading profile...</p>;
 
-  const initials = getInitials(name, email).toUpperCase();
-  const bgColor = stringToColor(name || email);
+  const fullName = `${firstName} ${lastName}`.trim();
+  const initials = getInitials(fullName, email).toUpperCase();
+  const bgColor = stringToColor(fullName || email);
 
   return (
     <div className="space-y-4 max-w-md border rounded-lg p-4 shadow bg-white">
       <h2 className="text-xl font-semibold">⚙️ Profile Settings</h2>
-      {role && <p className="text-sm text-gray-500">Role: {role}</p>}
+      <p className="text-sm text-gray-500">Role: Parent</p>
 
-      {/* Profile Picture / Avatar */}
+      {/* Profile Picture */}
       <div className="flex flex-col items-center space-y-2">
         {photoURL ? (
           <img
@@ -251,15 +218,30 @@ export default function ProfileSettings() {
       {!editing ? (
         // ---------------- View Mode ----------------
         <div className="space-y-2">
-          <p><span className="font-medium">Full Name:</span> {name || "—"}</p>
+          <p><span className="font-medium">Title:</span> {title || "—"}</p>
+          <p><span className="font-medium">Full Name:</span> {fullName || "—"}</p>
           <p><span className="font-medium">Contact:</span> {contact || "—"}</p>
           <p><span className="font-medium">Email:</span> {email || "—"}</p>
           <p><span className="font-medium">Address:</span> {address || "—"}</p>
 
+          {/* Children */}
+          {children.length > 0 && (
+            <div className="mt-4">
+              <h3 className="font-medium">👦 Children Registered:</h3>
+              <ul className="list-disc ml-5 text-gray-700">
+                {children.map((c, i) => (
+                  <li key={i}>
+                    {c.firstName} {c.lastName} – Grade {c.grade}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           <button
             type="button"
             onClick={() => setEditing(true)}
-            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            className="px-4 py-2 mt-3 bg-blue-600 text-white rounded hover:bg-blue-700"
           >
             Edit Profile
           </button>
@@ -268,11 +250,35 @@ export default function ProfileSettings() {
         // ---------------- Edit Mode ----------------
         <form className="space-y-4">
           <div>
-            <label className="block font-medium">Full Name</label>
+            <label className="block font-medium">Title</label>
+            <select
+              className="border p-2 w-full rounded"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+            >
+              <option value="">Select Title</option>
+              <option value="Mr">Mr</option>
+              <option value="Mrs">Mrs</option>
+              <option value="Ms">Ms</option>
+              <option value="Dr">Dr</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block font-medium">First Name</label>
             <input
               className="border p-2 w-full rounded"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
+              value={firstName}
+              onChange={(e) => setFirstName(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <label className="block font-medium">Last Name</label>
+            <input
+              className="border p-2 w-full rounded"
+              value={lastName}
+              onChange={(e) => setLastName(e.target.value)}
             />
           </div>
 

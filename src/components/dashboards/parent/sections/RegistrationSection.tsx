@@ -51,8 +51,13 @@ export default function RegistrationSection() {
 
   if (loading) return <p>Loading...</p>;
 
-  if (showForm) {
-    return <ParentRegistration onBack={() => setShowForm(false)} />;
+  if (showForm && user?.uid) {
+    return (
+      <ParentRegistration
+        parentId={user.uid}
+        onBack={() => setShowForm(false)}
+      />
+    );
   }
 
   return (
@@ -80,7 +85,6 @@ export default function RegistrationSection() {
                   {r.paymentReceived ? "✅ Paid" : "⏳ Pending"}
                 </span>
               </div>
-              {/* 🔒 Parents cannot update/cancel their registrations per rules */}
             </li>
           );
         })}
