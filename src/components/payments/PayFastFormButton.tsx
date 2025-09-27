@@ -1,85 +1,78 @@
 "use client";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { doc, getDoc } from "firebase/firestore";
+import { db } from "@/lib/firebaseConfig";   // adjust path to your firebase config
 
-const PAYFAST_ENDPOINT = "https://payment.payfast.io/eng/process";
+interface Registration {
+  id: string;
+  purpose: string;
+  amount: string;
+  parent: { firstName: string; lastName: string; email: string };
+}
 
-export default function PayFastFormButton() {
-  const [amount, setAmount] = useState(1000);
-  const [qty, setQty] = useState(1);
+export default function PayFastFormButton({ regId }: { regId: string }) {
+  const [reg, setReg] = useState<Registration | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    const form = e.currentTarget as HTMLFormElement;
-    const total = Number(amount) * Number(qty);
-    const amountField = form.querySelector<HTMLInputElement>("input[name='amount']");
-    if (amountField) amountField.value = total.toFixed(2);
-    return true;
+  // load registration details (for display only)
+  useEffect(() => {
+    async function fetchRegistration() {
+      const ref = doc(db, "registrations", regId);
+      const snap = await getDoc(ref);
+      if (snap.exists()) {
+        const data = snap.data();
+        setReg({
+          id: regId,
+          purpose: data.purpose || "Payment",
+          amount: data.amount || "0.00",
+          parent: data.parent || { firstName: "", lastName: "", email: "" },
+        });
+      }
+      setLoading(false);
+    }
+    fetchRegistration();
+  }, [regId]);
+
+  async function handlePay() {
+    try {
+      const res = await fetch("/.netlify/functions/payfast-initiate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ regId }), // 👈 only send regId
+      });
+
+      if (!res.ok) throw new Error("Failed to initiate payment");
+      const { redirectUrl } = await res.json();
+      window.location.href = redirectUrl;
+    } catch (err) {
+      console.error(err);
+      alert("Something went wrong with payment. Please try again.");
+    }
   }
 
+  if (loading) return <p>Loading payment details...</p>;
+  if (!reg) return <p>No registration found.</p>;
+
   return (
-    <form
-      onSubmit={handleSubmit}
-      name="PayFastPayNowForm"
-      action={PAYFAST_ENDPOINT}
-      method="post"
-      className="border rounded p-4 space-y-4 bg-white"
-    >
-      {/* required PayFast hidden fields */}
-      <input type="hidden" name="cmd" value="_paynow" />
-      <input type="hidden" name="receiver" value="27337359" />
-      <input type="hidden" name="return_url" value="https://nextgenonlineschool.netlify.app/payment-success" />
-      <input type="hidden" name="cancel_url" value="https://nextgenonlineschool.netlify.app/payment-cancel" />
-      <input type="hidden" name="notify_url" value="https://nextgenonlineschool.netlify.app/api/payfast-notify" />
-      <input
-        type="hidden"
-        name="item_name"
-        value="Nextgen Online Independent School"
-      />
-      <input
-        type="hidden"
-        name="item_description"
-        value="Make payment for your registration, tuition, donations or any other school event."
-      />
+    <div className="border rounded p-4 bg-white space-y-4">
+      <p><strong>Payment for:</strong> {reg.purpose}</p>
+      <p><strong>Amount:</strong> R {reg.amount}</p>
+      <p>
+        <strong>Parent:</strong> {reg.parent.firstName} {reg.parent.lastName} ({reg.parent.email})
+      </p>
 
-      {/* amount */}
-      <div>
-        <label htmlFor="pf-amount" className="block text-sm mb-1">Amount (R)</label>
-        <input
-          required
-          id="pf-amount"
-          name="amount"
-          type="number"
-          step=".01"
-          min="5.00"
-          className="border p-2 rounded w-full"
-          value={amount}
-          onChange={(e) => setAmount(Number(e.target.value))}
-        />
-      </div>
-
-      {/* quantity */}
-      <div>
-        <label htmlFor="pf-qty" className="block text-sm mb-1">Quantity</label>
-        <input
-          required
-          id="pf-qty"
-          name="custom_quantity"
-          type="number"
-          min="1"
-          className="border p-2 rounded w-full"
-          value={qty}
-          onChange={(e) => setQty(Number(e.target.value))}
-        />
-      </div>
-
-      {/* PayFast button image */}
       <div className="flex justify-center">
-        <button type="submit" title="Pay Now with PayFast">
+        <button
+          type="button"
+          onClick={handlePay}
+          className="px-4 py-2 bg-green-600 text-white rounded"
+        >
           <img
             src="https://my.payfast.io/images/buttons/PayNow/Primary-Large-PayNow.png"
             alt="Pay Now"
           />
         </button>
       </div>
-    </form>
+    </div>
   );
 }
