@@ -255,41 +255,28 @@ export const LoginForm: React.FC = () => {
         return;
       }
 
+      
       // ---------- Parent Google ----------
-      if (role === "parent") {
-        const parentSnap = await getDoc(doc(db, "parents", uid));
-        if (parentSnap.exists()) {
-          navigate("/parent-dashboard");
-          return;
-        }
+if (role === "parent") {
+  const parentSnap = await getDoc(doc(db, "parents", uid));
+  if (parentSnap.exists()) {
+    navigate("/parent-dashboard");
+    return;
+  }
 
-        // new parent signup + registration
-        await setDoc(doc(db, "parents", uid), {
-          uid,
-          email: loggedUser.email!,
-          name: loggedUser.displayName || name || "",
-          role: "parent",
-          createdAt: new Date().toISOString(),
-        });
+  // ✅ Only create parent document here
+  await setDoc(doc(db, "parents", uid), {
+    uid,
+    email: loggedUser.email!,
+    name: loggedUser.displayName || name || "",
+    role: "parent",
+    createdAt: new Date().toISOString(),
+  });
 
-        const regRef = doc(collection(db, "registrations"));
-        await setDoc(regRef, {
-          parentId: uid,
-          purpose: "fees",
-          status: "payment_pending",
-          paymentReceived: false,
-          createdAt: new Date().toISOString(),
-        });
+  navigate("/parent-dashboard");
+  return;
+}
 
-        await setDoc(
-          doc(db, "parents", uid),
-          { registrationId: regRef.id },
-          { merge: true }
-        );
-
-        navigate("/parent-dashboard");
-        return;
-      }
 
       if (role === "principal") {
         throw new Error("Principals cannot self-register. Contact admin.");

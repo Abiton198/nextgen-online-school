@@ -4,9 +4,7 @@ import { getFirestore } from "firebase-admin/firestore";
 
 if (!getApps().length) {
   initializeApp({
-    credential: cert(
-      JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY || "{}")
-    ),
+    credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY || "{}")),
   });
 }
 const db = getFirestore();
@@ -17,59 +15,76 @@ export const handler: Handler = async (event) => {
   }
 
   try {
-    const { regId } = JSON.parse(event.body || "{}");
+    console.log("🔔 Raw ITN body:", event.body);
+
+    // PayFast sends urlencoded form-data
+    const params = new URLSearchParams(event.body || "");
+    const regId = params.get("m_payment_id");
+    const paymentStatus = params.get("payment_status"); // "COMPLETE" etc.
+
     if (!regId) {
-      return { statusCode: 400, body: "Missing regId" };
+      return { statusCode: 400, body: "Missing m_payment_id" };
     }
 
-    // 🔎 Fetch registration doc
-    const ref = db.collection("registrations").doc(regId);
-    const snap = await ref.get();
-    if (!snap.exists) {
+    const regRef = db.collection("registrations").doc(regId);
+    const regSnap = await regRef.get();
+
+    if (!regSnap.exists) {
       return { statusCode: 404, body: "Registration not found" };
     }
-    const registration = snap.data();
 
-    // ✅ Always use trusted Firestore values
-    const amount = registration?.fees || "2000.00";
-    const parent = registration?.parent || {};
-    const itemName = registration?.purpose || "Tuition Fees";
+    const registration = regSnap.data();
+    console.log("📄 Registration before update:", registration);
 
-    // 🔄 Sandbox vs Live toggle
-    const isLive = process.env.PAYFAST_MODE === "live";
-
-    const payfastUrl = isLive
-      ? "https://www.payfast.co.za/eng/process"
-      : "https://sandbox.payfast.co.za/eng/process";
-
-    const merchantId = isLive
-      ? process.env.PAYFAST_MERCHANT_ID || ""
-      : "10000100"; // Sandbox default
-
-    const merchantKey = isLive
-      ? process.env.PAYFAST_MERCHANT_KEY || ""
-      : "46f0cd694581a"; // Sandbox default
-
-    const params = new URLSearchParams({
-      merchant_id: merchantId,
-      merchant_key: merchantKey,
-      return_url: `${process.env.SITE_URL}/payment-success?regId=${regId}`,
-      cancel_url: `${process.env.SITE_URL}/payment-cancel`,
-      notify_url: `${process.env.SITE_URL}/.netlify/functions/payfast-notify`,
-      name_first: parent.firstName || "Parent",
-      name_last: parent.lastName || "",
-      email_address: parent.email || "",
-      m_payment_id: regId,
-      amount: amount,
-      item_name: itemName,
-    });
-
-    return {
-      statusCode: 200,
-      body: JSON.stringify({ url: `${payfastUrl}?${params.toString()}` }),
+    // Default update object
+    let update: Record<string, any> = {
+      lastPaymentStatus: paymentStatus,
+      lastPaymentAt: new Date(),
     };
+
+    if (paymentStatus === "COMPLETE") {
+      if (registration?.purpose === "registration") {
+        // ✅ Registration fee paid → enroll student
+        update.status = "registered_pending_approval";
+        update.paymentReceived = true;
+
+        // Check if student already exists
+        if (!registration?.studentId) {
+          // Create new student doc
+          const studentRef = db.collection("students").doc();
+          await studentRef.set({
+            parentId: registration.parentId,
+            firstName: registration.student?.firstName || "Student",
+            lastName: registration.student?.lastName || "",
+            grade: registration.student?.grade || "",
+            createdAt: new Date(),
+            lessonsCompleted: 0,
+            targetLessons: 0,
+            points: 0,
+            status: "active",
+          });
+
+          update.studentId = studentRef.id;
+          console.log("🎓 Student created:", studentRef.id);
+        }
+      } else if (registration?.purpose === "fees") {
+        update.status = "up_to_date"; // tuition fees
+        update.paymentReceived = true;
+      } else {
+        update.status = "paid"; // donation, event, etc.
+        update.paymentReceived = true;
+      }
+    } else {
+      update.status = "payment_failed";
+      update.paymentReceived = false;
+    }
+
+    await regRef.update(update);
+    console.log("✅ Updated registration:", regId, update);
+
+    return { statusCode: 200, body: "ITN processed" };
   } catch (err) {
-    console.error("payfast-initiate error:", err);
+    console.error("❌ payfast-notify error:", err);
     return { statusCode: 500, body: "Internal server error" };
   }
 };
