@@ -7,7 +7,7 @@ import {
   getDocs,
 } from "firebase/firestore";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { ParentRegistration } from "../ParentRegistration";
+import ParentRegistration  from "../ParentRegistration";
 
 interface Registration {
   id: string;
