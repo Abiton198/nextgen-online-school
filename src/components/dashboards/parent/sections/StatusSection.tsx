@@ -6,7 +6,8 @@ import { collection, query, where, getDocs } from "firebase/firestore";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Link } from "react-router-dom"; // ✅ React Router instead of next/link
+import { Link, useNavigate } from "react-router-dom"; // ✅ for navigation
+import { ArrowLeft, X } from "lucide-react"; // ✅ icons
 
 interface Registration {
   id: string;
@@ -27,6 +28,7 @@ interface Registration {
 export default function StatusSection() {
   const { user } = useAuth();
   const [registrations, setRegistrations] = useState<Registration[]>([]);
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (!user) return;
@@ -34,7 +36,7 @@ export default function StatusSection() {
     const fetchData = async () => {
       const q = query(
         collection(db, "registrations"),
-        where("parentId", "==", user.uid) // ✅ only load own docs
+        where("parentId", "==", user.uid)
       );
       const snap = await getDocs(q);
 
@@ -54,7 +56,7 @@ export default function StatusSection() {
     fetchData();
   }, [user]);
 
-  // Assign badge colors
+  // Badge colors
   const getStatusColor = (status: Registration["status"]) => {
     switch (status) {
       case "pending":
@@ -72,31 +74,21 @@ export default function StatusSection() {
     }
   };
 
-  // Action buttons for each status
+  // Action button
   const getActionButton = (reg: Registration) => {
+    if (!reg.paymentReceived && reg.status !== "enrolled") {
+      return (
+        <Button size="sm" className="bg-orange-600 hover:bg-orange-700">
+          <Link to={`/payments/${reg.id}`}>Proceed to Payment</Link>
+        </Button>
+      );
+    }
+
     switch (reg.status) {
-      case "pending":
-        return (
-          <Button size="sm" className="bg-yellow-600 hover:bg-yellow-700">
-            <Link to={`/registration/${reg.id}`}>Continue Application</Link>
-          </Button>
-        );
-      case "payment_pending":
-        return (
-          <Button size="sm" className="bg-orange-600 hover:bg-orange-700">
-            <Link to={`/payments/${reg.id}`}>Complete Payment</Link>
-          </Button>
-        );
-      case "payment_failed":
-        return (
-          <Button size="sm" className="bg-red-600 hover:bg-red-700">
-            <Link to={`/payments/${reg.id}`}>Retry Payment</Link>
-          </Button>
-        );
       case "awaiting_approval":
         return (
           <Button size="sm" disabled className="bg-blue-400 text-white">
-            Waiting Approval
+            Pending Approval
           </Button>
         );
       case "enrolled":
@@ -105,14 +97,31 @@ export default function StatusSection() {
             <Link to={`/registration/${reg.id}`}>Review</Link>
           </Button>
         );
+      default:
+        return null;
     }
   };
 
   return (
     <div>
-      <h2 className="text-lg font-semibold mb-4">
-        Overview of your registrations:
-      </h2>
+      {/* Top bar with navigation */}
+      <div className="flex justify-between items-center mb-4">
+        <button
+          onClick={() => navigate(-1)}
+          className="flex items-center gap-1 text-gray-600 hover:text-black"
+        >
+          <ArrowLeft size={18} /> Back
+        </button>
+
+        <button
+          onClick={() => navigate("/parent-dashboard")}
+          className="text-gray-600 hover:text-red-600"
+        >
+          <X size={20} />
+        </button>
+      </div>
+
+      <h2 className="text-lg font-semibold mb-4">Overview of your registrations:</h2>
 
       {registrations.length === 0 ? (
         <p className="text-gray-600">No registrations found.</p>
@@ -133,15 +142,13 @@ export default function StatusSection() {
                     reg.status
                   )}`}
                 >
-                  {reg.status === "pending"
-                    ? "Application Incomplete"
-                    : reg.status === "payment_pending"
-                    ? "Payment Pending"
-                    : reg.status === "payment_failed"
-                    ? "Payment Failed"
+                  {!reg.paymentReceived
+                    ? "Payment Not Made"
                     : reg.status === "awaiting_approval"
                     ? "Awaiting Principal Approval"
-                    : "Enrolled"}
+                    : reg.status === "enrolled"
+                    ? "Enrolled"
+                    : "Pending"}
                 </span>
               </div>
 
