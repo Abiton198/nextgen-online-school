@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
 import { AuthProvider, useAuth } from "./components/auth/AuthProvider";
 import { ProtectedRoute } from "./components/auth/ProtectedRoute";
@@ -17,11 +17,16 @@ import ParentDashboard from "./components/dashboards/parent/ParentDashboard";
 import { Footer } from "./components/Footer";
 import { AdminLoginForm } from "./components/auth/AdminLoginForm";
 import PendingApprovalScreen from "./components/auth/PendingApprovalScreen";
-import SuspendedScreen from "./components/auth/SuspendedScreen"; // ✅ NEW
+import SuspendedScreen from "./components/auth/SuspendedScreen";
+
+// ✅ Payments
+import PaymentSuccess from "./components/payments/PaymentSuccess";
+import PaymentDetails from "./components/payments/PaymentDetails";
+import PaymentCancel from "./components/payments/PaymentCancel";
 
 const queryClient = new QueryClient();
 
-// Wrapper that decides between pending, suspended, or dashboard
+// Wrapper for role-based routing
 const RoleBasedRoute = ({
   allowedRoles,
   children,
@@ -31,25 +36,17 @@ const RoleBasedRoute = ({
 }) => {
   const { user, loading } = useAuth();
 
-  if (loading) return <div>Loading...</div>;
-  if (!user) return <div>Please log in</div>;
+  if (loading) return <div className="p-6 text-center">Loading...</div>;
+  if (!user) return <Navigate to="/admin-login" replace />;
 
-  // 🚦 If user is pending → show pending screen
-  if (user.status === "pending") {
-    return <PendingApprovalScreen />;
-  }
+  if (user.status === "pending") return <PendingApprovalScreen />;
+  if (user.status === "suspended") return <SuspendedScreen />;
 
-  // 🚦 If user is suspended → show suspended screen
-  if (user.status === "suspended") {
-    return <SuspendedScreen />;
-  }
-
-  // 🚦 Otherwise → check role normally
   if (allowedRoles.includes(user.role)) {
     return <>{children}</>;
   }
 
-  return <div>Access denied</div>;
+  return <div className="p-6 text-red-600 text-center">Access denied</div>;
 };
 
 const App = () => {
@@ -64,7 +61,7 @@ const App = () => {
               <Routes>
                 <Route path="/" element={<Index />} />
 
-                {/* ✅ Admin is special → only ProtectedRoute */}
+                {/* Admin */}
                 <Route
                   path="/admin-dashboard"
                   element={
@@ -74,7 +71,7 @@ const App = () => {
                   }
                 />
 
-                {/* ✅ Teacher dashboard */}
+                {/* Teacher */}
                 <Route
                   path="/teacher-dashboard"
                   element={
@@ -84,7 +81,7 @@ const App = () => {
                   }
                 />
 
-                {/* ✅ Student dashboard */}
+                {/* Student */}
                 <Route
                   path="/student-dashboard"
                   element={
@@ -94,7 +91,7 @@ const App = () => {
                   }
                 />
 
-                {/* ✅ Parent dashboard */}
+                {/* Parent */}
                 <Route
                   path="/parent-dashboard"
                   element={
@@ -104,7 +101,12 @@ const App = () => {
                   }
                 />
 
-                {/* Other routes */}
+                {/* Payments */}
+                <Route path="/payment-success" element={<PaymentSuccess />} />
+                <Route path="/payments/:regId" element={<PaymentDetails />} />
+                <Route path="/payment-cancel" element={<PaymentCancel />} />
+
+                {/* Other */}
                 <Route path="/admin-login" element={<AdminLoginForm />} />
                 <Route path="/footer" element={<Footer />} />
 

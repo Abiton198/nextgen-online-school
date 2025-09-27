@@ -1,9 +1,6 @@
 import type { Handler } from "@netlify/functions";
 import { initializeApp, cert, getApps } from "firebase-admin/app";
-import { getFirestore } from "firebase-admin/firestore";
-
-// no import fetch — Node 18+ has global fetch
-
+import { getFirestore, FieldValue } from "firebase-admin/firestore";
 
 // init Firebase Admin once
 if (!getApps().length) {
@@ -24,12 +21,14 @@ export const handler: Handler = async (event) => {
 
     const regId = params.get("m_payment_id"); // our Firestore doc ID
     const paymentStatus = params.get("payment_status"); // "COMPLETE", "FAILED", "CANCELLED"
+    const payfastRef = params.get("pf_payment_id");
+    const amount = params.get("amount_gross");
 
     if (!regId) {
       return { statusCode: 400, body: "Missing registration ID" };
     }
 
-    // 🔐 validate with PayFast (ITN validation step)
+    // 🔐 validate with PayFast
     const validationUrl = `https://${
       process.env.NODE_ENV === "production"
         ? "www.payfast.co.za"
@@ -43,7 +42,6 @@ export const handler: Handler = async (event) => {
     });
 
     const validationText = await validateRes.text();
-
     if (!validationText.includes("VALID")) {
       console.error("Invalid PayFast ITN:", validationText);
       return { statusCode: 400, body: "Invalid ITN" };
@@ -56,13 +54,16 @@ export const handler: Handler = async (event) => {
       await ref.update({
         status: "awaiting_approval",
         paymentReceived: true,
-        paymentConfirmedAt: new Date(),
+        paymentConfirmedAt: FieldValue.serverTimestamp(),
+        paidAmount: amount,
+        payfastRef,
       });
     } else {
       await ref.update({
         status: "payment_failed",
         paymentReceived: false,
-        paymentFailedAt: new Date(),
+        paymentFailedAt: FieldValue.serverTimestamp(),
+        payfastRef,
       });
     }
 
