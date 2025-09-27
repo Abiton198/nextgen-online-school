@@ -23,6 +23,8 @@ import SuspendedScreen from "./components/auth/SuspendedScreen";
 import PaymentSuccess from "./components/payments/PaymentSuccess";
 import PaymentDetails from "./components/payments/PaymentDetails";
 import PaymentCancel from "./components/payments/PaymentCancel";
+import ParentRegistration from "./components/dashboards/parent/ParentRegistration";
+import PaymentPage from "./components/payments/PaymentPage";
 
 const queryClient = new QueryClient();
 
@@ -102,8 +104,10 @@ const App = () => {
                 />
 
                 {/* Payments */}
+                <Route path="/register" element={<ParentRegistration />} />
+                <Route path="/payments/:regId" element={<PaymentPage />} />
+                <Route path="/payment-details/:regId" element={<PaymentDetails />} />
                 <Route path="/payment-success" element={<PaymentSuccess />} />
-                <Route path="/payments/:regId" element={<PaymentDetails />} />
                 <Route path="/payment-cancel" element={<PaymentCancel />} />
 
                 {/* Other */}

@@ -1,89 +1,57 @@
-import type { Handler } from "@netlify/functions";
-import crypto from "crypto";
+import { Handler } from "@netlify/functions";
 import * as admin from "firebase-admin";
 
+// Initialize Firebase Admin
 if (!admin.apps.length) {
   admin.initializeApp({
-    credential: admin.credential.applicationDefault(),
+    credential: admin.credential.cert(
+      JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY as string)
+    ),
   });
 }
+const db = admin.firestore();
 
-// Sandbox for dev, Live for production
-const PAYFAST_VALIDATE_URL =
-  process.env.NODE_ENV === "production"
-    ? "https://www.payfast.co.za/eng/query/validate"
-    : "https://sandbox.payfast.co.za/eng/query/validate";
-
-export const handler: Handler = async (event, context) => {
-  if (event.httpMethod !== "POST") {
-    return { statusCode: 405, body: "Method not allowed" };
-  }
-
+export const handler: Handler = async (event) => {
   try {
-    // 🔑 Step 1: Parse raw body
-    const rawBody = event.body || "";
-    const data: Record<string, string> = {};
-    rawBody.split("&").forEach((pair) => {
-      const [key, value] = pair.split("=");
-      if (key) data[key] = decodeURIComponent(value || "");
-    });
+    const params = new URLSearchParams(event.body || "");
+    const regId = params.get("m_payment_id");
+    const paymentStatus = params.get("payment_status");
 
-    // 🔑 Step 2: Extract and verify signature
-    const receivedSig = data["signature"];
-    delete data["signature"];
+    if (!regId) return { statusCode: 400, body: "Missing regId" };
 
-    const queryString = Object.keys(data)
-      .sort()
-      .map((key) => `${key}=${encodeURIComponent(data[key]).replace(/%20/g, "+")}`)
-      .join("&");
+    const regRef = db.collection("registrations").doc(regId);
+    const regSnap = await regRef.get();
+    if (!regSnap.exists) return { statusCode: 404, body: "Registration not found" };
 
-    const calculatedSig = crypto.createHash("md5").update(queryString).digest("hex");
-
-    if (calculatedSig !== receivedSig) {
-      console.error("❌ Invalid signature", { receivedSig, calculatedSig });
-      return { statusCode: 400, body: "Invalid signature" };
-    }
-
-    // 🔑 Step 3: Validate with PayFast server
-    const validateRes = await fetch(PAYFAST_VALIDATE_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: queryString,
-    });
-
-    const validateText = await validateRes.text();
-    if (!validateText.includes("VALID")) {
-      console.error("❌ PayFast validation failed:", validateText);
-      return { statusCode: 400, body: "Invalid PayFast validation" };
-    }
-
-    // 🔑 Step 4: Update Firestore
-    const regId = data["m_payment_id"];
-    const paymentStatus = data["payment_status"]?.trim().toUpperCase();
-    const amount = data["amount_gross"];
-    const payfastRef = data["pf_payment_id"];
+    const regData = regSnap.data();
 
     if (paymentStatus === "COMPLETE") {
-      await admin.firestore().collection("registrations").doc(regId).update({
+      // ✅ Update registration
+      await regRef.update({
         status: "awaiting_approval",
         paymentReceived: true,
-        paidAt: admin.firestore.FieldValue.serverTimestamp(),
-        paidAmount: amount,
-        payfastRef,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
-      console.log(`✅ Payment complete for ${regId}, amount: R${amount}`);
+
+      // ✅ Create student record
+      await db.collection("students").add({
+        parentId: regData?.parentId,
+        ...regData?.studentInfo,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        status: "active",
+      });
     } else {
-      await admin.firestore().collection("registrations").doc(regId).update({
+      // ❌ Payment failed
+      await regRef.update({
         status: "payment_failed",
-        lastPaymentAttempt: admin.firestore.FieldValue.serverTimestamp(),
-        payfastRef,
+        paymentReceived: false,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
-      console.warn("⚠️ Payment not complete:", data["payment_status"]);
     }
 
     return { statusCode: 200, body: "OK" };
   } catch (err) {
-    console.error("❌ Error processing ITN:", err);
-    return { statusCode: 500, body: "Internal server error" };
+    console.error("PayFast notify error:", err);
+    return { statusCode: 500, body: "Server error" };
   }
 };
