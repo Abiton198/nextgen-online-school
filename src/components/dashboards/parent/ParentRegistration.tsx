@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   Card,
   CardContent,
@@ -19,36 +19,28 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ArrowLeft, UserPlus, GraduationCap } from "lucide-react";
 import { db } from "@/lib/firebaseConfig";
-import { collection, doc, setDoc, updateDoc } from "firebase/firestore";
-import { redirectToPayfast } from "@/lib/payfast";
+import { addDoc, collection, serverTimestamp } from "firebase/firestore";
+import { useAuth } from "@/components/auth/AuthProvider";
 
 interface ParentRegistrationProps {
   onBack: () => void;
 }
 
-export const ParentRegistration: React.FC<ParentRegistrationProps> = ({
-  onBack,
-}) => {
+export const ParentRegistration: React.FC<ParentRegistrationProps> = ({ onBack }) => {
+  const { user } = useAuth();
+
   const [parentData, setParentData] = useState({
     firstName: "",
     lastName: "",
-    email: "",
+    email: user?.email || "",
     phone: "",
-    idNumber: "",
-    address: "",
-    occupation: "",
   });
 
   const [learnerData, setLearnerData] = useState({
     firstName: "",
     lastName: "",
-    idNumber: "",
     dateOfBirth: "",
     grade: "",
-    previousSchool: "",
-    medicalInfo: "",
-    emergencyContact: "",
-    emergencyPhone: "",
   });
 
   const [paymentPurpose, setPaymentPurpose] =
@@ -56,7 +48,6 @@ export const ParentRegistration: React.FC<ParentRegistrationProps> = ({
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitMessage, setSubmitMessage] = useState("");
-
   const [registrationId, setRegistrationId] = useState<string | null>(null);
 
   const handleParentChange = (field: string, value: string) => {
@@ -72,74 +63,33 @@ export const ParentRegistration: React.FC<ParentRegistrationProps> = ({
     setIsSubmitting(true);
 
     try {
-      const regId = `reg_${Date.now()}`;
-      const registrationRequest = {
-        id: regId,
+      // 1. Save registration in Firestore
+      const regRef = await addDoc(collection(db, "registrations"), {
+        parentId: user?.uid,
+        submittedBy: user?.email,
         parentData,
         learnerData,
         status: "pending",
         paymentReceived: false,
-        submittedAt: new Date().toISOString(),
-        submittedBy: parentData.email,
-      };
+        createdAt: serverTimestamp(),
+      });
 
-      const ref = doc(collection(db, "registrations"), regId);
-      await setDoc(ref, registrationRequest);
-      setRegistrationId(regId);
-
-      setSubmitMessage(
-        "✅ Registration submitted! Redirecting to PayFast checkout..."
-      );
-
-      setTimeout(() => {
-        redirectToPayfast({
-          registrationId: regId,
-          parent: {
-            firstName: parentData.firstName,
-            lastName: parentData.lastName,
-            email: parentData.email,
-          },
-          purpose: paymentPurpose,
-        });
-      }, 2000);
+      setRegistrationId(regRef.id);
+      setSubmitMessage("✅ Registration saved! Please proceed with payment below.");
     } catch (error) {
-      console.error(error);
+      console.error("Error saving registration:", error);
       setSubmitMessage("❌ Registration failed. Please try again.");
     }
 
     setIsSubmitting(false);
   };
 
-  // 🔹 Listen for PayFast return notification
-  useEffect(() => {
-    const handlePaymentMessage = async (event: MessageEvent) => {
-      if (event.data?.type === "PAYFAST_PAYMENT_SUCCESS" && registrationId) {
-        try {
-          const ref = doc(db, "registrations", registrationId);
-          await updateDoc(ref, { paymentReceived: true, status: "submitted" });
-          setSubmitMessage("✅ Payment confirmed! Registration completed.");
-        } catch (err) {
-          console.error("Error updating payment:", err);
-        }
-      }
-    };
-
-    window.addEventListener("message", handlePaymentMessage);
-    return () => {
-      window.removeEventListener("message", handlePaymentMessage);
-    };
-  }, [registrationId]);
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
       <Card className="w-full max-w-4xl">
         <CardHeader className="text-center">
           <div className="flex items-center justify-between mb-4">
-            <Button
-              variant="ghost"
-              onClick={onBack}
-              className="flex items-center gap-2"
-            >
+            <Button variant="ghost" onClick={onBack} className="flex items-center gap-2">
               <ArrowLeft className="w-4 h-4" />
               Back
             </Button>
@@ -165,150 +115,139 @@ export const ParentRegistration: React.FC<ParentRegistrationProps> = ({
             </Alert>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-8">
-            {/* Parent Info */}
-            <div className="border rounded-lg p-6 bg-blue-50">
-              <div className="flex items-center gap-2 mb-4">
-                <UserPlus className="w-5 h-5 text-blue-600" />
-                <h3 className="text-lg font-semibold text-gray-900">
-                  Parent Information
-                </h3>
+          {!registrationId ? (
+            // Registration form
+            <form onSubmit={handleSubmit} className="space-y-8">
+              {/* Parent Info */}
+              <div className="border rounded-lg p-6 bg-blue-50">
+                <h3 className="text-lg font-semibold mb-4">Parent Information</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Input
+                    placeholder="First Name *"
+                    value={parentData.firstName}
+                    onChange={(e) => handleParentChange("firstName", e.target.value)}
+                    required
+                  />
+                  <Input
+                    placeholder="Last Name *"
+                    value={parentData.lastName}
+                    onChange={(e) => handleParentChange("lastName", e.target.value)}
+                    required
+                  />
+                  <Input
+                    placeholder="Email *"
+                    type="email"
+                    value={parentData.email}
+                    onChange={(e) => handleParentChange("email", e.target.value)}
+                    required
+                  />
+                  <Input
+                    placeholder="Phone *"
+                    value={parentData.phone}
+                    onChange={(e) => handleParentChange("phone", e.target.value)}
+                    required
+                  />
+                </div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Input
-                  placeholder="First Name *"
-                  value={parentData.firstName}
-                  onChange={(e) =>
-                    handleParentChange("firstName", e.target.value)
-                  }
-                  required
-                />
-                <Input
-                  placeholder="Last Name *"
-                  value={parentData.lastName}
-                  onChange={(e) =>
-                    handleParentChange("lastName", e.target.value)
-                  }
-                  required
-                />
-                <Input
-                  placeholder="Email *"
-                  type="email"
-                  value={parentData.email}
-                  onChange={(e) => handleParentChange("email", e.target.value)}
-                  required
-                />
-                <Input
-                  placeholder="Phone *"
-                  value={parentData.phone}
-                  onChange={(e) => handleParentChange("phone", e.target.value)}
-                  required
-                />
-              </div>
-            </div>
 
-            {/* Learner Info */}
-            <div className="border rounded-lg p-6 bg-green-50">
-              <div className="flex items-center gap-2 mb-4">
-                <GraduationCap className="w-5 h-5 text-green-600" />
-                <h3 className="text-lg font-semibold text-gray-900">
-                  Learner Information
-                </h3>
+              {/* Learner Info */}
+              <div className="border rounded-lg p-6 bg-green-50">
+                <h3 className="text-lg font-semibold mb-4">Learner Information</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Input
+                    placeholder="First Name *"
+                    value={learnerData.firstName}
+                    onChange={(e) => handleLearnerChange("firstName", e.target.value)}
+                    required
+                  />
+                  <Input
+                    placeholder="Last Name *"
+                    value={learnerData.lastName}
+                    onChange={(e) => handleLearnerChange("lastName", e.target.value)}
+                    required
+                  />
+                  <Input
+                    type="date"
+                    value={learnerData.dateOfBirth}
+                    onChange={(e) => handleLearnerChange("dateOfBirth", e.target.value)}
+                    required
+                  />
+                  <Select
+                    value={learnerData.grade}
+                    onValueChange={(v) => handleLearnerChange("grade", v)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select Grade" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="8">Grade 8</SelectItem>
+                      <SelectItem value="9">Grade 9</SelectItem>
+                      <SelectItem value="10">Grade 10</SelectItem>
+                      <SelectItem value="11">Grade 11</SelectItem>
+                      <SelectItem value="12">Grade 12</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Input
-                  placeholder="First Name *"
-                  value={learnerData.firstName}
-                  onChange={(e) =>
-                    handleLearnerChange("firstName", e.target.value)
-                  }
-                  required
-                />
-                <Input
-                  placeholder="Last Name *"
-                  value={learnerData.lastName}
-                  onChange={(e) =>
-                    handleLearnerChange("lastName", e.target.value)
-                  }
-                  required
-                />
-                <Input
-                  type="date"
-                  value={learnerData.dateOfBirth}
-                  onChange={(e) =>
-                    handleLearnerChange("dateOfBirth", e.target.value)
-                  }
-                  required
-                />
+
+              {/* Payment Purpose */}
+              <div className="border rounded-lg p-6 bg-yellow-50">
+                <Label>Payment Type</Label>
                 <Select
-                  value={learnerData.grade}
-                  onValueChange={(v) => handleLearnerChange("grade", v)}
+                  value={paymentPurpose}
+                  onValueChange={(value: "registration" | "fees" | "other") =>
+                    setPaymentPurpose(value)
+                  }
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select Grade" />
+                    <SelectValue placeholder="Select Payment Type" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="8">Grade 8</SelectItem>
-                    <SelectItem value="9">Grade 9</SelectItem>
-                    <SelectItem value="10">Grade 10</SelectItem>
-                    <SelectItem value="11">Grade 11</SelectItem>
-                    <SelectItem value="12">Grade 12</SelectItem>
+                    <SelectItem value="registration">Registration Fee</SelectItem>
+                    <SelectItem value="fees">Tuition Fees</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-            </div>
 
-            {/* Payment Purpose */}
-            <div className="border rounded-lg p-6 bg-yellow-50">
-              <Label>Payment Type</Label>
-              <Select
-                value={paymentPurpose}
-                onValueChange={(value: "registration" | "fees" | "other") =>
-                  setPaymentPurpose(value)
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select Payment Type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="registration">Registration Fee</SelectItem>
-                  <SelectItem value="fees">Tuition Fees</SelectItem>
-                  <SelectItem value="other">Other</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+              {/* Declaration */}
+              <div className="border rounded-lg p-6 bg-red-50">
+                <Label className="font-semibold">Declaration</Label>
+                <label className="flex items-center gap-2 mt-2">
+                  <input type="checkbox" required className="w-4 h-4" />
+                  <span>I confirm I meet the minimum enrolment requirements</span>
+                </label>
+              </div>
 
-            {/* Declaration */}
-            <div className="border rounded-lg p-6 bg-red-50">
-              <Label className="font-semibold">
-                Declaration (must agree before submitting)
-              </Label>
-              <ul className="list-disc pl-6 text-sm text-gray-700 mb-3">
-                <li>Stable internet connection</li>
-                <li>Working computer + backup PC</li>
-                <li>Uninterrupted power supply</li>
-                <li>Working camera to view child environment</li>
-                <li>
-                  Ability to set up a bank debit order for tuition fees
-                </li>
-              </ul>
-              <label className="flex items-center gap-2">
-                <input type="checkbox" required className="w-4 h-4" />
-                <span>
-                  I hereby declare that I meet the minimum enrolment
-                  requirements
-                </span>
-              </label>
-            </div>
-
-            <Button
-              type="submit"
-              className="w-full bg-blue-600 hover:bg-blue-700"
-              disabled={isSubmitting}
+              <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700" disabled={isSubmitting}>
+                {isSubmitting ? "Submitting..." : "Save Registration"}
+              </Button>
+            </form>
+          ) : (
+            // Show PayFast Button after registration is saved
+            <form
+              action="https://www.payfast.co.za/eng/process"
+              method="POST"
             >
-              {isSubmitting ? "Submitting..." : "Submit & Pay"}
-            </Button>
-          </form>
+              <input type="hidden" name="merchant_id" value={process.env.NEXT_PUBLIC_PAYFAST_MERCHANT_ID} />
+              <input type="hidden" name="merchant_key" value={process.env.NEXT_PUBLIC_PAYFAST_MERCHANT_KEY} />
+              <input type="hidden" name="return_url" value={`${window.location.origin}/payment-success?regId=${registrationId}`} />
+              <input type="hidden" name="cancel_url" value={`${window.location.origin}/payment-cancel`} />
+              <input type="hidden" name="notify_url" value={`${window.location.origin}/api/payfast-notify`} />
+
+              <input type="hidden" name="name_first" value={parentData.firstName} />
+              <input type="hidden" name="name_last" value={parentData.lastName} />
+              <input type="hidden" name="email_address" value={parentData.email} />
+
+              <input type="hidden" name="m_payment_id" value={registrationId} />
+              <input type="hidden" name="amount" value={paymentPurpose === "registration" ? "1000.00" : paymentPurpose === "fees" ? "2850.00" : "100.00"} />
+              <input type="hidden" name="item_name" value={paymentPurpose === "registration" ? "Registration Fee" : paymentPurpose === "fees" ? "Tuition Fees" : "Other Payment"} />
+
+              <Button type="submit" className="w-full bg-green-600 hover:bg-green-700 mt-4">
+                Pay Now with PayFast
+              </Button>
+            </form>
+          )}
         </CardContent>
       </Card>
     </div>

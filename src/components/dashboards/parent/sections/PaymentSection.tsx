@@ -1,17 +1,36 @@
 "use client";
 import { useState } from "react";
+import { db } from "@/lib/firebaseConfig";
+import { addDoc, collection, serverTimestamp } from "firebase/firestore";
+import { useAuth } from "@/components/auth/AuthProvider";
 
 export default function PaymentsSection() {
+  const { user } = useAuth();
+
   const [purpose, setPurpose] = useState<
     "registration" | "fees" | "donation" | "event" | "other"
   >("fees");
   const [amount, setAmount] = useState<string>("");
   const [customName, setCustomName] = useState<string>("");
+  const [loading, setLoading] = useState(false);
 
   const handleCheckout = async () => {
-    const regId = `reg_${Date.now()}`;
+    setLoading(true);
 
     try {
+      // 1. Create a Firestore payment record
+      const regRef = await addDoc(collection(db, "registrations"), {
+        parentId: user?.uid,
+        submittedBy: user?.email,
+        purpose,
+        customAmount: amount || null,
+        itemName: customName || null,
+        status: "pending",
+        paymentReceived: false,
+        createdAt: serverTimestamp(),
+      });
+
+      // 2. Call backend API to get PayFast redirect URL
       const res = await fetch("/api/payfast-initiate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -19,18 +38,26 @@ export default function PaymentsSection() {
           purpose,
           customAmount: amount,
           itemName: customName,
-          regId,
-          parent: { firstName: "Parent", lastName: "User", email: "parent@example.com" },
+          regId: regRef.id, // important: use Firestore doc ID
+          parent: {
+            firstName: user?.displayName?.split(" ")[0] || "Parent",
+            lastName: user?.displayName?.split(" ")[1] || "User",
+            email: user?.email || "parent@example.com",
+          },
         }),
       });
 
       if (!res.ok) throw new Error("Failed to initiate PayFast");
 
       const { redirectUrl } = await res.json();
-      window.location.href = redirectUrl; // redirect to PayFast
+
+      // 3. Redirect parent to PayFast
+      window.location.href = redirectUrl;
     } catch (err) {
       console.error(err);
       alert("Could not start payment. Please try again.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -72,7 +99,7 @@ export default function PaymentsSection() {
         {/* Amount */}
         <div>
           <label className="block text-sm text-gray-600">
-            Amount (ZAR) – leave blank to use default
+            Amount (ZAR) {purpose !== "registration" && purpose !== "fees" && "(required)"}
           </label>
           <input
             type="number"
@@ -81,6 +108,7 @@ export default function PaymentsSection() {
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             className="w-full border rounded p-2 mt-1"
+            required={purpose !== "registration" && purpose !== "fees"}
           />
         </div>
 
@@ -101,9 +129,12 @@ export default function PaymentsSection() {
         {/* Checkout */}
         <button
           onClick={handleCheckout}
-          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 rounded"
+          disabled={loading}
+          className={`w-full ${
+            loading ? "bg-gray-400" : "bg-blue-600 hover:bg-blue-700"
+          } text-white font-semibold py-2 rounded`}
         >
-          Checkout with PayFast
+          {loading ? "Processing..." : "Checkout with PayFast"}
         </button>
       </div>
     </div>
