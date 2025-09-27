@@ -1,8 +1,7 @@
 import type { Handler } from "@netlify/functions";
 import { initializeApp, cert, getApps } from "firebase-admin/app";
-import { getFirestore, FieldValue } from "firebase-admin/firestore";
+import { getFirestore } from "firebase-admin/firestore";
 
-// init Firebase Admin once
 if (!getApps().length) {
   initializeApp({
     credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY || "{}")),
@@ -16,60 +15,49 @@ export const handler: Handler = async (event) => {
   }
 
   try {
-    const rawBody = event.body || "";
-    const params = new URLSearchParams(rawBody);
-
-    const regId = params.get("m_payment_id"); // our Firestore doc ID
-    const paymentStatus = params.get("payment_status"); // "COMPLETE", "FAILED", "CANCELLED"
-    const payfastRef = params.get("pf_payment_id");
-    const amount = params.get("amount_gross");
-
+    const { regId } = JSON.parse(event.body || "{}");
     if (!regId) {
-      return { statusCode: 400, body: "Missing registration ID" };
+      return { statusCode: 400, body: "Missing regId" };
     }
 
-    // 🔐 validate with PayFast
-    const validationUrl = `https://${
-      process.env.NODE_ENV === "production"
-        ? "www.payfast.co.za"
-        : "sandbox.payfast.co.za"
-    }/eng/query/validate`;
+    // 🔎 Fetch registration doc
+    const ref = db.collection("registrations").doc(regId);
+    const snap = await ref.get();
+    if (!snap.exists) {
+      return { statusCode: 404, body: "Registration not found" };
+    }
+    const registration = snap.data();
 
-    const validateRes = await fetch(validationUrl, {
-      method: "POST",
-      body: rawBody,
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    // ✅ Always use trusted Firestore values
+    const amount = registration?.fees || "2000.00";
+    const parent = registration?.parent || {};
+    const itemName = registration?.purpose || "Tuition Fees";
+
+    const payfastUrl =
+      process.env.NODE_ENV === "production"
+        ? "https://www.payfast.co.za/eng/process"
+        : "https://sandbox.payfast.co.za/eng/process";
+
+    const params = new URLSearchParams({
+      merchant_id: process.env.PAYFAST_MERCHANT_ID || "",
+      merchant_key: process.env.PAYFAST_MERCHANT_KEY || "",
+      return_url: `${process.env.SITE_URL}/payment-success?regId=${regId}`,
+      cancel_url: `${process.env.SITE_URL}/payment-cancel`,
+      notify_url: `${process.env.SITE_URL}/.netlify/functions/payfast-notify`,
+      name_first: parent.firstName || "Parent",
+      name_last: parent.lastName || "",
+      email_address: parent.email || "",
+      m_payment_id: regId,
+      amount: amount,
+      item_name: itemName,
     });
 
-    const validationText = await validateRes.text();
-    if (!validationText.includes("VALID")) {
-      console.error("Invalid PayFast ITN:", validationText);
-      return { statusCode: 400, body: "Invalid ITN" };
-    }
-
-    // 🔄 update Firestore
-    const ref = db.collection("registrations").doc(regId);
-
-    if (paymentStatus === "COMPLETE") {
-      await ref.update({
-        status: "awaiting_approval",
-        paymentReceived: true,
-        paymentConfirmedAt: FieldValue.serverTimestamp(),
-        paidAmount: amount,
-        payfastRef,
-      });
-    } else {
-      await ref.update({
-        status: "payment_failed",
-        paymentReceived: false,
-        paymentFailedAt: FieldValue.serverTimestamp(),
-        payfastRef,
-      });
-    }
-
-    return { statusCode: 200, body: "OK" };
+    return {
+      statusCode: 200,
+      body: JSON.stringify({ url: `${payfastUrl}?${params.toString()}` }),
+    };
   } catch (err) {
-    console.error("payfast-notify error:", err);
+    console.error("payfast-initiate error:", err);
     return { statusCode: 500, body: "Internal server error" };
   }
 };

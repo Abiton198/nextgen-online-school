@@ -41,24 +41,26 @@ const PaymentDetails: React.FC = () => {
     fetchData();
   }, [regId]);
 
-  const handleRetry = async () => {
-    if (!regId || !registration) return;
-    setRetrying(true);
-    try {
-      const res = await fetch("/.netlify/functions/payfast-initiate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ regId }),
-      });
-      const { url } = await res.json();
-      window.location.href = url; // redirect to PayFast
-    } catch (err) {
-      console.error("Retry error:", err);
-      alert("Error retrying payment. Please try again.");
-    } finally {
-      setRetrying(false);
-    }
-  };
+ const handleRetry = async () => {
+  if (!regId) return;
+  setRetrying(true);
+  try {
+    const res = await fetch("/.netlify/functions/payfast-initiate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ regId }),  // 👈 Only send the existing doc ID
+    });
+    if (!res.ok) throw new Error("Failed to initiate PayFast");
+    const { url } = await res.json();
+    window.location.href = url;
+  } catch (err) {
+    console.error("Retry error:", err);
+    alert("Error retrying payment. Please try again.");
+  } finally {
+    setRetrying(false);
+  }
+};
+
 
   if (loading) return <div className="p-6">Loading...</div>;
   if (error) return <div className="p-6 text-red-600">{error}</div>;
