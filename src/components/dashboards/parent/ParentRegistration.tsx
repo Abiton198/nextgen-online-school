@@ -17,9 +17,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { ArrowLeft, UserPlus, GraduationCap } from "lucide-react";
+import { ArrowLeft, GraduationCap } from "lucide-react";
 import { db } from "@/lib/firebaseConfig";
-import { addDoc, collection, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { useAuth } from "@/components/auth/AuthProvider";
 
 interface ParentRegistrationProps {
@@ -29,6 +29,7 @@ interface ParentRegistrationProps {
 export const ParentRegistration: React.FC<ParentRegistrationProps> = ({ onBack }) => {
   const { user } = useAuth();
 
+  // Local state for form fields
   const [parentData, setParentData] = useState({
     firstName: "",
     lastName: "",
@@ -50,6 +51,7 @@ export const ParentRegistration: React.FC<ParentRegistrationProps> = ({ onBack }
   const [submitMessage, setSubmitMessage] = useState("");
   const [registrationId, setRegistrationId] = useState<string | null>(null);
 
+  // Handlers for form inputs
   const handleParentChange = (field: string, value: string) => {
     setParentData((prev) => ({ ...prev, [field]: value }));
   };
@@ -58,15 +60,19 @@ export const ParentRegistration: React.FC<ParentRegistrationProps> = ({ onBack }
     setLearnerData((prev) => ({ ...prev, [field]: value }));
   };
 
+  // Save registration to Firestore with UID as the document ID
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
 
     try {
-      // 1. Save registration in Firestore
-      const regRef = await addDoc(collection(db, "registrations"), {
-        parentId: user?.uid,
-        submittedBy: user?.email,
+      if (!user) throw new Error("User not authenticated");
+
+      const regId = user.uid; // use UID as registrationId
+
+      await setDoc(doc(db, "registrations", regId), {
+        parentId: user.uid,
+        submittedBy: user.email,
         parentData,
         learnerData,
         status: "pending",
@@ -74,7 +80,7 @@ export const ParentRegistration: React.FC<ParentRegistrationProps> = ({ onBack }
         createdAt: serverTimestamp(),
       });
 
-      setRegistrationId(regRef.id);
+      setRegistrationId(regId);
       setSubmitMessage("✅ Registration saved! Please proceed with payment below.");
     } catch (error) {
       console.error("Error saving registration:", error);
@@ -89,7 +95,11 @@ export const ParentRegistration: React.FC<ParentRegistrationProps> = ({ onBack }
       <Card className="w-full max-w-4xl">
         <CardHeader className="text-center">
           <div className="flex items-center justify-between mb-4">
-            <Button variant="ghost" onClick={onBack} className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              onClick={onBack}
+              className="flex items-center gap-2"
+            >
               <ArrowLeft className="w-4 h-4" />
               Back
             </Button>
@@ -107,6 +117,7 @@ export const ParentRegistration: React.FC<ParentRegistrationProps> = ({ onBack }
         </CardHeader>
 
         <CardContent>
+          {/* Show success/error messages */}
           {submitMessage && (
             <Alert className="mb-6 border-green-200 bg-green-50">
               <AlertDescription className="text-green-800">
@@ -116,7 +127,7 @@ export const ParentRegistration: React.FC<ParentRegistrationProps> = ({ onBack }
           )}
 
           {!registrationId ? (
-            // Registration form
+            // ---------------- Registration Form ----------------
             <form onSubmit={handleSubmit} className="space-y-8">
               {/* Parent Info */}
               <div className="border rounded-lg p-6 bg-blue-50">
@@ -125,13 +136,17 @@ export const ParentRegistration: React.FC<ParentRegistrationProps> = ({ onBack }
                   <Input
                     placeholder="First Name *"
                     value={parentData.firstName}
-                    onChange={(e) => handleParentChange("firstName", e.target.value)}
+                    onChange={(e) =>
+                      handleParentChange("firstName", e.target.value)
+                    }
                     required
                   />
                   <Input
                     placeholder="Last Name *"
                     value={parentData.lastName}
-                    onChange={(e) => handleParentChange("lastName", e.target.value)}
+                    onChange={(e) =>
+                      handleParentChange("lastName", e.target.value)
+                    }
                     required
                   />
                   <Input
@@ -157,19 +172,25 @@ export const ParentRegistration: React.FC<ParentRegistrationProps> = ({ onBack }
                   <Input
                     placeholder="First Name *"
                     value={learnerData.firstName}
-                    onChange={(e) => handleLearnerChange("firstName", e.target.value)}
+                    onChange={(e) =>
+                      handleLearnerChange("firstName", e.target.value)
+                    }
                     required
                   />
                   <Input
                     placeholder="Last Name *"
                     value={learnerData.lastName}
-                    onChange={(e) => handleLearnerChange("lastName", e.target.value)}
+                    onChange={(e) =>
+                      handleLearnerChange("lastName", e.target.value)
+                    }
                     required
                   />
                   <Input
                     type="date"
                     value={learnerData.dateOfBirth}
-                    onChange={(e) => handleLearnerChange("dateOfBirth", e.target.value)}
+                    onChange={(e) =>
+                      handleLearnerChange("dateOfBirth", e.target.value)
+                    }
                     required
                   />
                   <Select
@@ -219,31 +240,75 @@ export const ParentRegistration: React.FC<ParentRegistrationProps> = ({ onBack }
                 </label>
               </div>
 
-              <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700" disabled={isSubmitting}>
+              <Button
+                type="submit"
+                className="w-full bg-blue-600 hover:bg-blue-700"
+                disabled={isSubmitting}
+              >
                 {isSubmitting ? "Submitting..." : "Save Registration"}
               </Button>
             </form>
           ) : (
-            // Show PayFast Button after registration is saved
-            <form
-              action="https://www.payfast.co.za/eng/process"
-              method="POST"
-            >
-              <input type="hidden" name="merchant_id" value={process.env.NEXT_PUBLIC_PAYFAST_MERCHANT_ID} />
-              <input type="hidden" name="merchant_key" value={process.env.NEXT_PUBLIC_PAYFAST_MERCHANT_KEY} />
-              <input type="hidden" name="return_url" value={`${window.location.origin}/payment-success?regId=${registrationId}`} />
-              <input type="hidden" name="cancel_url" value={`${window.location.origin}/payment-cancel`} />
-              <input type="hidden" name="notify_url" value={`${window.location.origin}/api/payfast-notify`} />
+            // ---------------- Payment Form ----------------
+            <form action="https://www.payfast.co.za/eng/process" method="POST">
+              <input
+                type="hidden"
+                name="merchant_id"
+                value={process.env.NEXT_PUBLIC_PAYFAST_MERCHANT_ID}
+              />
+              <input
+                type="hidden"
+                name="merchant_key"
+                value={process.env.NEXT_PUBLIC_PAYFAST_MERCHANT_KEY}
+              />
+              <input
+                type="hidden"
+                name="return_url"
+                value={`${window.location.origin}/payment-success?regId=${registrationId}`}
+              />
+              <input
+                type="hidden"
+                name="cancel_url"
+                value={`${window.location.origin}/payment-cancel`}
+              />
+              <input
+                type="hidden"
+                name="notify_url"
+                value={`${window.location.origin}/api/payfast-notify`}
+              />
 
               <input type="hidden" name="name_first" value={parentData.firstName} />
               <input type="hidden" name="name_last" value={parentData.lastName} />
               <input type="hidden" name="email_address" value={parentData.email} />
 
               <input type="hidden" name="m_payment_id" value={registrationId} />
-              <input type="hidden" name="amount" value={paymentPurpose === "registration" ? "1000.00" : paymentPurpose === "fees" ? "2850.00" : "100.00"} />
-              <input type="hidden" name="item_name" value={paymentPurpose === "registration" ? "Registration Fee" : paymentPurpose === "fees" ? "Tuition Fees" : "Other Payment"} />
+              <input
+                type="hidden"
+                name="amount"
+                value={
+                  paymentPurpose === "registration"
+                    ? "1000.00"
+                    : paymentPurpose === "fees"
+                    ? "2850.00"
+                    : "100.00"
+                }
+              />
+              <input
+                type="hidden"
+                name="item_name"
+                value={
+                  paymentPurpose === "registration"
+                    ? "Registration Fee"
+                    : paymentPurpose === "fees"
+                    ? "Tuition Fees"
+                    : "Other Payment"
+                }
+              />
 
-              <Button type="submit" className="w-full bg-green-600 hover:bg-green-700 mt-4">
+              <Button
+                type="submit"
+                className="w-full bg-green-600 hover:bg-green-700 mt-4"
+              >
                 Pay Now with PayFast
               </Button>
             </form>
