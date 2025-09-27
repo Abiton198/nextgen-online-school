@@ -4,7 +4,7 @@ import {
   sendPasswordResetEmail,
   createUserWithEmailAndPassword,
 } from "firebase/auth";
-import { doc, setDoc } from "firebase/firestore";
+import { doc, setDoc, collection } from "firebase/firestore";
 import { app, db } from "@/lib/firebaseConfig";
 
 const functions = getFunctions(app, "us-central1");
@@ -118,6 +118,7 @@ export async function resetUserPassword(email: string) {
 
 /**
  * Parent signup (self-service).
+ * Creates both parent doc and initial registration doc.
  */
 export async function signupParent(
   email: string,
@@ -131,14 +132,33 @@ export async function signupParent(
 ) {
   const auth = getAuth(app);
   const userCred = await createUserWithEmailAndPassword(auth, email, password);
+  const uid = userCred.user.uid;
 
-  await setDoc(doc(db, "parents", userCred.user.uid), {
-    uid: userCred.user.uid,
+  // 1️⃣ Create parent record
+  await setDoc(doc(db, "parents", uid), {
+    uid,
     email,
     role: ROLES.PARENT,
     ...parentData,
     createdAt: new Date().toISOString(),
   });
+
+  // 2️⃣ Create linked registration doc
+  const regRef = doc(collection(db, "registrations"));
+  await setDoc(regRef, {
+    parentId: uid,
+    purpose: "fees",
+    status: "payment_pending",
+    paymentReceived: false,
+    createdAt: new Date().toISOString(),
+  });
+
+  // 3️⃣ Save regId reference in parent doc
+  await setDoc(
+    doc(db, "parents", uid),
+    { registrationId: regRef.id },
+    { merge: true }
+  );
 
   return userCred.user;
 }

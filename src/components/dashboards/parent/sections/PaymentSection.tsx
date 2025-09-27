@@ -1,7 +1,7 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { db } from "@/lib/firebaseConfig";
-import { addDoc, collection, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 import { useAuth } from "@/components/auth/AuthProvider";
 
 export default function PaymentsSection() {
@@ -11,49 +11,46 @@ export default function PaymentsSection() {
   const [amount, setAmount] = useState("");
   const [customName, setCustomName] = useState("");
   const [loading, setLoading] = useState(false);
+  const [regId, setRegId] = useState<string | null>(null);
+
+  // 🔎 Fetch parent registrationId at mount
+  useEffect(() => {
+    const fetchRegId = async () => {
+      if (!user?.uid) return;
+      const parentRef = doc(db, "parents", user.uid);
+      const snap = await getDoc(parentRef);
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data.registrationId) {
+          setRegId(data.registrationId);
+        }
+      }
+    };
+    fetchRegId();
+  }, [user]);
 
   const handleCheckout = async () => {
     if (!user?.uid) {
       alert("Please sign in first.");
       return;
     }
+    if (!regId) {
+      alert("No registration found for this parent.");
+      return;
+    }
 
     setLoading(true);
     try {
-      // 1) create a registration/payment doc you own (parentId == uid)
-      const regRef = await addDoc(collection(db, "registrations"), {
-        parentId: user.uid,
-        submittedBy: user.email || null,
-        purpose,
-        customAmount: amount ? Number(amount) : null,
-        itemName: customName || null,
-        status: "payment_pending",
-        paymentReceived: false,
-        createdAt: serverTimestamp(),
-      });
-
-      // 2) ask server for PayFast redirect URL
       const resp = await fetch("/.netlify/functions/payfast-initiate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          purpose,
-          customAmount: amount || undefined,
-          itemName: customName || undefined,
-          regId: regRef.id,
-          parent: {
-            firstName: user.displayName?.split(" ")[0] || "Parent",
-            lastName: user.displayName?.split(" ").slice(1).join(" ") || "User",
-            email: user.email || "",
-          },
-        }),
+        body: JSON.stringify({ regId }), // ✅ only pass regId
       });
 
       if (!resp.ok) throw new Error("Failed to initiate PayFast");
-      const { redirectUrl } = await resp.json();
+      const { url } = await resp.json();
 
-      // 3) redirect to PayFast
-      window.location.href = redirectUrl;
+      window.location.href = url;
     } catch (err) {
       console.error(err);
       alert("Could not start payment. Please try again.");
@@ -123,7 +120,7 @@ export default function PaymentsSection() {
 
         <button
           onClick={handleCheckout}
-          disabled={loading}
+          disabled={loading || !regId}
           className={`w-full ${loading ? "bg-gray-400" : "bg-blue-600 hover:bg-blue-700"} text-white font-semibold py-2 rounded`}
         >
           {loading ? "Processing..." : "Checkout with PayFast"}

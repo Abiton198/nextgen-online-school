@@ -26,13 +26,15 @@ import { getAuth } from "firebase/auth";
 import { signupParent, signupTeacher } from "@/lib/firebaseFunctions";
 
 export const LoginForm: React.FC = () => {
-  const { login, loginWithGoogle } = useAuth(); // no more signup here
+  const { login, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
   const auth = getAuth();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState<"principal" | "teacher" | "parent" | "student">("parent");
+  const [role, setRole] = useState<
+    "principal" | "teacher" | "parent" | "student"
+  >("parent");
   const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -40,7 +42,13 @@ export const LoginForm: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
 
   // ---------- Student-specific ----------
-  const [grades] = useState(["Grade 8", "Grade 9", "Grade 10", "Grade 11", "Grade 12"]);
+  const [grades] = useState([
+    "Grade 8",
+    "Grade 9",
+    "Grade 10",
+    "Grade 11",
+    "Grade 12",
+  ]);
   const [selectedGrade, setSelectedGrade] = useState("");
   const [students, setStudents] = useState<any[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState("");
@@ -72,7 +80,7 @@ export const LoginForm: React.FC = () => {
   useEffect(() => {
     if (role === "student" && selectedGrade) {
       const fetchStudents = async () => {
-        const q = collection(db, "students"); // ✅ only approved students
+        const q = collection(db, "students");
         const snapshot = await getDocs(q);
         const list: any[] = [];
         snapshot.forEach((docSnap) => {
@@ -100,7 +108,9 @@ export const LoginForm: React.FC = () => {
         const studentSnap = await getDoc(studentRef);
 
         if (!studentSnap.exists()) {
-          throw new Error("No student record found. Contact your parent or principal.");
+          throw new Error(
+            "No student record found. Contact your parent or principal."
+          );
         }
 
         const studentData = studentSnap.data();
@@ -115,7 +125,6 @@ export const LoginForm: React.FC = () => {
         return;
       }
 
-      // ---------- Teacher login ----------
       if (role === "teacher") {
         const cred = await login(email, password);
         const uid = cred.user.uid;
@@ -132,7 +141,6 @@ export const LoginForm: React.FC = () => {
         return;
       }
 
-      // ---------- Parent / Principal login ----------
       const cred = await login(email, password);
       const uid = cred.user.uid;
       const snap = await getDoc(doc(db, `${role}s`, uid));
@@ -155,7 +163,6 @@ export const LoginForm: React.FC = () => {
       setError("Students cannot sign up. Please ask your parent to register you.");
       return;
     }
-
     if (role === "principal") {
       setError("Principals cannot self-register. Contact admin.");
       return;
@@ -166,17 +173,20 @@ export const LoginForm: React.FC = () => {
 
     try {
       if (role === "parent") {
-        await signupParent(email, password, { firstName: name, lastName: "" });
-
-        // ✅ Directly go to dashboard (already signed in)
+        await signupParent(email, password, {
+          firstName: name,
+          lastName: "",
+        });
         navigate("/parent-dashboard");
       }
 
       if (role === "teacher") {
-        await signupTeacher(email, password, { name, subject: selectedSubject || null });
-
+        await signupTeacher(email, password, {
+          name,
+          subject: selectedSubject || null,
+        });
         alert("Your teacher account is pending approval by the principal.");
-        navigate("/"); // redirect home
+        navigate("/");
       }
     } catch (err: any) {
       setError(err.message);
@@ -194,26 +204,28 @@ export const LoginForm: React.FC = () => {
       const loggedUser = await loginWithGoogle();
       const uid = loggedUser.uid;
 
-      // ---------- Student Google Signin ----------
       if (role === "student") {
         if (!selectedStudentId) throw new Error("Please select your name.");
         const studentRef = doc(db, "students", selectedStudentId);
         const studentSnap = await getDoc(studentRef);
 
         if (!studentSnap.exists()) {
-          throw new Error("No student record found. Contact your parent or principal.");
+          throw new Error(
+            "No student record found. Contact your parent or principal."
+          );
         }
 
         const studentData = studentSnap.data();
         if (loggedUser.email !== studentData.email) {
-          throw new Error("Google account mismatch. Use the email registered by your parent.");
+          throw new Error(
+            "Google account mismatch. Use the email registered by your parent."
+          );
         }
 
         navigate("/student-dashboard");
         return;
       }
 
-      // ---------- Teacher Google ----------
       if (role === "teacher") {
         const approvedSnap = await getDoc(doc(db, "teachers", uid));
         const pendingSnap = await getDoc(doc(db, "pendingTeachers", uid));
@@ -229,7 +241,6 @@ export const LoginForm: React.FC = () => {
           return;
         }
 
-        // new teacher signup → pending
         await setDoc(doc(db, "pendingTeachers", uid), {
           uid,
           email: loggedUser.email!,
@@ -252,7 +263,7 @@ export const LoginForm: React.FC = () => {
           return;
         }
 
-        // new parent signup
+        // new parent signup + registration
         await setDoc(doc(db, "parents", uid), {
           uid,
           email: loggedUser.email!,
@@ -261,7 +272,21 @@ export const LoginForm: React.FC = () => {
           createdAt: new Date().toISOString(),
         });
 
-        // ✅ Auto redirect
+        const regRef = doc(collection(db, "registrations"));
+        await setDoc(regRef, {
+          parentId: uid,
+          purpose: "fees",
+          status: "payment_pending",
+          paymentReceived: false,
+          createdAt: new Date().toISOString(),
+        });
+
+        await setDoc(
+          doc(db, "parents", uid),
+          { registrationId: regRef.id },
+          { merge: true }
+        );
+
         navigate("/parent-dashboard");
         return;
       }
@@ -444,7 +469,6 @@ export const LoginForm: React.FC = () => {
                   : "Sign In"}
               </Button>
 
-              {/* Google Sign-In button always visible */}
               <Button
                 type="button"
                 className="flex-1 flex items-center justify-center gap-2 border border-gray-300 hover:bg-gray-100"
@@ -456,7 +480,6 @@ export const LoginForm: React.FC = () => {
               </Button>
             </div>
 
-            {/* Toggle Signin/Signup - hidden for students */}
             {role !== "student" && (
               <div className="text-center text-sm text-gray-500 mt-4">
                 {isSignup ? (
