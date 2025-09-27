@@ -19,14 +19,16 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ArrowLeft, GraduationCap } from "lucide-react";
 import { db } from "@/lib/firebaseConfig";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { useAuth } from "@/components/auth/AuthProvider";
 
 interface ParentRegistrationProps {
   onBack: () => void;
 }
 
-export const ParentRegistration: React.FC<ParentRegistrationProps> = ({ onBack }) => {
+export const ParentRegistration: React.FC<ParentRegistrationProps> = ({
+  onBack,
+}) => {
   const { user } = useAuth();
 
   // Local state for form fields
@@ -60,7 +62,7 @@ export const ParentRegistration: React.FC<ParentRegistrationProps> = ({ onBack }
     setLearnerData((prev) => ({ ...prev, [field]: value }));
   };
 
-  // Save registration to Firestore with UID as the document ID
+  // Save registration to Firestore (supports multiple children)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -68,10 +70,8 @@ export const ParentRegistration: React.FC<ParentRegistrationProps> = ({ onBack }
     try {
       if (!user) throw new Error("User not authenticated");
 
-      const regId = user.uid; // use UID as registrationId
-
-      await setDoc(doc(db, "registrations", regId), {
-        parentId: user.uid,
+      const docRef = await addDoc(collection(db, "registrations"), {
+        parentId: user.uid, // 🔑 required by Firestore rules
         submittedBy: user.email,
         parentData,
         learnerData,
@@ -80,8 +80,10 @@ export const ParentRegistration: React.FC<ParentRegistrationProps> = ({ onBack }
         createdAt: serverTimestamp(),
       });
 
-      setRegistrationId(regId);
-      setSubmitMessage("✅ Registration saved! Please proceed with payment below.");
+      setRegistrationId(docRef.id); // unique registration ID
+      setSubmitMessage(
+        "✅ Registration saved! Please proceed with payment below."
+      );
     } catch (error) {
       console.error("Error saving registration:", error);
       setSubmitMessage("❌ Registration failed. Please try again.");
@@ -131,7 +133,9 @@ export const ParentRegistration: React.FC<ParentRegistrationProps> = ({ onBack }
             <form onSubmit={handleSubmit} className="space-y-8">
               {/* Parent Info */}
               <div className="border rounded-lg p-6 bg-blue-50">
-                <h3 className="text-lg font-semibold mb-4">Parent Information</h3>
+                <h3 className="text-lg font-semibold mb-4">
+                  Parent Information
+                </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <Input
                     placeholder="First Name *"
@@ -153,13 +157,17 @@ export const ParentRegistration: React.FC<ParentRegistrationProps> = ({ onBack }
                     placeholder="Email *"
                     type="email"
                     value={parentData.email}
-                    onChange={(e) => handleParentChange("email", e.target.value)}
+                    onChange={(e) =>
+                      handleParentChange("email", e.target.value)
+                    }
                     required
                   />
                   <Input
                     placeholder="Phone *"
                     value={parentData.phone}
-                    onChange={(e) => handleParentChange("phone", e.target.value)}
+                    onChange={(e) =>
+                      handleParentChange("phone", e.target.value)
+                    }
                     required
                   />
                 </div>
@@ -167,7 +175,9 @@ export const ParentRegistration: React.FC<ParentRegistrationProps> = ({ onBack }
 
               {/* Learner Info */}
               <div className="border rounded-lg p-6 bg-green-50">
-                <h3 className="text-lg font-semibold mb-4">Learner Information</h3>
+                <h3 className="text-lg font-semibold mb-4">
+                  Learner Information
+                </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <Input
                     placeholder="First Name *"
@@ -216,15 +226,17 @@ export const ParentRegistration: React.FC<ParentRegistrationProps> = ({ onBack }
                 <Label>Payment Type</Label>
                 <Select
                   value={paymentPurpose}
-                  onValueChange={(value: "registration" | "fees" | "other") =>
-                    setPaymentPurpose(value)
-                  }
+                  onValueChange={(
+                    value: "registration" | "fees" | "other"
+                  ) => setPaymentPurpose(value)}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select Payment Type" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="registration">Registration Fee</SelectItem>
+                    <SelectItem value="registration">
+                      Registration Fee
+                    </SelectItem>
                     <SelectItem value="fees">Tuition Fees</SelectItem>
                     <SelectItem value="other">Other</SelectItem>
                   </SelectContent>
@@ -236,7 +248,9 @@ export const ParentRegistration: React.FC<ParentRegistrationProps> = ({ onBack }
                 <Label className="font-semibold">Declaration</Label>
                 <label className="flex items-center gap-2 mt-2">
                   <input type="checkbox" required className="w-4 h-4" />
-                  <span>I confirm I meet the minimum enrolment requirements</span>
+                  <span>
+                    I confirm I meet the minimum enrolment requirements
+                  </span>
                 </label>
               </div>
 
@@ -250,16 +264,23 @@ export const ParentRegistration: React.FC<ParentRegistrationProps> = ({ onBack }
             </form>
           ) : (
             // ---------------- Payment Form ----------------
-            <form action="https://www.payfast.co.za/eng/process" method="POST">
+            <form
+              action="https://www.payfast.co.za/eng/process"
+              method="POST"
+            >
               <input
                 type="hidden"
                 name="merchant_id"
-                value={process.env.NEXT_PUBLIC_PAYFAST_MERCHANT_ID}
+                value={
+                  process.env.NEXT_PUBLIC_PAYFAST_MERCHANT_ID
+                }
               />
               <input
                 type="hidden"
                 name="merchant_key"
-                value={process.env.NEXT_PUBLIC_PAYFAST_MERCHANT_KEY}
+                value={
+                  process.env.NEXT_PUBLIC_PAYFAST_MERCHANT_KEY
+                }
               />
               <input
                 type="hidden"
@@ -277,11 +298,27 @@ export const ParentRegistration: React.FC<ParentRegistrationProps> = ({ onBack }
                 value={`${window.location.origin}/api/payfast-notify`}
               />
 
-              <input type="hidden" name="name_first" value={parentData.firstName} />
-              <input type="hidden" name="name_last" value={parentData.lastName} />
-              <input type="hidden" name="email_address" value={parentData.email} />
+              <input
+                type="hidden"
+                name="name_first"
+                value={parentData.firstName}
+              />
+              <input
+                type="hidden"
+                name="name_last"
+                value={parentData.lastName}
+              />
+              <input
+                type="hidden"
+                name="email_address"
+                value={parentData.email}
+              />
 
-              <input type="hidden" name="m_payment_id" value={registrationId} />
+              <input
+                type="hidden"
+                name="m_payment_id"
+                value={registrationId ?? ""}
+              />
               <input
                 type="hidden"
                 name="amount"
