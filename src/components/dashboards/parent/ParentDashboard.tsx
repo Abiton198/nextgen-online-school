@@ -1,3 +1,5 @@
+"use client";
+
 import { useState, useEffect } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import RegistrationSection from "./sections/RegistrationSection";
@@ -6,22 +8,27 @@ import SettingsSection from "./sections/SettingsSection";
 import CommunicationsSection from "./sections/CommunicationsSection";
 import StatusSection from "./sections/StatusSection";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { db } from "@/lib/firebaseConfig";
+import { auth, db } from "@/lib/firebaseConfig";
+import { signOut } from "firebase/auth";
 import { doc, getDoc, collection, query, where, getDocs } from "firebase/firestore";
+import { useNavigate } from "react-router-dom";
+import { ArrowLeft, ArrowRight, LogOut } from "lucide-react"; // 🔹 icons
 
 const sections = ["Registration", "Payments", "Settings", "Communications", "Status"];
 
 export default function ParentDashboard() {
   const { user } = useAuth();
-  const [activeSection, setActiveSection] = useState<string | null>(null);
+  const [activeIndex, setActiveIndex] = useState<number>(-1); // -1 means none selected
   const [parentName, setParentName] = useState<string>("");
   const [title, setTitle] = useState<string>("Mr/Mrs");
   const [children, setChildren] = useState<{ firstName?: string; grade?: string }[]>([]);
+  const navigate = useNavigate();
 
-  // Fetch parent record
+  // Fetch parent + children
   useEffect(() => {
+    if (!user?.uid) return;
+
     const fetchParent = async () => {
-      if (!user?.uid) return;
       try {
         const parentDoc = await getDoc(doc(db, "parents", user.uid));
         if (parentDoc.exists()) {
@@ -35,7 +42,6 @@ export default function ParentDashboard() {
     };
 
     const fetchChildren = async () => {
-      if (!user?.uid) return;
       try {
         const q = query(collection(db, "registrations"), where("parentId", "==", user.uid));
         const snap = await getDocs(q);
@@ -50,7 +56,21 @@ export default function ParentDashboard() {
     fetchChildren();
   }, [user]);
 
+  // 🔹 Navigation logic
+  const goBack = () => {
+    if (activeIndex > 0) setActiveIndex((prev) => prev - 1);
+  };
+  const goForward = () => {
+    if (activeIndex < sections.length - 1) setActiveIndex((prev) => prev + 1);
+  };
+
+  const handleLogout = async () => {
+    await signOut(auth);
+    navigate("/signin"); // redirect to sign in page
+  };
+
   const renderSection = () => {
+    const activeSection = sections[activeIndex];
     switch (activeSection) {
       case "Registration":
         return <RegistrationSection />;
@@ -69,29 +89,40 @@ export default function ParentDashboard() {
 
   return (
     <div className="p-6 space-y-6">
-      {/* 👋 Greeting */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold">
-          Welcome {title} {parentName}
-        </h1>
-        {children.length > 0 && (
-          <div className="mt-2 text-gray-700">
-            {children.map((c, i) => (
-              <p key={i}>
-                Child: {c.firstName || "Unknown"} – Grade {c.grade || "-"}
-              </p>
-            ))}
-          </div>
-        )}
+      {/* Top bar with greeting + logout */}
+      <div className="flex justify-between items-center mb-6">
+        <div>
+          <h1 className="text-2xl font-bold">
+            Welcome {title} {parentName}
+          </h1>
+          {children.length > 0 && (
+            <div className="mt-2 text-gray-700">
+              {children.map((c, i) => (
+                <p key={i}>
+                  Child: {c.firstName || "Unknown"} – Grade {c.grade || "-"}
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <button
+          onClick={handleLogout}
+          className="flex items-center gap-2 px-3 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+        >
+          <LogOut size={18} /> Logout
+        </button>
       </div>
 
       {/* Overview cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {sections.map((s) => (
+        {sections.map((s, idx) => (
           <Card
             key={s}
-            className="cursor-pointer hover:shadow-lg transition"
-            onClick={() => setActiveSection(s)}
+            className={`cursor-pointer hover:shadow-lg transition ${
+              activeIndex === idx ? "ring-2 ring-blue-500" : ""
+            }`}
+            onClick={() => setActiveIndex(idx)}
           >
             <CardHeader>
               <CardTitle>{s}</CardTitle>
@@ -103,17 +134,34 @@ export default function ParentDashboard() {
         ))}
       </div>
 
-      {/* Section Details */}
-      <div className="mt-8">
-        {activeSection && (
+      {/* Section Details + nav arrows */}
+      {activeIndex >= 0 && (
+        <div className="mt-8 space-y-4">
+          <div className="flex justify-between">
+            <button
+              onClick={goBack}
+              disabled={activeIndex <= 0}
+              className="flex items-center gap-2 px-3 py-2 bg-gray-200 rounded disabled:opacity-50"
+            >
+              <ArrowLeft size={18} /> Previous
+            </button>
+            <button
+              onClick={goForward}
+              disabled={activeIndex >= sections.length - 1}
+              className="flex items-center gap-2 px-3 py-2 bg-gray-200 rounded disabled:opacity-50"
+            >
+              Next <ArrowRight size={18} />
+            </button>
+          </div>
+
           <Card className="border">
             <CardHeader>
-              <CardTitle>{activeSection} Details</CardTitle>
+              <CardTitle>{sections[activeIndex]} Details</CardTitle>
             </CardHeader>
             <CardContent>{renderSection()}</CardContent>
           </Card>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
