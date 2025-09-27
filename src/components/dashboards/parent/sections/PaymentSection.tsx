@@ -1,34 +1,111 @@
-import { redirectToPayfast } from "@/lib/payfast";
+"use client";
+import { useState } from "react";
 
 export default function PaymentsSection() {
-  const handleRetry = () => {
-    redirectToPayfast({
-      amount: 500, // example: tuition fee
-      itemName: "Tuition Fees",
-      returnUrl: `${window.location.origin}/payment-success`,
-      cancelUrl: `${window.location.origin}/payment-cancel`,
-      notifyUrl: `${window.location.origin}/api/payfast-notify`,
-    });
+  const [purpose, setPurpose] = useState<
+    "registration" | "fees" | "donation" | "event" | "other"
+  >("fees");
+  const [amount, setAmount] = useState<string>("");
+  const [customName, setCustomName] = useState<string>("");
+
+  const handleCheckout = async () => {
+    const regId = `reg_${Date.now()}`;
+
+    try {
+      const res = await fetch("/api/payfast-initiate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          purpose,
+          customAmount: amount,
+          itemName: customName,
+          regId,
+          parent: { firstName: "Parent", lastName: "User", email: "parent@example.com" },
+        }),
+      });
+
+      if (!res.ok) throw new Error("Failed to initiate PayFast");
+
+      const { redirectUrl } = await res.json();
+      window.location.href = redirectUrl; // redirect to PayFast
+    } catch (err) {
+      console.error(err);
+      alert("Could not start payment. Please try again.");
+    }
   };
 
   return (
-    <div>
-      <p>Here you can see your payment history and retry pending payments.</p>
+    <div className="p-6 space-y-6">
+      {/* Card showing current fixed fees */}
+      <div className="border rounded-lg p-4 bg-blue-50">
+        <h2 className="font-semibold text-gray-800 mb-2">
+          Current School Fees Structure
+        </h2>
+        <ul className="text-sm text-gray-700 space-y-1">
+          <li>Registration Fee: R1000.00</li>
+          <li>Tuition Fees: R2850.00</li>
+          <li>Event Ticket (average): R250.00</li>
+          <li>Donation: Any amount</li>
+        </ul>
+      </div>
 
-      <ul className="mt-4 space-y-2">
-        <li className="flex justify-between">
-          Registration Fee – ✅ Paid
-        </li>
-        <li className="flex justify-between">
-          Tuition Fees – ❌ Pending
-          <button
-            className="px-3 py-1 bg-blue-600 text-white rounded"
-            onClick={handleRetry}
+      {/* Payment form */}
+      <div className="border rounded-lg p-4 bg-white space-y-4">
+        <h3 className="font-semibold text-gray-800">Make a Payment</h3>
+
+        {/* Dropdown */}
+        <div>
+          <label className="block text-sm text-gray-600">Payment Type</label>
+          <select
+            value={purpose}
+            onChange={(e) => setPurpose(e.target.value as any)}
+            className="w-full border rounded p-2 mt-1"
           >
-            Retry
-          </button>
-        </li>
-      </ul>
+            <option value="registration">Registration</option>
+            <option value="fees">Tuition Fees</option>
+            <option value="donation">Donation</option>
+            <option value="event">Event</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+
+        {/* Amount */}
+        <div>
+          <label className="block text-sm text-gray-600">
+            Amount (ZAR) – leave blank to use default
+          </label>
+          <input
+            type="number"
+            step="0.01"
+            placeholder="Enter custom amount"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            className="w-full border rounded p-2 mt-1"
+          />
+        </div>
+
+        {/* Item name */}
+        {(purpose === "other" || purpose === "event" || purpose === "donation") && (
+          <div>
+            <label className="block text-sm text-gray-600">Item Name (optional)</label>
+            <input
+              type="text"
+              placeholder="E.g., Science Fair Donation"
+              value={customName}
+              onChange={(e) => setCustomName(e.target.value)}
+              className="w-full border rounded p-2 mt-1"
+            />
+          </div>
+        )}
+
+        {/* Checkout */}
+        <button
+          onClick={handleCheckout}
+          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 rounded"
+        >
+          Checkout with PayFast
+        </button>
+      </div>
     </div>
   );
 }

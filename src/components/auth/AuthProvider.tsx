@@ -32,71 +32,77 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   useEffect(() => {
     let unsubProfile: (() => void) | null = null;
 
-    const unsubAuth = onAuthStateChanged(
-      auth,
-      async (firebaseUser: FirebaseUser | null) => {
-        if (!firebaseUser) {
-          setUser(null);
-          setLoading(false);
-          if (unsubProfile) unsubProfile();
-          return;
+    const unsubAuth = onAuthStateChanged(auth, async (firebaseUser) => {
+  if (!firebaseUser) {
+    setUser(null);
+    setLoading(false);
+    if (unsubProfile) unsubProfile();
+    return;
+  }
+
+  // 🔑 Force refresh to get the latest custom claims
+  const idTokenResult = await firebaseUser.getIdTokenResult(true);
+  const claims = idTokenResult.claims;
+
+  const uid = firebaseUser.uid;
+  const roleCollections = [
+    "admins",
+    "principals",
+    "teachers",
+    "students",
+    "parents",
+    "pendingTeachers",
+    "pendingStudents",
+  ];
+
+  let profileFound = false;
+
+  for (const collectionName of roleCollections) {
+    const ref = doc(db, collectionName, uid);
+    const snap = await getDoc(ref);
+
+    if (snap.exists()) {
+      profileFound = true;
+      if (unsubProfile) unsubProfile();
+
+      unsubProfile = onSnapshot(ref, (profileSnap) => {
+        if (profileSnap.exists()) {
+          const data = profileSnap.data();
+          const isPending = collectionName.startsWith("pending");
+          const baseRole = isPending
+            ? collectionName.replace("pending", "").toLowerCase().slice(0, -1)
+            : collectionName.slice(0, -1);
+
+          setUser({
+            ...firebaseUser,
+            ...data,
+            role: claims.role || data.role || baseRole, // ✅ claims first
+            status: data.status || (isPending ? "pending" : "approved"),
+          });
+        } else {
+          setUser({
+            ...firebaseUser,
+            role: claims.role || "unassigned",
+            status: "unknown",
+          });
         }
+        setLoading(false);
+      });
 
-        const uid = firebaseUser.uid;
-        const roleCollections = [
-          "admins",
-          "principals",
-          "teachers",
-          "students",
-          "parents",
-          "pendingTeachers",
-          "pendingStudents",
-        ];
+      break;
+    }
+  }
 
-        let profileFound = false;
+  if (!profileFound) {
+    setUser({
+      ...firebaseUser,
+      role: claims.role || "unassigned", // ✅ fallback to claims
+      status: "unknown",
+    });
+    setLoading(false);
+  }
+});
 
-        for (const collectionName of roleCollections) {
-          const ref = doc(db, collectionName, uid);
-          const snap = await getDoc(ref);
-
-          if (snap.exists()) {
-            profileFound = true;
-            if (unsubProfile) unsubProfile();
-
-            unsubProfile = onSnapshot(ref, (profileSnap) => {
-              if (profileSnap.exists()) {
-                const data = profileSnap.data();
-                const isPending = collectionName.startsWith("pending");
-                const baseRole = isPending
-                  ? collectionName.replace("pending", "").toLowerCase().slice(0, -1)
-                  : collectionName.slice(0, -1);
-
-                setUser({
-                  ...firebaseUser,
-                  ...data,
-                  role: data.role || baseRole,
-                  status: data.status || (isPending ? "pending" : "approved"),
-                });
-              } else {
-                setUser({
-                  ...firebaseUser,
-                  role: "unassigned",
-                  status: "unknown",
-                });
-              }
-              setLoading(false);
-            });
-
-            break;
-          }
-        }
-
-        if (!profileFound) {
-          setUser({ ...firebaseUser, role: "unassigned", status: "unknown" });
-          setLoading(false);
-        }
-      }
-    );
 
     // Handle Google redirect login results
     getRedirectResult(auth).then((result) => {
