@@ -25,6 +25,8 @@ import PaymentDetails from "./components/payments/PaymentDetails";
 import PaymentCancel from "./components/payments/PaymentCancel";
 import ParentRegistration from "./components/dashboards/parent/ParentRegistration";
 import PaymentPage from "./components/payments/PaymentPage";
+import PaymentsSection from "./components/dashboards/parent/sections/PaymentSection"
+import StatusSection from "./components/dashboards/parent/sections/StatusSection";
 
 const queryClient = new QueryClient();
 
@@ -109,6 +111,8 @@ const App = () => {
                 <Route path="/payment-details/:regId" element={<PaymentDetails />} />
                 <Route path="/payment-success" element={<PaymentSuccess />} />
                 <Route path="/payment-cancel" element={<PaymentCancel />} />
+                 <Route path="/status" element={<StatusSection />} /> 
+                 <Route path="/payments" element={<PaymentsSection />} /> 
 
                 {/* Other */}
                 <Route path="/admin-login" element={<AdminLoginForm />} />
