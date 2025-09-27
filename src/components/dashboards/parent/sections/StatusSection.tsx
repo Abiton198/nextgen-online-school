@@ -75,32 +75,34 @@ export default function StatusSection() {
   };
 
   // Action button
-  const getActionButton = (reg: Registration) => {
-    if (!reg.paymentReceived && reg.status !== "enrolled") {
+const getActionButton = (reg: Registration) => {
+  if (!reg.paymentReceived && reg.status !== "enrolled") {
+    return (
+      <Button size="sm" className="bg-orange-600 hover:bg-orange-700">
+        {/* 🔹 Navigate to PaymentsSection, passing regId */}
+        <Link to={`/payments?regId=${reg.id}`}>Proceed to Payment</Link>
+      </Button>
+    );
+  }
+
+  switch (reg.status) {
+    case "awaiting_approval":
       return (
-        <Button size="sm" className="bg-orange-600 hover:bg-orange-700">
-          <Link to={`/payments/${reg.id}`}>Proceed to Payment</Link>
+        <Button size="sm" disabled className="bg-blue-400 text-white">
+          Pending Approval
         </Button>
       );
-    }
+    case "enrolled":
+      return (
+        <Button size="sm" className="bg-green-600 hover:bg-green-700">
+          <Link to={`/registration/${reg.id}`}>Review</Link>
+        </Button>
+      );
+    default:
+      return null;
+  }
+};
 
-    switch (reg.status) {
-      case "awaiting_approval":
-        return (
-          <Button size="sm" disabled className="bg-blue-400 text-white">
-            Pending Approval
-          </Button>
-        );
-      case "enrolled":
-        return (
-          <Button size="sm" className="bg-green-600 hover:bg-green-700">
-            <Link to={`/registration/${reg.id}`}>Review</Link>
-          </Button>
-        );
-      default:
-        return null;
-    }
-  };
 
   return (
     <div>

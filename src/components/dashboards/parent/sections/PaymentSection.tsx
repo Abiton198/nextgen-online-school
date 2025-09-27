@@ -3,12 +3,15 @@ import { useState, useEffect } from "react";
 import { db } from "@/lib/firebaseConfig";
 import { doc, getDoc } from "firebase/firestore";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, X } from "lucide-react";
 
 export default function PaymentsSection() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  const regIdFromUrl = searchParams.get("regId");
 
   const [purpose, setPurpose] = useState<
     "registration" | "fees" | "donation" | "event" | "other"
@@ -16,12 +19,12 @@ export default function PaymentsSection() {
   const [amount, setAmount] = useState("");
   const [customName, setCustomName] = useState("");
   const [loading, setLoading] = useState(false);
-  const [regId, setRegId] = useState<string | null>(null);
+  const [regId, setRegId] = useState<string | null>(regIdFromUrl);
 
-  // 🔎 Fetch parent registrationId at mount
+  // 🔎 Fetch parent’s default regId if not passed in URL
   useEffect(() => {
     const fetchRegId = async () => {
-      if (!user?.uid) return;
+      if (regIdFromUrl || !user?.uid) return;
       const parentRef = doc(db, "parents", user.uid);
       const snap = await getDoc(parentRef);
       if (snap.exists()) {
@@ -32,7 +35,7 @@ export default function PaymentsSection() {
       }
     };
     fetchRegId();
-  }, [user]);
+  }, [user, regIdFromUrl]);
 
   const handleCheckout = async () => {
     if (!user?.uid) {
@@ -49,7 +52,12 @@ export default function PaymentsSection() {
       const resp = await fetch("/.netlify/functions/payfast-initiate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ regId }), // ✅ only pass regId
+        body: JSON.stringify({
+          regId,
+          purpose,
+          amount,
+          customName,
+        }),
       });
 
       if (!resp.ok) throw new Error("Failed to initiate PayFast");
