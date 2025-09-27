@@ -1,20 +1,15 @@
 import { useState, useEffect } from "react";
 import { db } from "@/lib/firebaseConfig";
-import {
-  collection,
-  query,
-  where,
-  getDocs,
-} from "firebase/firestore";
+import { collection, query, where, getDocs } from "firebase/firestore";
 import { useAuth } from "@/components/auth/AuthProvider";
-import ParentRegistration  from "../ParentRegistration";
+import ParentRegistration from "../ParentRegistration";
 
 interface Registration {
   id: string;
-  learnerData: {
-    firstName: string;
-    lastName: string;
-    grade: string;
+  learnerData?: {
+    firstName?: string;
+    lastName?: string;
+    grade?: string;
   };
   status: string;
   paymentReceived?: boolean;
@@ -70,20 +65,25 @@ export default function RegistrationSection() {
       </button>
 
       <ul className="mt-4 space-y-2">
-        {registrations.map((r) => (
-          <li key={r.id} className="flex justify-between border-b py-2">
-            <div>
-              {r.learnerData.firstName} {r.learnerData.lastName} – Grade{" "}
-              {r.learnerData.grade}
-              <br />
-              <span className="text-sm text-gray-600">
-                Status: {r.status} | Payment:{" "}
-                {r.paymentReceived ? "✅ Paid" : "⏳ Pending"}
-              </span>
-            </div>
-            {/* 🔒 Parents cannot update/cancel their registrations per rules */}
-          </li>
-        ))}
+        {registrations.map((r) => {
+          const firstName = r.learnerData?.firstName || "Unknown";
+          const lastName = r.learnerData?.lastName || "";
+          const grade = r.learnerData?.grade || "-";
+
+          return (
+            <li key={r.id} className="flex justify-between border-b py-2">
+              <div>
+                {firstName} {lastName} – Grade {grade}
+                <br />
+                <span className="text-sm text-gray-600">
+                  Status: {r.status} | Payment:{" "}
+                  {r.paymentReceived ? "✅ Paid" : "⏳ Pending"}
+                </span>
+              </div>
+              {/* 🔒 Parents cannot update/cancel their registrations per rules */}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

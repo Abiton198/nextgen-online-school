@@ -45,16 +45,20 @@ export default function ParentRegistration() {
     setLoading(true);
 
     try {
+      // Always ensure learnerData has safe defaults
+      const [firstName, ...rest] = learnerName.trim().split(" ");
+      const lastName = rest.join(" ") || "-";
+
       const docRef = await addDoc(collection(db, "registrations"), {
         parentId: user.uid,
         parentData: {
-          name: parentName,
-          email: parentEmail,
+          name: parentName || "Unknown",
+          email: parentEmail || user.email || "-",
         },
         learnerData: {
-          firstName: learnerName.split(" ")[0],
-          lastName: learnerName.split(" ").slice(1).join(" "),
-          grade: learnerGrade,
+          firstName: firstName || "Unknown",
+          lastName,
+          grade: learnerGrade || "-",
         },
         purpose: paymentPurpose,
         status: "payment_pending", // start at payment_pending
