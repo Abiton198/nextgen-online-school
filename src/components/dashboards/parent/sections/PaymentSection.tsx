@@ -3,11 +3,16 @@ import { useState, useEffect } from "react";
 import { db } from "@/lib/firebaseConfig";
 import { doc, getDoc } from "firebase/firestore";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { useNavigate } from "react-router-dom";
+import { ArrowLeft, X } from "lucide-react";
 
 export default function PaymentsSection() {
   const { user } = useAuth();
+  const navigate = useNavigate();
 
-  const [purpose, setPurpose] = useState<"registration" | "fees" | "donation" | "event" | "other">("fees");
+  const [purpose, setPurpose] = useState<
+    "registration" | "fees" | "donation" | "event" | "other"
+  >("fees");
   const [amount, setAmount] = useState("");
   const [customName, setCustomName] = useState("");
   const [loading, setLoading] = useState(false);
@@ -60,9 +65,27 @@ export default function PaymentsSection() {
 
   return (
     <div className="p-6 space-y-6">
+      {/* 🔝 Floating Navigation Bar */}
+      <div className="sticky top-0 z-10 bg-white border-b flex justify-between items-center px-2 py-2 mb-4">
+        <button
+          onClick={() => navigate(-1)}
+          className="flex items-center gap-1 text-gray-600 hover:text-black"
+        >
+          <ArrowLeft size={18} /> Back
+        </button>
+        <button
+          onClick={() => navigate("/parent-dashboard")}
+          className="text-gray-600 hover:text-red-600"
+        >
+          <X size={20} />
+        </button>
+      </div>
+
       {/* Fee card */}
       <div className="border rounded-lg p-4 bg-blue-50">
-        <h2 className="font-semibold text-gray-800 mb-2">Current School Fees Structure</h2>
+        <h2 className="font-semibold text-gray-800 mb-2">
+          Current School Fees Structure
+        </h2>
         <ul className="text-sm text-gray-700 space-y-1">
           <li>Registration Fee: R1000.00</li>
           <li>Tuition Fees: R2850.00</li>
@@ -92,7 +115,8 @@ export default function PaymentsSection() {
 
         <div>
           <label className="block text-sm text-gray-600">
-            Amount (ZAR) {purpose !== "registration" && purpose !== "fees" && "(required)"}
+            Amount (ZAR){" "}
+            {purpose !== "registration" && purpose !== "fees" && "(required)"}
           </label>
           <input
             type="number"
@@ -105,9 +129,13 @@ export default function PaymentsSection() {
           />
         </div>
 
-        {(purpose === "other" || purpose === "event" || purpose === "donation") && (
+        {(purpose === "other" ||
+          purpose === "event" ||
+          purpose === "donation") && (
           <div>
-            <label className="block text-sm text-gray-600">Item Name (optional)</label>
+            <label className="block text-sm text-gray-600">
+              Item Name (optional)
+            </label>
             <input
               type="text"
               placeholder="E.g., Science Fair Donation"
@@ -121,7 +149,9 @@ export default function PaymentsSection() {
         <button
           onClick={handleCheckout}
           disabled={loading || !regId}
-          className={`w-full ${loading ? "bg-gray-400" : "bg-blue-600 hover:bg-blue-700"} text-white font-semibold py-2 rounded`}
+          className={`w-full ${
+            loading ? "bg-gray-400" : "bg-blue-600 hover:bg-blue-700"
+          } text-white font-semibold py-2 rounded`}
         >
           {loading ? "Processing..." : "Checkout with PayFast"}
         </button>

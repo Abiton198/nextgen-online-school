@@ -10,6 +10,8 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import { db } from "@/lib/firebaseConfig";
+import { useNavigate } from "react-router-dom";
+import { ArrowLeft, X } from "lucide-react";
 
 interface Message {
   id: string;
@@ -31,6 +33,7 @@ export default function CommunicationsSection({ parentId }: { parentId: string }
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [chatTo, setChatTo] = useState<"teacher" | "principal">("teacher");
   const [newMessage, setNewMessage] = useState("");
+  const navigate = useNavigate();
 
   // 🔹 Listen for announcements
   useEffect(() => {
@@ -42,7 +45,7 @@ export default function CommunicationsSection({ parentId }: { parentId: string }
     return () => unsub();
   }, []);
 
-  // 🔹 Listen for ALL messages where parent is involved (sender or recipient)
+  // 🔹 Listen for ALL messages where parent is involved
   useEffect(() => {
     const q = query(collection(db, "messages"), orderBy("createdAt", "asc"));
     const unsub = onSnapshot(q, (snap) => {
@@ -66,6 +69,22 @@ export default function CommunicationsSection({ parentId }: { parentId: string }
 
   return (
     <div className="space-y-6">
+      {/* 🔝 Floating Navigation Bar */}
+      <div className="sticky top-0 z-10 bg-white border-b flex justify-between items-center px-2 py-2">
+        <button
+          onClick={() => navigate(-1)}
+          className="flex items-center gap-1 text-gray-600 hover:text-black"
+        >
+          <ArrowLeft size={18} /> Back
+        </button>
+        <button
+          onClick={() => navigate("/parent-dashboard")}
+          className="text-gray-600 hover:text-red-600"
+        >
+          <X size={20} />
+        </button>
+      </div>
+
       {/* 🎓 Subject Teacher Chat */}
       <div className="bg-blue-50 border border-blue-300 rounded-xl p-4 shadow-md">
         <h2 className="text-lg font-semibold text-blue-800 mb-3">
@@ -78,7 +97,9 @@ export default function CommunicationsSection({ parentId }: { parentId: string }
               <div key={msg.id} className="text-sm">
                 <span
                   className={
-                    msg.sender === parentId ? "font-medium text-blue-600" : "font-medium text-gray-700"
+                    msg.sender === parentId
+                      ? "font-medium text-blue-600"
+                      : "font-medium text-gray-700"
                   }
                 >
                   {msg.sender === parentId ? "You" : msg.sender}:

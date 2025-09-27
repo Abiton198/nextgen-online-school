@@ -1,8 +1,11 @@
+"use client";
 import { useState, useEffect } from "react";
 import { db } from "@/lib/firebaseConfig";
 import { collection, query, where, getDocs } from "firebase/firestore";
 import { useAuth } from "@/components/auth/AuthProvider";
 import ParentRegistration from "../ParentRegistration";
+import { useNavigate } from "react-router-dom";
+import { ArrowLeft, X } from "lucide-react";
 
 interface Registration {
   id: string;
@@ -20,6 +23,7 @@ export default function RegistrationSection() {
   const [registrations, setRegistrations] = useState<Registration[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const navigate = useNavigate();
 
   const fetchRegistrations = async () => {
     if (!user?.uid) return;
@@ -61,7 +65,23 @@ export default function RegistrationSection() {
   }
 
   return (
-    <div>
+    <div className="p-4 space-y-6">
+      {/* 🔝 Floating Navigation Bar */}
+      <div className="sticky top-0 z-10 bg-white border-b flex justify-between items-center px-2 py-2 mb-4">
+        <button
+          onClick={() => navigate(-1)}
+          className="flex items-center gap-1 text-gray-600 hover:text-black"
+        >
+          <ArrowLeft size={18} /> Back
+        </button>
+        <button
+          onClick={() => navigate("/parent-dashboard")}
+          className="text-gray-600 hover:text-red-600"
+        >
+          <X size={20} />
+        </button>
+      </div>
+
       <button
         className="px-3 py-2 bg-blue-500 text-white rounded"
         onClick={() => setShowForm(true)}
