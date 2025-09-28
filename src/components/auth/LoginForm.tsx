@@ -481,24 +481,17 @@ if (role === "parent") {
             )}
 
             {/* Teacher Signup Fields */}
-            {isSignup && role === "teacher" && (
-              <div className="space-y-2">
-                <Label>Subject</Label>
-                <select
-                  value={selectedSubject}
-                  onChange={(e) => setSelectedSubject(e.target.value)}
-                  className="w-full border rounded-md p-2"
-                  required
-                >
-                  <option value="">-- Select Subject --</option>
-                  {subjects.map((subj) => (
-                    <option key={subj} value={subj}>
-                      {subj}
-                    </option>
-                  ))}
-                </select>
+            {role === "teacher" && isSignup && (
+              <div className="text-center text-sm text-gray-500">
+                <p>
+                  Teachers should apply via{" "}
+                  <a href="/apply-teacher" className="text-blue-600 underline">
+                    Teacher Application Form
+                  </a>
+                </p>
               </div>
             )}
+
 
             {/* Buttons */}
             <div className="flex gap-2">

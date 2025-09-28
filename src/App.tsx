@@ -7,6 +7,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
 import { AuthProvider, useAuth } from "./components/auth/AuthProvider";
 import { ProtectedRoute } from "./components/auth/ProtectedRoute";
+import TeacherApplicationForm from "@/components/auth/TeacherApplicationForm";
 
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
@@ -27,6 +28,7 @@ import ParentRegistration from "./components/dashboards/parent/ParentRegistratio
 import PaymentPage from "./components/payments/PaymentPage";
 import PaymentsSection from "./components/dashboards/parent/sections/PaymentSection"
 import StatusSection from "./components/dashboards/parent/sections/StatusSection";
+
 
 const queryClient = new QueryClient();
 
@@ -117,6 +119,7 @@ const App = () => {
                 {/* Other */}
                 <Route path="/admin-login" element={<AdminLoginForm />} />
                 <Route path="/footer" element={<Footer />} />
+                <Route path="/apply-teacher" element={<TeacherApplicationForm />} />
 
                 {/* Catch-all */}
                 <Route path="*" element={<NotFound />} />
