@@ -5,7 +5,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { db } from "@/lib/firebaseConfig";
 import { doc, onSnapshot } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
-import ProgressTracker from "@/components/auth/ProgressTracker";
+import ProgressTracker from "./ProgressTracker";
 
 const TeacherApprovalStatus: React.FC = () => {
   const [stage, setStage] = useState<string>("applied");
