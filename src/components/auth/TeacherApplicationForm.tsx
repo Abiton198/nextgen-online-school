@@ -16,9 +16,11 @@ const TeacherApplicationForm: React.FC = () => {
   const { signup, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
 
+  // --- Basic Auth ---
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
+  // --- Personal Info ---
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [gender, setGender] = useState("");
@@ -28,6 +30,7 @@ const TeacherApplicationForm: React.FC = () => {
   const [contact, setContact] = useState("");
   const [subject, setSubject] = useState("");
 
+  // --- Professional Info ---
   const [experience, setExperience] = useState("");
   const [previousSchool, setPreviousSchool] = useState("");
   const [ref1Name, setRef1Name] = useState("");
@@ -35,10 +38,11 @@ const TeacherApplicationForm: React.FC = () => {
   const [ref2Name, setRef2Name] = useState("");
   const [ref2Contact, setRef2Contact] = useState("");
 
+  // --- State ---
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // ---- Submit Application ----
+  // ---- Submit Application with Email/Password ----
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -67,12 +71,12 @@ const TeacherApplicationForm: React.FC = () => {
         ],
         role: "teacher",
         status: "pending",
-        applicationStage: "applied",
+        applicationStage: "applied", // ✅ stage tracking
         createdAt: serverTimestamp(),
       });
 
       alert("✅ Application submitted! A principal will review your request.");
-      navigate("/");
+      navigate("/teacher-status"); // 🚀 redirect to status page
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -108,12 +112,12 @@ const TeacherApplicationForm: React.FC = () => {
         ],
         role: "teacher",
         status: "pending",
-        applicationStage: "applied",
+        applicationStage: "applied", // ✅ stage tracking
         createdAt: serverTimestamp(),
       });
 
       alert("✅ Application submitted via Google! Pending principal approval.");
-      navigate("/");
+      navigate("/teacher-status"); // 🚀 redirect to status page
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -134,7 +138,7 @@ const TeacherApplicationForm: React.FC = () => {
             </Alert>
           )}
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Basic Info */}
+            {/* Personal Info */}
             <div>
               <Label>First Name</Label>
               <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
