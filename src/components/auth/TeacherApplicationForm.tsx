@@ -18,16 +18,27 @@ const TeacherApplicationForm: React.FC = () => {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
-  const [contact, setContact] = useState("");
+  const [gender, setGender] = useState("");
+  const [province, setProvince] = useState("");
+  const [country, setCountry] = useState("");
   const [address, setAddress] = useState("");
+  const [contact, setContact] = useState("");
   const [subject, setSubject] = useState("");
+
+  const [experience, setExperience] = useState("");
+  const [previousSchool, setPreviousSchool] = useState("");
+  const [ref1Name, setRef1Name] = useState("");
+  const [ref1Contact, setRef1Contact] = useState("");
+  const [ref2Name, setRef2Name] = useState("");
+  const [ref2Contact, setRef2Contact] = useState("");
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // ---- Signup with Email/Password ----
+  // ---- Submit Application ----
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -42,11 +53,21 @@ const TeacherApplicationForm: React.FC = () => {
         email,
         firstName,
         lastName,
-        contact,
+        gender,
+        province,
+        country,
         address,
+        contact,
         subject,
+        experience,
+        previousSchool,
+        references: [
+          { name: ref1Name, contact: ref1Contact },
+          { name: ref2Name, contact: ref2Contact },
+        ],
         role: "teacher",
         status: "pending",
+        applicationStage: "applied",
         createdAt: serverTimestamp(),
       });
 
@@ -73,11 +94,21 @@ const TeacherApplicationForm: React.FC = () => {
         email: user.email!,
         firstName: user.displayName?.split(" ")[0] || "",
         lastName: user.displayName?.split(" ")[1] || "",
-        contact: "",
-        address: "",
+        gender,
+        province,
+        country,
+        address,
+        contact,
         subject,
+        experience,
+        previousSchool,
+        references: [
+          { name: ref1Name, contact: ref1Contact },
+          { name: ref2Name, contact: ref2Contact },
+        ],
         role: "teacher",
         status: "pending",
+        applicationStage: "applied",
         createdAt: serverTimestamp(),
       });
 
@@ -92,7 +123,7 @@ const TeacherApplicationForm: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-      <Card className="w-full max-w-md">
+      <Card className="w-full max-w-md max-h-screen overflow-y-auto">
         <CardHeader>
           <CardTitle className="text-xl">Teacher Application</CardTitle>
         </CardHeader>
@@ -103,6 +134,7 @@ const TeacherApplicationForm: React.FC = () => {
             </Alert>
           )}
           <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Basic Info */}
             <div>
               <Label>First Name</Label>
               <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
@@ -110,6 +142,10 @@ const TeacherApplicationForm: React.FC = () => {
             <div>
               <Label>Last Name</Label>
               <Input value={lastName} onChange={(e) => setLastName(e.target.value)} required />
+            </div>
+            <div>
+              <Label>Gender</Label>
+              <Input value={gender} onChange={(e) => setGender(e.target.value)} placeholder="Male / Female / Other" />
             </div>
             <div>
               <Label>Email</Label>
@@ -124,12 +160,48 @@ const TeacherApplicationForm: React.FC = () => {
               <Input value={contact} onChange={(e) => setContact(e.target.value)} />
             </div>
             <div>
-              <Label>Address</Label>
+              <Label>Province</Label>
+              <Input value={province} onChange={(e) => setProvince(e.target.value)} />
+            </div>
+            <div>
+              <Label>Country</Label>
+              <Input value={country} onChange={(e) => setCountry(e.target.value)} />
+            </div>
+            <div>
+              <Label>Full Address</Label>
               <Input value={address} onChange={(e) => setAddress(e.target.value)} />
             </div>
             <div>
               <Label>Subject to Teach</Label>
               <Input value={subject} onChange={(e) => setSubject(e.target.value)} required />
+            </div>
+
+            {/* Professional Info */}
+            <div>
+              <Label>Teaching Experience</Label>
+              <Input value={experience} onChange={(e) => setExperience(e.target.value)} placeholder="e.g. 5 years" />
+            </div>
+            <div>
+              <Label>Previous School</Label>
+              <Input value={previousSchool} onChange={(e) => setPreviousSchool(e.target.value)} />
+            </div>
+
+            {/* References */}
+            <div>
+              <Label>Reference 1 Name</Label>
+              <Input value={ref1Name} onChange={(e) => setRef1Name(e.target.value)} />
+            </div>
+            <div>
+              <Label>Reference 1 Contact</Label>
+              <Input value={ref1Contact} onChange={(e) => setRef1Contact(e.target.value)} />
+            </div>
+            <div>
+              <Label>Reference 2 Name</Label>
+              <Input value={ref2Name} onChange={(e) => setRef2Name(e.target.value)} />
+            </div>
+            <div>
+              <Label>Reference 2 Contact</Label>
+              <Input value={ref2Contact} onChange={(e) => setRef2Contact(e.target.value)} />
             </div>
 
             <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700" disabled={isLoading}>

@@ -6,6 +6,7 @@ import {
   collection,
   doc,
   setDoc,
+  updateDoc,
   deleteDoc,
   onSnapshot,
   addDoc,
@@ -15,15 +16,40 @@ import {
 } from "firebase/firestore";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+
+interface Reference {
+  name: string;
+  contact: string;
+}
 
 interface UserRecord {
   uid: string;
-  name: string;
+  name?: string;
+  firstName?: string;
+  lastName?: string;
   email: string;
   role: string;
   subject?: string;
   parentId?: string;
   status?: string;
+
+  gender?: string;
+  province?: string;
+  country?: string;
+  address?: string;
+  contact?: string;
+  experience?: string;
+  previousSchool?: string;
+  references?: Reference[];
+
+  idUrl?: string;
+  qualUrl?: string;
+  photoUrl?: string;
+  cetaUrl?: string;
+  workPermitUrl?: string;
+
+  applicationStage?: string;
 }
 
 interface Message {
@@ -35,7 +61,6 @@ interface Message {
 }
 
 const PrincipalDashboard: React.FC = () => {
-  // User management state
   const [pendingStudents, setPendingStudents] = useState<UserRecord[]>([]);
   const [pendingTeachers, setPendingTeachers] = useState<UserRecord[]>([]);
   const [approvedStudents, setApprovedStudents] = useState<UserRecord[]>([]);
@@ -43,11 +68,12 @@ const PrincipalDashboard: React.FC = () => {
   const [suspendedStudents, setSuspendedStudents] = useState<UserRecord[]>([]);
   const [suspendedTeachers, setSuspendedTeachers] = useState<UserRecord[]>([]);
 
-  // Chat state
   const [chatOpen, setChatOpen] = useState(false);
   const [chatTo, setChatTo] = useState<string>("helpdesk");
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
+
+  const [searchTerm, setSearchTerm] = useState("");
 
   const principalUid = auth.currentUser?.uid || "principal";
 
@@ -57,19 +83,19 @@ const PrincipalDashboard: React.FC = () => {
 
     unsubscribers.push(
       onSnapshot(collection(db, "pendingStudents"), (snap) =>
-        setPendingStudents(snap.docs.map((d) => d.data() as UserRecord))
+        setPendingStudents(snap.docs.map((d) => ({ uid: d.id, ...d.data() } as UserRecord)))
       )
     );
 
     unsubscribers.push(
       onSnapshot(collection(db, "pendingTeachers"), (snap) =>
-        setPendingTeachers(snap.docs.map((d) => d.data() as UserRecord))
+        setPendingTeachers(snap.docs.map((d) => ({ uid: d.id, ...d.data() } as UserRecord)))
       )
     );
 
     unsubscribers.push(
       onSnapshot(collection(db, "students"), (snap) => {
-        const all = snap.docs.map((d) => d.data() as UserRecord);
+        const all = snap.docs.map((d) => ({ uid: d.id, ...d.data() } as UserRecord));
         setApprovedStudents(all.filter((s) => s.status !== "suspended"));
         setSuspendedStudents(all.filter((s) => s.status === "suspended"));
       })
@@ -77,7 +103,7 @@ const PrincipalDashboard: React.FC = () => {
 
     unsubscribers.push(
       onSnapshot(collection(db, "teachers"), (snap) => {
-        const all = snap.docs.map((d) => d.data() as UserRecord);
+        const all = snap.docs.map((d) => ({ uid: d.id, ...d.data() } as UserRecord));
         setApprovedTeachers(all.filter((t) => t.status !== "suspended"));
         setSuspendedTeachers(all.filter((t) => t.status === "suspended"));
       })
@@ -86,7 +112,7 @@ const PrincipalDashboard: React.FC = () => {
     return () => unsubscribers.forEach((unsub) => unsub());
   }, []);
 
-  // 🔹 Load chat messages (all conversations principal is involved in)
+  // 🔹 Load chat messages
   useEffect(() => {
     const q = query(collection(db, "messages"), orderBy("createdAt", "asc"));
     const unsub = onSnapshot(q, (snap) => {
@@ -104,7 +130,6 @@ const PrincipalDashboard: React.FC = () => {
     return () => unsub();
   }, [principalUid, chatTo]);
 
-  // 🔹 Send message
   const sendMessage = async () => {
     if (!message.trim()) return;
     await addDoc(collection(db, "messages"), {
@@ -117,26 +142,12 @@ const PrincipalDashboard: React.FC = () => {
   };
 
   // ---------------- Approve / Reject Logic ----------------
-  const approveStudent = async (student: UserRecord) => {
-    await setDoc(doc(db, "students", student.uid), {
-      ...student,
-      role: "student",
-      status: "approved",
-      approvedAt: new Date().toISOString(),
-      approvedBy: principalUid,
-    });
-    await deleteDoc(doc(db, "pendingStudents", student.uid));
-  };
-
-  const rejectStudent = async (student: UserRecord) => {
-    await deleteDoc(doc(db, "pendingStudents", student.uid));
-  };
-
   const approveTeacher = async (teacher: UserRecord) => {
     await setDoc(doc(db, "teachers", teacher.uid), {
       ...teacher,
       role: "teacher",
       status: "approved",
+      applicationStage: "approved",
       approvedAt: new Date().toISOString(),
       approvedBy: principalUid,
     });
@@ -144,7 +155,12 @@ const PrincipalDashboard: React.FC = () => {
   };
 
   const rejectTeacher = async (teacher: UserRecord) => {
-    await deleteDoc(doc(db, "pendingTeachers", teacher.uid));
+    await updateDoc(doc(db, "pendingTeachers", teacher.uid), {
+      applicationStage: "rejected",
+      status: "rejected",
+      reviewedAt: new Date().toISOString(),
+      reviewedBy: principalUid,
+    });
   };
 
   const suspendUser = async (user: UserRecord) => {
@@ -173,66 +189,103 @@ const PrincipalDashboard: React.FC = () => {
     onReject?: (u: UserRecord) => void,
     allowSuspend?: boolean,
     allowReinstate?: boolean
-  ) => (
-    <Card className="bg-white shadow-md">
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        {users.length === 0 && (
-          <p className="text-sm text-gray-500">No records found.</p>
-        )}
-        <ul className="space-y-3">
-          {users.map((u) => (
-            <li
-              key={u.uid}
-              className="flex justify-between items-center p-2 border rounded-md"
-            >
-              <div>
-                <p className="font-medium">{u.name || u.email}</p>
-                <p className="text-xs text-gray-500">{u.email}</p>
-                {u.role === "teacher" && u.subject && (
-                  <p className="text-xs text-gray-400">
-                    Subject: {u.subject}
-                  </p>
-                )}
-                <p className="text-xs text-gray-400">Status: {u.status}</p>
-              </div>
+  ) => {
+    const filteredUsers = users.filter(
+      (u) =>
+        u.firstName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        u.lastName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        u.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        u.email?.toLowerCase().includes(searchTerm.toLowerCase())
+    );
 
-              {onApprove && onReject ? (
-                <div className="flex gap-2">
-                  <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => onApprove(u)}>
-                    Approve
-                  </Button>
-                  <Button size="sm" variant="destructive" onClick={() => onReject(u)}>
-                    Reject
-                  </Button>
+    return (
+      <Card className="bg-white shadow-md">
+        <CardHeader>
+          <CardTitle>{title}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {filteredUsers.length === 0 && <p className="text-sm text-gray-500">No matching records found.</p>}
+          <ul className="space-y-3">
+            {filteredUsers.map((u) => (
+              <li key={u.uid} className="p-3 border rounded-md bg-gray-50 flex flex-col gap-2">
+                <div>
+                  <p className="font-medium">{u.firstName} {u.lastName}</p>
+                  <p className="text-xs text-gray-500">{u.email}</p>
+                  {u.role === "teacher" && (
+                    <>
+                      <p className="text-xs text-gray-400">Gender: {u.gender}</p>
+                      <p className="text-xs text-gray-400">Contact: {u.contact}</p>
+                      <p className="text-xs text-gray-400">Province: {u.province}</p>
+                      <p className="text-xs text-gray-400">Country: {u.country}</p>
+                      <p className="text-xs text-gray-400">Address: {u.address}</p>
+                      <p className="text-xs text-gray-400">Subject: {u.subject}</p>
+                      <p className="text-xs text-gray-400">Experience: {u.experience}</p>
+                      <p className="text-xs text-gray-400">Previous School: {u.previousSchool}</p>
+                      {u.references && u.references.length > 0 && (
+                        <div className="text-xs text-gray-400">
+                          References:
+                          <ul className="list-disc ml-4">
+                            {u.references.map((ref, i) => (
+                              <li key={i}>
+                                {ref.name} ({ref.contact})
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </>
+                  )}
+                  <p className="text-xs text-gray-400">Status: {u.status}</p>
                 </div>
-              ) : allowSuspend ? (
-                <Button size="sm" className="bg-yellow-500 hover:bg-yellow-600" onClick={() => suspendUser(u)}>
-                  Suspend
-                </Button>
-              ) : allowReinstate ? (
-                <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => reinstateUser(u)}>
-                  Reinstate
-                </Button>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      </CardContent>
-    </Card>
-  );
+
+                {/* 🔹 Teacher documents */}
+                {u.role === "teacher" && (
+                  <div className="flex flex-col gap-1 text-xs">
+                    {u.idUrl && <a href={u.idUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">📄 View ID</a>}
+                    {u.qualUrl && <a href={u.qualUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">🎓 View Qualifications</a>}
+                    {u.photoUrl && <a href={u.photoUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">🖼 View Photo</a>}
+                    {u.cetaUrl && <a href={u.cetaUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">📝 View CETA Certificate</a>}
+                    {u.workPermitUrl && <a href={u.workPermitUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">🌍 View Work Permit</a>}
+                  </div>
+                )}
+
+                {/* Actions */}
+                {onApprove && onReject ? (
+                  <div className="flex gap-2 mt-2">
+                    <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => onApprove(u)}>Approve</Button>
+                    <Button size="sm" variant="destructive" onClick={() => onReject(u)}>Reject</Button>
+                  </div>
+                ) : allowSuspend ? (
+                  <Button size="sm" className="bg-yellow-500 hover:bg-yellow-600" onClick={() => suspendUser(u)}>Suspend</Button>
+                ) : allowReinstate ? (
+                  <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => reinstateUser(u)}>Reinstate</Button>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </CardContent>
+      </Card>
+    );
+  };
 
   // ---------------- Dashboard Layout ----------------
   return (
     <div className="min-h-screen bg-gray-50 p-6 relative">
-      <h1 className="text-3xl font-bold mb-6 text-gray-800">
-        Principal Dashboard
-      </h1>
+      <h1 className="text-3xl font-bold mb-6 text-gray-800">Principal Dashboard</h1>
+
+      {/* 🔍 Search Bar */}
+      <div className="mb-6">
+        <Input
+          type="text"
+          placeholder="Search by name or email..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="w-full max-w-md"
+        />
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {renderUserCard("Pending Students", pendingStudents, approveStudent, rejectStudent)}
+        {renderUserCard("Pending Students", pendingStudents)}
         {renderUserCard("Pending Teachers", pendingTeachers, approveTeacher, rejectTeacher)}
 
         {renderUserCard("Approved Students", approvedStudents, undefined, undefined, true)}
@@ -242,7 +295,7 @@ const PrincipalDashboard: React.FC = () => {
         {renderUserCard("Suspended Teachers", suspendedTeachers, undefined, undefined, false, true)}
       </div>
 
-      {/* 💬 Floating Chat Icon */}
+      {/* 💬 Floating Chat */}
       <div className="fixed bottom-6 right-6">
         <button
           onClick={() => setChatOpen(!chatOpen)}
@@ -257,7 +310,6 @@ const PrincipalDashboard: React.FC = () => {
         <div className="fixed bottom-20 right-6 w-80 bg-white border rounded-lg shadow-lg p-4">
           <h2 className="text-sm font-semibold mb-2">Send a Message</h2>
 
-          {/* Recipient Dropdown */}
           <select
             value={chatTo}
             onChange={(e) => setChatTo(e.target.value)}
@@ -266,7 +318,7 @@ const PrincipalDashboard: React.FC = () => {
             <option value="helpdesk">Helpdesk</option>
             {approvedTeachers.map((t) => (
               <option key={t.uid} value={t.uid}>
-                Teacher: {t.name || t.email}
+                Teacher: {t.firstName} {t.lastName}
               </option>
             ))}
             {approvedStudents.map((s) => (
@@ -276,16 +328,11 @@ const PrincipalDashboard: React.FC = () => {
             ))}
           </select>
 
-          {/* Messages */}
           <div className="max-h-40 overflow-y-auto border rounded p-2 mb-2">
             {messages.length > 0 ? (
               messages.map((m) => (
                 <div key={m.id} className="text-xs mb-1">
-                  <span
-                    className={
-                      m.sender === principalUid ? "font-medium text-blue-600" : "font-medium text-gray-700"
-                    }
-                  >
+                  <span className={m.sender === principalUid ? "font-medium text-blue-600" : "font-medium text-gray-700"}>
                     {m.sender === principalUid ? "You" : m.sender}:
                   </span>{" "}
                   {m.text}
@@ -296,7 +343,6 @@ const PrincipalDashboard: React.FC = () => {
             )}
           </div>
 
-          {/* Input */}
           <div className="flex gap-2">
             <input
               type="text"

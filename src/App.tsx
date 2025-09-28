@@ -7,7 +7,12 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
 import { AuthProvider, useAuth } from "./components/auth/AuthProvider";
 import { ProtectedRoute } from "./components/auth/ProtectedRoute";
+
+// Teacher application
 import TeacherApplicationForm from "@/components/auth/TeacherApplicationForm";
+import TeacherDocumentUpload from "./components/auth/TeacherDocumentUpload";
+import TeacherApprovalStatus from "./components/auth/TeacherApprovalStatus";
+import TeacherCongratsOrReject from "./components/auth/TeacherCongratsOrReject";
 
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
@@ -119,7 +124,13 @@ const App = () => {
                 {/* Other */}
                 <Route path="/admin-login" element={<AdminLoginForm />} />
                 <Route path="/footer" element={<Footer />} />
+
+                {/* Teacher Application */}
                 <Route path="/apply-teacher" element={<TeacherApplicationForm />} />
+                <Route path="/upload-teacher-docs" element={<TeacherDocumentUpload />} />
+                <Route path="/teacher-status" element={<TeacherApprovalStatus />} />
+                <Route path="/teacher-result" element={<TeacherCongratsOrReject />} />
+
 
                 {/* Catch-all */}
                 <Route path="*" element={<NotFound />} />
