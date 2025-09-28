@@ -1,552 +1,146 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { GraduationCap } from "lucide-react";
-import { useAuth } from "@/components/auth/AuthProvider";
+import { X, ArrowLeft } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { FcGoogle } from "react-icons/fc";
 import { db } from "@/lib/firebaseConfig";
-import {
-  doc,
-  getDoc,
-  setDoc,
-  collection,
-  getDocs,
-  serverTimestamp,
-} from "firebase/firestore";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 
-export const LoginForm: React.FC = () => {
-  const { login, loginWithGoogle, signup } = useAuth();
+const TeacherApplicationForm: React.FC = () => {
   const navigate = useNavigate();
   const auth = getAuth();
-
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [role, setRole] = useState<
-    "principal" | "teacher" | "parent" | "student"
-  >("parent");
-  const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [isSignup, setIsSignup] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-
-  // ---------- Parent-specific ----------
-  const [title, setTitle] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
-  const [contact, setContact] = useState("");
-  const [address, setAddress] = useState("");
+  const [email, setEmail] = useState("");
+  const [subject, setSubject] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
-  // ---------- Student-specific ----------
-  const [grades] = useState([
-    "Grade 8",
-    "Grade 9",
-    "Grade 10",
-    "Grade 11",
-    "Grade 12",
-  ]);
-  const [selectedGrade, setSelectedGrade] = useState("");
-  const [students, setStudents] = useState<any[]>([]);
-  const [selectedStudentId, setSelectedStudentId] = useState("");
-
-  // ---------- Teacher-specific ----------
-  const [subjects, setSubjects] = useState<string[]>([]);
-  const [selectedSubject, setSelectedSubject] = useState("");
-
-  // ---------------- Fetch teacher subjects ----------------
+  // Load draft if exists
   useEffect(() => {
-    if (role === "teacher") {
-      const fetchSubjects = async () => {
-        const q = collection(db, "teachers");
-        const snapshot = await getDocs(q);
-        const subs: string[] = [];
-        snapshot.forEach((docSnap) => {
-          const data = docSnap.data();
-          if (data.subject && !subs.includes(data.subject)) {
-            subs.push(data.subject);
-          }
-        });
-        setSubjects(subs);
-      };
-      fetchSubjects();
+    const draft = localStorage.getItem("teacherApplicationDraft");
+    if (draft) {
+      const parsed = JSON.parse(draft);
+      setFirstName(parsed.firstName || "");
+      setLastName(parsed.lastName || "");
+      setEmail(parsed.email || "");
+      setSubject(parsed.subject || "");
     }
-  }, [role]);
+  }, []);
 
-  // ---------------- Fetch students by grade ----------------
-  useEffect(() => {
-    if (role === "student" && selectedGrade) {
-      const fetchStudents = async () => {
-        const q = collection(db, "students");
-        const snapshot = await getDocs(q);
-        const list: any[] = [];
-        snapshot.forEach((docSnap) => {
-          const data = docSnap.data();
-          if (data.grade === selectedGrade) {
-            list.push({ id: docSnap.id, ...data });
-          }
-        });
-        setStudents(list);
-      };
-      fetchStudents();
-    }
-  }, [role, selectedGrade]);
-
-  // ---------------- Email/Password Login ----------------
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-    setIsLoading(true);
-
-    try {
-      if (role === "student") {
-        if (!selectedStudentId) throw new Error("Please select your name.");
-        const studentRef = doc(db, "students", selectedStudentId);
-        const studentSnap = await getDoc(studentRef);
-
-        if (!studentSnap.exists()) {
-          throw new Error(
-            "No student record found. Contact your parent or principal."
-          );
-        }
-
-        const studentData = studentSnap.data();
-        const emailToUse = studentData.email;
-
-        const cred = await login(emailToUse, password);
-        if (cred.user.uid !== selectedStudentId) {
-          throw new Error("Account mismatch. Please contact your principal.");
-        }
-
-        navigate("/student-dashboard");
-        return;
-      }
-
-      if (role === "teacher") {
-        const cred = await login(email, password);
-        const uid = cred.user.uid;
-        const approvedSnap = await getDoc(doc(db, "teachers", uid));
-        const pendingSnap = await getDoc(doc(db, "pendingTeachers", uid));
-
-        if (approvedSnap.exists()) {
-          navigate("/teacher-dashboard");
-        } else if (pendingSnap.exists()) {
-          throw new Error("Your teacher account is still pending approval.");
-        } else {
-          throw new Error("No teacher record found.");
-        }
-        return;
-      }
-
-      const cred = await login(email, password);
-      const uid = cred.user.uid;
-      const snap = await getDoc(doc(db, `${role}s`, uid));
-      if (!snap.exists()) {
-        throw new Error(`No ${role} record found. Contact admin.`);
-      }
-      navigate(`/${role}-dashboard`);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setIsLoading(false);
-    }
+  // Save draft locally
+  const handleSaveDraft = () => {
+    const draft = { firstName, lastName, email, subject };
+    localStorage.setItem("teacherApplicationDraft", JSON.stringify(draft));
+    alert("Application saved. You can continue later.");
   };
 
-  // ---------------- Signup ----------------
-  const handleSignup = async (e: React.FormEvent) => {
+  // Submit to Firestore
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    if (role === "student") {
-      setError("Students cannot sign up. Please ask your parent to register you.");
-      return;
-    }
-    if (role === "principal") {
-      setError("Principals cannot self-register. Contact admin.");
-      return;
-    }
-
-    setError("");
     setIsLoading(true);
-
     try {
-      if (role === "parent") {
-        const cred = await signup(email, password);
-        const uid = cred.user.uid;
-
-        await setDoc(doc(db, "parents", uid), {
-          uid,
-          email,
-          title,
-          firstName,
-          lastName,
-          contact,
-          address,
-          role: "parent",
-          createdAt: serverTimestamp(),
-        });
-
-        navigate("/parent-dashboard");
-      }
-
-      if (role === "teacher") {
-        const cred = await signup(email, password);
-        const uid = cred.user.uid;
-
-        await setDoc(doc(db, "pendingTeachers", uid), {
-          uid,
-          email,
-          name: `${firstName} ${lastName}`.trim(),
-          subject: selectedSubject || null,
-          role: "teacher",
-          status: "pending",
-          createdAt: serverTimestamp(),
-        });
-
-        alert("Your teacher account is pending approval by the principal.");
-        navigate("/");
-      }
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // ---------------- Google Login/Signup ----------------
-  const handleGoogleSignIn = async () => {
-    setError("");
-    setIsLoading(true);
-
-    try {
-      const loggedUser = await loginWithGoogle();
-      const uid = loggedUser.uid;
-
-      if (role === "student") {
-        throw new Error("Students cannot sign up with Google.");
-      }
-
-      if (role === "teacher") {
-        const approvedSnap = await getDoc(doc(db, "teachers", uid));
-        const pendingSnap = await getDoc(doc(db, "pendingTeachers", uid));
-
-        if (approvedSnap.exists()) {
-          navigate("/teacher-dashboard");
-          return;
-        }
-
-        if (pendingSnap.exists()) {
-          alert("Your teacher account is still pending approval.");
-          navigate("/");
-          return;
-        }
-
-        await setDoc(doc(db, "pendingTeachers", uid), {
-          uid,
-          email: loggedUser.email!,
-          name: loggedUser.displayName || "",
-          role: "teacher",
-          subject: selectedSubject || null,
-          status: "pending",
-          createdAt: serverTimestamp(),
-        });
-        alert("Your teacher registration is pending approval by the principal.");
-        navigate("/");
+      const user = auth.currentUser;
+      if (!user) {
+        alert("You must be signed in to apply.");
         return;
       }
 
-     // ---------- Parent Google ----------
-if (role === "parent") {
-  const parentSnap = await getDoc(doc(db, "parents", uid));
-  if (parentSnap.exists()) {
-    navigate("/parent-dashboard");
-    return;
-  }
+      await setDoc(doc(db, "pendingTeachers", user.uid), {
+        uid: user.uid,
+        email,
+        name: `${firstName} ${lastName}`,
+        subject,
+        role: "teacher",
+        status: "pending",
+        createdAt: serverTimestamp(),
+      });
 
-  await setDoc(doc(db, "parents", uid), {
-    uid,
-    email: loggedUser.email!,
-    title: "Mr/Mrs", // default until edited
-    firstName: loggedUser.displayName?.split(" ")[0] || "",
-    lastName: loggedUser.displayName?.split(" ")[1] || "",
-    contact: "",
-    address: "",
-    photoURL: loggedUser.photoURL || "", // ✅ Google profile pic
-    role: "parent",
-    createdAt: serverTimestamp(),
-  });
-
-  navigate("/parent-dashboard");
-  return;
-}
-
-      if (role === "principal") {
-        throw new Error("Principals cannot self-register. Contact admin.");
-      }
+      localStorage.removeItem("teacherApplicationDraft");
+      alert("Application submitted! Pending principal approval.");
+      navigate("/");
     } catch (err: any) {
-      setError(err.message);
+      alert(err.message);
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4 relative">
+      {/* Cancel (X) button */}
+      <button
+        onClick={() => navigate("/")}
+        className="absolute top-4 right-4 text-gray-500 hover:text-gray-800"
+      >
+        <X className="w-6 h-6" />
+      </button>
+
+      {/* Return arrow */}
+      <button
+        onClick={() => navigate("/signup")}
+        className="absolute top-4 left-4 text-gray-500 hover:text-gray-800 flex items-center gap-1"
+      >
+        <ArrowLeft className="w-5 h-5" /> Back
+      </button>
+
       <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <div className="flex items-center justify-center gap-2 mb-4">
-            <GraduationCap className="w-8 h-8 text-blue-600" />
-            <span className="text-2xl font-bold text-gray-900">
-              NextGen Independent Online (CAPS) High School
-            </span>
-          </div>
-          <CardTitle className="text-xl">
-            {isSignup ? "Sign Up" : "Welcome Back"}
-          </CardTitle>
-          <CardDescription>
-            {isSignup
-              ? "Create your account"
-              : "Sign in to access your dashboard"}
-          </CardDescription>
+        <CardHeader>
+          <CardTitle>Teacher Application</CardTitle>
         </CardHeader>
-
         <CardContent className="space-y-4">
-          {error && (
-            <Alert variant="destructive">
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-
-          <form
-            onSubmit={isSignup ? handleSignup : handleLogin}
-            className="space-y-4"
-          >
-            {/* Role Selection */}
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label>Select Role</Label>
-              <select
-                value={role}
-                onChange={(e) => setRole(e.target.value as any)}
-                className="w-full border rounded-md p-2"
+              <Label>First Name</Label>
+              <Input
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
                 required
-              >
-                <option value="principal">Principal</option>
-                <option value="teacher">Teacher</option>
-                <option value="student">Student</option>
-                <option value="parent">Parent</option>
-              </select>
+              />
             </div>
-
-            {/* Student Login Fields */}
-            {role === "student" && !isSignup && (
-              <>
-                <div className="space-y-2">
-                  <Label>Grade</Label>
-                  <select
-                    value={selectedGrade}
-                    onChange={(e) => setSelectedGrade(e.target.value)}
-                    className="w-full border rounded-md p-2"
-                    required
-                  >
-                    <option value="">-- Select Grade --</option>
-                    {grades.map((g) => (
-                      <option key={g} value={g}>
-                        {g}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Student Name</Label>
-                  <select
-                    value={selectedStudentId}
-                    onChange={(e) => setSelectedStudentId(e.target.value)}
-                    className="w-full border rounded-md p-2"
-                    required
-                  >
-                    <option value="">-- Select Student --</option>
-                    {students.map((stu) => (
-                      <option key={stu.id} value={stu.id}>
-                        {stu.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </>
-            )}
-
-            {/* Non-student Email */}
-            {role !== "student" && (
-              <div className="space-y-2">
-                <Label>Email Address</Label>
-                <Input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                />
-              </div>
-            )}
-
-            {/* Password */}
             <div className="space-y-2">
-              <Label>Password</Label>
-              <div className="relative">
-                <Input
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 text-sm"
-                >
-                  {showPassword ? "Hide" : "Show"}
-                </button>
-              </div>
+              <Label>Last Name</Label>
+              <Input
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Email</Label>
+              <Input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Subject</Label>
+              <Input
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+                required
+              />
             </div>
 
-            {/* Parent Signup Extra Fields */}
-            {isSignup && role === "parent" && (
-              <>
-                <div className="space-y-2">
-                  <Label>Title</Label>
-                  <select
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    className="w-full border rounded-md p-2"
-                    required
-                  >
-                    <option value="">Select Title</option>
-                    <option value="Mr">Mr</option>
-                    <option value="Mrs">Mrs</option>
-                    <option value="Ms">Ms</option>
-                    <option value="Dr">Dr</option>
-                  </select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>First Name</Label>
-                  <Input
-                    type="text"
-                    value={firstName}
-                    onChange={(e) => setFirstName(e.target.value)}
-                    required
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Last Name</Label>
-                  <Input
-                    type="text"
-                    value={lastName}
-                    onChange={(e) => setLastName(e.target.value)}
-                    required
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Contact Number</Label>
-                  <Input
-                    type="text"
-                    value={contact}
-                    onChange={(e) => setContact(e.target.value)}
-                    required
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Address</Label>
-                  <Input
-                    type="text"
-                    value={address}
-                    onChange={(e) => setAddress(e.target.value)}
-                    required
-                  />
-                </div>
-              </>
-            )}
-
-            {/* Teacher Signup Fields */}
-            {role === "teacher" && isSignup && (
-              <div className="text-center text-sm text-gray-500">
-                <p>
-                  Teachers should apply via{" "}
-                  <a href="/apply-teacher" className="text-blue-600 underline">
-                    Teacher Application Form
-                  </a>
-                </p>
-              </div>
-            )}
-
-
-            {/* Buttons */}
             <div className="flex gap-2">
-              <Button
-                type="submit"
-                className="flex-1 bg-blue-600 hover:bg-blue-700"
-                disabled={isLoading}
-              >
-                {isLoading
-                  ? isSignup
-                    ? "Signing Up..."
-                    : "Signing In..."
-                  : isSignup
-                  ? "Sign Up"
-                  : "Sign In"}
+              <Button type="submit" disabled={isLoading} className="flex-1">
+                {isLoading ? "Submitting..." : "Submit Application"}
               </Button>
-
               <Button
                 type="button"
-                className="flex-1 flex items-center justify-center gap-2 border border-gray-300 hover:bg-gray-100"
-                onClick={handleGoogleSignIn}
-                disabled={isLoading}
+                variant="outline"
+                onClick={handleSaveDraft}
+                className="flex-1"
               >
-                <FcGoogle className="w-5 h-5" />
-                Google
+                Save & Continue Later
               </Button>
             </div>
-
-            {role !== "student" && (
-              <div className="text-center text-sm text-gray-500 mt-4">
-                {isSignup ? (
-                  <span>
-                    Already have an account?{" "}
-                    <button
-                      type="button"
-                      className="text-blue-600"
-                      onClick={() => setIsSignup(false)}
-                    >
-                      Sign In
-                    </button>
-                  </span>
-                ) : (
-                  <span>
-                    Don’t have an account?{" "}
-                    <button
-                      type="button"
-                      className="text-blue-600"
-                      onClick={() => setIsSignup(true)}
-                    >
-                      Sign Up
-                    </button>
-                  </span>
-                )}
-              </div>
-            )}
           </form>
         </CardContent>
       </Card>
@@ -554,4 +148,4 @@ if (role === "parent") {
   );
 };
 
-export default LoginForm;
+export default TeacherApplicationForm;
