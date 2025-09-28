@@ -1,5 +1,26 @@
-node_modules
+# Node modules
+node_modules/
+
 # Firebase service account keys
 serviceAccountKey.json
 functions/serviceAccountKey.json
 *.key.json
+
+# Build output / compiled files
+dist/
+build/
+lib/**/*.js
+lib/**/*.js.map
+
+# TypeScript declaration files
+typings/
+
+# Local environment configs (never commit secrets!)
+.env
+.env.local
+.env.*.local
+
+# IDE / Editor junk
+.vscode/
+.idea/
+.DS_Store
