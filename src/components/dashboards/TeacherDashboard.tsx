@@ -110,9 +110,9 @@ const TeacherDashboard: React.FC = () => {
   useEffect(() => {
     if (!user?.uid) return;
 
-    // Courses
+    // ✅ Correct Firestore path for subcollection
     const qCourses = query(
-      collection(db, `users/${user.uid}/classroom/courses`),
+      collection(db, "users", user.uid, "classroom", "courses"),
       orderBy("name")
     );
     const unsubCourses = onSnapshot(qCourses, (snap) =>
