@@ -21,8 +21,6 @@ import StudentDashboard from "./components/dashboards/StudentDashboard";
 import ParentDashboard from "./components/dashboards/parent/ParentDashboard";
 import { Footer } from "./components/Footer";
 import { AdminLoginForm } from "./components/auth/AdminLoginForm";
-import PendingApprovalScreen from "./components/auth/PendingApprovalScreen";
-import SuspendedScreen from "./components/auth/SuspendedScreen";
 
 // ✅ Payments
 import PaymentSuccess from "./components/payments/PaymentSuccess";
@@ -70,8 +68,9 @@ const App = () => {
         <TooltipProvider>
           <Toaster />
           <Sonner />
-          <BrowserRouter>
-            <AuthProvider>
+          {/* 🔑 AuthProvider now wraps BrowserRouter */}
+          <AuthProvider>
+            <BrowserRouter>
               <Routes>
                 <Route path="/" element={<Index />} />
 
@@ -121,8 +120,8 @@ const App = () => {
                 <Route path="/payment-details/:regId" element={<PaymentDetails />} />
                 <Route path="/payment-success" element={<PaymentSuccess />} />
                 <Route path="/payment-cancel" element={<PaymentCancel />} />
-                <Route path="/status" element={<StatusSection />} /> 
-                <Route path="/payments" element={<PaymentsSection />} /> 
+                <Route path="/status" element={<StatusSection />} />
+                <Route path="/payments" element={<PaymentsSection />} />
 
                 {/* Other */}
                 <Route path="/admin-login" element={<AdminLoginForm />} />
@@ -137,8 +136,8 @@ const App = () => {
                 {/* Catch-all */}
                 <Route path="*" element={<NotFound />} />
               </Routes>
-            </AuthProvider>
-          </BrowserRouter>
+            </BrowserRouter>
+          </AuthProvider>
         </TooltipProvider>
       </QueryClientProvider>
     </ThemeProvider>
