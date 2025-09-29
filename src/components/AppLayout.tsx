@@ -1,31 +1,98 @@
-// src/AppLayout.tsx
-import React from "react";
+import React, { useState } from "react";
 import { AuthProvider, useAuth } from "./auth/AuthProvider";
 import LoginForm from "./auth/LoginForm";
 import ParentDashboard from "./dashboards/parent/ParentDashboard";
 import TeacherDashboard from "./dashboards/TeacherDashboard";
 import PrincipalDashboard from "./dashboards/PrincipalDashboard";
 import AdminDashboard from "./dashboards/AdminDashboard"; // secret login
+import logo from '../img/logo.png'
 
-// ------------------- Main AppContent -------------------
 const AppContent: React.FC = () => {
   const { user, loading } = useAuth();
+  const [expanded, setExpanded] = useState(false);
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-600 via-purple-600 to-indigo-800 text-white">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading NextGen School Portal...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
+          <p>Loading NextGen School Portal...</p>
         </div>
       </div>
     );
   }
 
   if (!user) {
-    return <LoginForm />;
+    return (
+      <div className="relative min-h-screen bg-gradient-to-br from-blue-600 via-purple-600 to-indigo-800">
+        {/* Background image */}
+        <div
+          className="absolute inset-0 bg-cover bg-center opacity-40"
+          style={{
+            backgroundImage:
+              "url(https://d64gsuwffb70l.cloudfront.net/68c31a777600b687984e53d0_1757616805155_a5c804bd.webp)",
+          }}
+        ></div>
+
+        {/* Overlay tint */}
+        <div className="absolute inset-0 bg-gradient-to-br from-blue-900/60 via-purple-900/60 to-indigo-900/60"></div>
+
+        {/* Content wrapper */}
+        <div className="relative z-10 flex flex-col items-center justify-center min-h-screen px-6 text-center text-white">
+          {/* Branding */}
+          <h1 className="text-4xl md:text-6xl font-bold mb-4 leading-tight drop-shadow-lg">
+            NextGen Independent Online{" "}
+            <span className="block text-yellow-300">School Portal</span>
+          </h1>
+          <p className="text-lg md:text-xl max-w-2xl mb-10 text-blue-100 drop-shadow-md">
+            “A New Age STEM High School — CAPS-Aligned, Future-Ready, and
+            inspiring the next generation in Mathematics, Medicine, Technology,
+            and Innovation.”
+          </p>
+
+          {/* Collapsible Login Box */}
+          <div
+            className="bg-white rounded-lg shadow-2xl text-gray-800 cursor-pointer transition-all duration-300 overflow-hidden"
+            style={{
+              width: expanded ? "320px" : "120px",
+              height: expanded ? "auto" : "120px",
+            }}
+            onClick={() => !expanded && setExpanded(true)}
+          >
+            {!expanded ? (
+              <div className="flex flex-col items-center justify-center h-full p-4">
+                {/* Logo */}
+                <img
+                  src={logo}
+                  alt="NextGen Logo"
+                  className="w-18 h-18 mb-2"
+                />
+                <p className="text-sm font-medium text-blue-700 underline">
+                  Access here!
+                </p>
+              </div>
+            ) : (
+              <div className="p-6">
+                <h2 className="text-xl font-semibold text-center mb-4">
+                  Login to Continue
+                </h2>
+                <LoginForm />
+                {/* Optional close link */}
+                <p
+                  className="text-center text-xs mt-4 text-blue-600 underline cursor-pointer"
+                  onClick={() => setExpanded(false)}
+                >
+                  Close
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
   }
 
+  // Logged-in dashboards
   switch (user.role) {
     case "parent":
       return <ParentDashboard />;
@@ -34,91 +101,16 @@ const AppContent: React.FC = () => {
     case "principal":
       return <PrincipalDashboard />;
     case "admin":
-      return <AdminDashboard />; // secret route
+      return <AdminDashboard />;
     default:
       return <LoginForm />;
   }
 };
 
-// ------------------- App Layout -------------------
 const AppLayout: React.FC = () => {
   return (
     <AuthProvider>
-      <div className="font-sans antialiased flex flex-col min-h-screen">
-        {/* Hero Section */}
-        <div id="hero-section" className="flex-1">
-          <div className="relative min-h-screen bg-gradient-to-br from-blue-600 via-purple-600 to-indigo-800">
-            <div
-              className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-20"
-              style={{
-                backgroundImage:
-                  "url(https://d64gsuwffb70l.cloudfront.net/68c31a777600b687984e53d0_1757616805155_a5c804bd.webp)",
-              }}
-            ></div>
-
-            <div className="relative z-10 flex items-center justify-center min-h-screen px-4">
-              <div className="text-center text-white max-w-4xl mx-auto">
-                <h1 className="text-5xl md:text-7xl font-bold mb-6 leading-tight">
-                  NextGen Independent Online
-                  <span className="block text-yellow-300">School Portal</span>
-                </h1>
-                <p className="text-xl md:text-2xl mb-8 text-blue-100 max-w-2xl mx-auto">
-                  Transforming education through innovative technology.
-                  Connecting students, parents, teachers, and principals in one
-                  seamless platform.
-                </p>
-
-                {/* Feature Cards */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-12">
-                  <div className="bg-white/10 backdrop-blur-sm rounded-xl p-6 border border-white/20">
-                    <img
-                      src="https://d64gsuwffb70l.cloudfront.net/68c31a777600b687984e53d0_1757616806119_aaaa43c4.webp"
-                      alt="Parent Dashboard"
-                      className="w-16 h-16 mx-auto mb-4 rounded-lg"
-                    />
-                    <h3 className="text-lg font-semibold mb-2">
-                      Parent Dashboard
-                    </h3>
-                    <p className="text-sm text-blue-100">
-                      Monitor your child's progress and manage school
-                      engagement.
-                    </p>
-                  </div>
-
-                  <div className="bg-white/10 backdrop-blur-sm rounded-xl p-6 border border-white/20">
-                    <img
-                      src="https://d64gsuwffb70l.cloudfront.net/68c31a777600b687984e53d0_1757616807613_5ea69d49.webp"
-                      alt="Teacher Tools"
-                      className="w-16 h-16 mx-auto mb-4 rounded-lg"
-                    />
-                    <h3 className="text-lg font-semibold mb-2">Teacher Tools</h3>
-                    <p className="text-sm text-blue-100">
-                      Manage classes, grade assignments, and communicate with
-                      parents.
-                    </p>
-                  </div>
-
-                  <div className="bg-white/10 backdrop-blur-sm rounded-xl p-6 border border-white/20">
-                    <img
-                      src="https://d64gsuwffb70l.cloudfront.net/68c31a777600b687984e53d0_1757616806868_c4dbdfd5.webp"
-                      alt="Principal Dashboard"
-                      className="w-16 h-16 mx-auto mb-4 rounded-lg"
-                    />
-                    <h3 className="text-lg font-semibold mb-2">
-                      Principal Dashboard
-                    </h3>
-                    <p className="text-sm text-blue-100">
-                      Approve teachers, oversee students, and ensure smooth
-                      school operations.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Main App */}
+      <div className="font-sans antialiased min-h-screen flex flex-col">
         <AppContent />
 
         {/* Hidden Footer with Admin Login */}
