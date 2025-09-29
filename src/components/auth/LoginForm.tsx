@@ -17,7 +17,14 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { useNavigate } from "react-router-dom";
 import { FcGoogle } from "react-icons/fc";
 import { db } from "@/lib/firebaseConfig";
-import { doc, getDoc, setDoc, collection, getDocs, serverTimestamp } from "firebase/firestore";
+import {
+  doc,
+  getDoc,
+  setDoc,
+  collection,
+  getDocs,
+  serverTimestamp,
+} from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 
 export const LoginForm: React.FC = () => {
@@ -27,7 +34,9 @@ export const LoginForm: React.FC = () => {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState<"principal" | "teacher" | "parent" | "student">("parent");
+  const [role, setRole] = useState<
+    "principal" | "teacher" | "parent" | "student"
+  >("parent");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isSignup, setIsSignup] = useState(false);
@@ -41,7 +50,13 @@ export const LoginForm: React.FC = () => {
   const [address, setAddress] = useState("");
 
   // ---------- Student-specific ----------
-  const [grades] = useState(["Grade 8", "Grade 9", "Grade 10", "Grade 11", "Grade 12"]);
+  const [grades] = useState([
+    "Grade 8",
+    "Grade 9",
+    "Grade 10",
+    "Grade 11",
+    "Grade 12",
+  ]);
   const [selectedGrade, setSelectedGrade] = useState("");
   const [students, setStudents] = useState<any[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState("");
@@ -103,30 +118,32 @@ export const LoginForm: React.FC = () => {
         const studentData = studentSnap.data();
         const emailToUse = studentData.email;
 
-        const cred = await login(emailToUse, password);
-        if (cred.user.uid !== selectedStudentId) throw new Error("Account mismatch.");
+        const user = await login(emailToUse, password); // returns FirebaseUser
+        if (user.uid !== selectedStudentId)
+          throw new Error("Account mismatch.");
         navigate("/student-dashboard");
         return;
       }
 
       if (role === "teacher") {
-        const cred = await login(email, password);
-        const uid = cred.user.uid;
+        const user = await login(email, password); // returns FirebaseUser
+        const uid = user.uid;
         const approvedSnap = await getDoc(doc(db, "teachers", uid));
         const pendingSnap = await getDoc(doc(db, "pendingTeachers", uid));
 
         if (approvedSnap.exists()) {
           navigate("/teacher-dashboard");
         } else if (pendingSnap.exists()) {
-          navigate("/teacher-status"); // ✅ auto-redirect if pending
+          navigate("/teacher-status");
         } else {
           throw new Error("No teacher record found. Apply first.");
         }
         return;
       }
 
-      const cred = await login(email, password);
-      const uid = cred.user.uid;
+      // principal or parent
+      const user = await login(email, password);
+      const uid = user.uid;
       const snap = await getDoc(doc(db, `${role}s`, uid));
       if (!snap.exists()) throw new Error(`No ${role} record found.`);
       navigate(`/${role}-dashboard`);
@@ -149,7 +166,6 @@ export const LoginForm: React.FC = () => {
       return;
     }
     if (role === "teacher") {
-      // 🚫 Teachers must use application form
       navigate("/apply-teacher");
       return;
     }
@@ -159,8 +175,8 @@ export const LoginForm: React.FC = () => {
 
     try {
       if (role === "parent") {
-        const cred = await signup(email, password);
-        const uid = cred.user.uid;
+        const user = await signup(email, password);
+        const uid = user.uid;
         await setDoc(doc(db, "parents", uid), {
           uid,
           email,
@@ -190,7 +206,8 @@ export const LoginForm: React.FC = () => {
       const loggedUser = await loginWithGoogle();
       const uid = loggedUser.uid;
 
-      if (role === "student") throw new Error("Students cannot sign up with Google.");
+      if (role === "student")
+        throw new Error("Students cannot sign up with Google.");
 
       if (role === "teacher") {
         const approvedSnap = await getDoc(doc(db, "teachers", uid));
@@ -201,7 +218,7 @@ export const LoginForm: React.FC = () => {
           return;
         }
         if (pendingSnap.exists()) {
-          navigate("/teacher-status"); // ✅ auto-redirect
+          navigate("/teacher-status");
           return;
         }
         throw new Error("No teacher record found. Apply first.");
@@ -249,9 +266,13 @@ export const LoginForm: React.FC = () => {
               NextGen Independent Online (CAPS) High School
             </span>
           </div>
-          <CardTitle className="text-xl">{isSignup ? "Sign Up" : "Welcome Back"}</CardTitle>
+          <CardTitle className="text-xl">
+            {isSignup ? "Sign Up" : "Welcome Back"}
+          </CardTitle>
           <CardDescription>
-            {isSignup ? "Create your account" : "Sign in to access your dashboard"}
+            {isSignup
+              ? "Create your account"
+              : "Sign in to access your dashboard"}
           </CardDescription>
         </CardHeader>
 
@@ -262,7 +283,10 @@ export const LoginForm: React.FC = () => {
             </Alert>
           )}
 
-          <form onSubmit={isSignup ? handleSignup : handleLogin} className="space-y-4">
+          <form
+            onSubmit={isSignup ? handleSignup : handleLogin}
+            className="space-y-4"
+          >
             {/* Role Selection */}
             <div className="space-y-2">
               <Label>Select Role</Label>
@@ -292,7 +316,9 @@ export const LoginForm: React.FC = () => {
                   >
                     <option value="">-- Select Grade --</option>
                     {grades.map((g) => (
-                      <option key={g} value={g}>{g}</option>
+                      <option key={g} value={g}>
+                        {g}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -307,7 +333,9 @@ export const LoginForm: React.FC = () => {
                   >
                     <option value="">-- Select Student --</option>
                     {students.map((stu) => (
-                      <option key={stu.id} value={stu.id}>{stu.name}</option>
+                      <option key={stu.id} value={stu.id}>
+                        {stu.name}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -367,19 +395,39 @@ export const LoginForm: React.FC = () => {
                 </div>
                 <div className="space-y-2">
                   <Label>First Name</Label>
-                  <Input type="text" value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
+                  <Input
+                    type="text"
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                    required
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Last Name</Label>
-                  <Input type="text" value={lastName} onChange={(e) => setLastName(e.target.value)} required />
+                  <Input
+                    type="text"
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                    required
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Contact Number</Label>
-                  <Input type="text" value={contact} onChange={(e) => setContact(e.target.value)} required />
+                  <Input
+                    type="text"
+                    value={contact}
+                    onChange={(e) => setContact(e.target.value)}
+                    required
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Address</Label>
-                  <Input type="text" value={address} onChange={(e) => setAddress(e.target.value)} required />
+                  <Input
+                    type="text"
+                    value={address}
+                    onChange={(e) => setAddress(e.target.value)}
+                    required
+                  />
                 </div>
               </>
             )}
@@ -389,15 +437,27 @@ export const LoginForm: React.FC = () => {
               <div className="text-center text-sm text-gray-500">
                 <p>
                   Teachers must apply via{" "}
-                  <a href="/apply-teacher" className="text-blue-600 underline">Teacher Application Form</a>
+                  <a href="/apply-teacher" className="text-blue-600 underline">
+                    Teacher Application Form
+                  </a>
                 </p>
               </div>
             )}
 
             {/* Buttons */}
             <div className="flex gap-2">
-              <Button type="submit" className="flex-1 bg-blue-600 hover:bg-blue-700" disabled={isLoading}>
-                {isLoading ? (isSignup ? "Signing Up..." : "Signing In...") : isSignup ? "Sign Up" : "Sign In"}
+              <Button
+                type="submit"
+                className="flex-1 bg-blue-600 hover:bg-blue-700"
+                disabled={isLoading}
+              >
+                {isLoading
+                  ? isSignup
+                    ? "Signing Up..."
+                    : "Signing In..."
+                  : isSignup
+                  ? "Sign Up"
+                  : "Sign In"}
               </Button>
               <Button
                 type="button"
@@ -414,14 +474,22 @@ export const LoginForm: React.FC = () => {
                 {isSignup ? (
                   <span>
                     Already have an account?{" "}
-                    <button type="button" className="text-blue-600" onClick={() => setIsSignup(false)}>
+                    <button
+                      type="button"
+                      className="text-blue-600"
+                      onClick={() => setIsSignup(false)}
+                    >
                       Sign In
                     </button>
                   </span>
                 ) : (
                   <span>
                     Don’t have an account?{" "}
-                    <button type="button" className="text-blue-600" onClick={() => setIsSignup(true)}>
+                    <button
+                      type="button"
+                      className="text-blue-600"
+                      onClick={() => setIsSignup(true)}
+                    >
                       Sign Up
                     </button>
                   </span>
