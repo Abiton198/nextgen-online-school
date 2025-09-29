@@ -67,8 +67,8 @@ const TeacherApplicationForm: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const cred = await signup(form.email, form.password);
-      const uid = cred.uid;
+      const user = await signup(form.email, form.password); // signup returns user
+      const uid = user.uid;
 
       await setDoc(doc(db, "pendingTeachers", uid), {
         uid,
@@ -79,7 +79,7 @@ const TeacherApplicationForm: React.FC = () => {
         ],
         role: "teacher",
         status: "pending",
-        applicationStage: "applied",
+        applicationStage: "applied", // ✅ key stage
         createdAt: serverTimestamp(),
       });
 
@@ -99,15 +99,31 @@ const TeacherApplicationForm: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const user = await loginWithGoogle({
-        ...form,
-        references: [
-          { name: form.ref1Name, contact: form.ref1Contact },
-          { name: form.ref2Name, contact: form.ref2Contact },
-        ],
-      });
-
+      const user = await loginWithGoogle(); // get Firebase user
       if (user) {
+        await setDoc(doc(db, "pendingTeachers", user.uid), {
+          uid: user.uid,
+          email: user.email,
+          firstName: form.firstName,
+          lastName: form.lastName,
+          gender: form.gender,
+          province: form.province,
+          country: form.country,
+          address: form.address,
+          contact: form.contact,
+          subject: form.subject,
+          experience: form.experience,
+          previousSchool: form.previousSchool,
+          references: [
+            { name: form.ref1Name, contact: form.ref1Contact },
+            { name: form.ref2Name, contact: form.ref2Contact },
+          ],
+          role: "teacher",
+          status: "pending",
+          applicationStage: "applied",
+          createdAt: serverTimestamp(),
+        });
+
         localStorage.removeItem(STORAGE_KEY);
         alert("✅ Application submitted via Google! Pending principal approval.");
         navigate("/teacher-status");
@@ -166,7 +182,6 @@ const TeacherApplicationForm: React.FC = () => {
             <div>
               <Label>Gender</Label>
               <Input
-                autoComplete="sex"
                 value={form.gender}
                 onChange={(e) => handleChange("gender", e.target.value)}
                 placeholder="Male / Female / Other"
@@ -204,7 +219,6 @@ const TeacherApplicationForm: React.FC = () => {
             <div>
               <Label>Province</Label>
               <Input
-                autoComplete="address-level1"
                 value={form.province}
                 onChange={(e) => handleChange("province", e.target.value)}
               />
@@ -212,7 +226,6 @@ const TeacherApplicationForm: React.FC = () => {
             <div>
               <Label>Country</Label>
               <Input
-                autoComplete="country"
                 value={form.country}
                 onChange={(e) => handleChange("country", e.target.value)}
               />
@@ -220,7 +233,6 @@ const TeacherApplicationForm: React.FC = () => {
             <div>
               <Label>Full Address</Label>
               <Input
-                autoComplete="street-address"
                 value={form.address}
                 onChange={(e) => handleChange("address", e.target.value)}
               />

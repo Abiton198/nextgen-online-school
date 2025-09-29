@@ -32,6 +32,7 @@ const TeacherDocumentUpload: React.FC = () => {
     try {
       const uploads: Record<string, string> = {};
 
+      // helper function for uploading & getting download URL
       const uploadDoc = async (file: File, name: string) => {
         const storageRef = ref(storage, `teachers/${uid}/${name}`);
         await uploadBytes(storageRef, file);
@@ -47,10 +48,10 @@ const TeacherDocumentUpload: React.FC = () => {
       await updateDoc(doc(db, "pendingTeachers", uid), {
         ...uploads,
         updatedAt: serverTimestamp(),
-        applicationStage: "documents-submitted", // 🔑 track stage
+        applicationStage: "documents-submitted", // 🔑 next stage
       });
 
-      alert("✅ Documents uploaded successfully! You can proceed to the next stage.");
+      alert("✅ Documents uploaded successfully! Your application is now under review.");
       navigate("/teacher-status");
     } catch (err: any) {
       alert(err.message);
@@ -69,26 +70,50 @@ const TeacherDocumentUpload: React.FC = () => {
           <form onSubmit={handleUpload} className="space-y-4">
             <div>
               <Label>ID Document</Label>
-              <Input type="file" accept="application/pdf" onChange={(e) => setIdFile(e.target.files?.[0] || null)} />
+              <Input
+                type="file"
+                accept="application/pdf"
+                onChange={(e) => setIdFile(e.target.files?.[0] || null)}
+              />
             </div>
             <div>
               <Label>Qualifications</Label>
-              <Input type="file" accept="application/pdf" onChange={(e) => setQualificationFile(e.target.files?.[0] || null)} />
+              <Input
+                type="file"
+                accept="application/pdf"
+                onChange={(e) => setQualificationFile(e.target.files?.[0] || null)}
+              />
             </div>
             <div>
               <Label>Profile Photo</Label>
-              <Input type="file" accept="image/*" onChange={(e) => setPhotoFile(e.target.files?.[0] || null)} />
+              <Input
+                type="file"
+                accept="image/*"
+                onChange={(e) => setPhotoFile(e.target.files?.[0] || null)}
+              />
             </div>
             <div>
               <Label>CETA Certificate</Label>
-              <Input type="file" accept="application/pdf" onChange={(e) => setCetaFile(e.target.files?.[0] || null)} />
+              <Input
+                type="file"
+                accept="application/pdf"
+                onChange={(e) => setCetaFile(e.target.files?.[0] || null)}
+              />
             </div>
             <div>
               <Label>Work Permit (if non–South African)</Label>
-              <Input type="file" accept="application/pdf" onChange={(e) => setWorkPermitFile(e.target.files?.[0] || null)} />
+              <Input
+                type="file"
+                accept="application/pdf"
+                onChange={(e) => setWorkPermitFile(e.target.files?.[0] || null)}
+              />
             </div>
 
-            <Button type="submit" disabled={isLoading} className="w-full bg-blue-600 hover:bg-blue-700">
+            <Button
+              type="submit"
+              disabled={isLoading}
+              className="w-full bg-blue-600 hover:bg-blue-700"
+            >
               {isLoading ? "Uploading..." : "Submit & Continue"}
             </Button>
           </form>
