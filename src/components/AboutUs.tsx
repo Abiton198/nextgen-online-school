@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { Link } from "react-router-dom";
 
 const AboutUs: React.FC = () => {
   const [expanded, setExpanded] = useState(false);
@@ -21,6 +22,22 @@ const AboutUs: React.FC = () => {
         <h1 className="text-4xl font-bold text-center text-blue-700">
           About Us
         </h1>
+
+        {/* 🔹 Navigation buttons (TOP) */}
+        <div className="flex justify-center gap-4 mt-4">
+          <Link
+            to="/"
+            className="bg-gray-200 text-gray-800 px-4 py-2 rounded-lg shadow hover:bg-gray-300 transition"
+          >
+            ← Return Home
+          </Link>
+          <Link
+            to="/"
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg shadow hover:bg-blue-700 transition"
+          >
+            Enrol Now
+          </Link>
+        </div>
 
         {/* Intro */}
         <section className="space-y-4 text-lg leading-relaxed">
@@ -138,6 +155,22 @@ const AboutUs: React.FC = () => {
                 <p className="font-bold text-blue-800 text-lg">
                   🔥 NextGen Independent Online School — “Future-Ready. Globally Connected. Rooted in African Innovation.”
                 </p>
+              </div>
+
+              {/* 🔹 Navigation buttons (BOTTOM) */}
+              <div className="flex justify-center gap-4 mt-8">
+                <Link
+                  to="/"
+                  className="bg-gray-200 text-gray-800 px-4 py-2 rounded-lg shadow hover:bg-gray-300 transition"
+                >
+                  ← Return Home
+                </Link>
+                <Link
+                  to="/"
+                  className="bg-blue-600 text-white px-4 py-2 rounded-lg shadow hover:bg-blue-700 transition"
+                >
+                  Enrol Now
+                </Link>
               </div>
 
               {/* Sticky Collapse Button */}
