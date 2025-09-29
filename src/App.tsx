@@ -51,8 +51,10 @@ const RoleBasedRoute = ({
     return <div className="p-6 text-center">Fetching your profile...</div>;
   }
 
-  if (user.status === "pending") return <PendingApprovalScreen />;
-  if (user.status === "suspended") return <SuspendedScreen />;
+  // 🔹 Redirect all pending/suspended users to /status
+  if (user.status === "pending" || user.status === "suspended") {
+    return <Navigate to="/status" replace />;
+  }
 
   if (allowedRoles.includes(user.role)) {
     return <>{children}</>;
@@ -68,7 +70,6 @@ const App = () => {
         <TooltipProvider>
           <Toaster />
           <Sonner />
-          {/* 🔑 AuthProvider now wraps BrowserRouter */}
           <AuthProvider>
             <BrowserRouter>
               <Routes>
