@@ -68,7 +68,7 @@ const TeacherApplicationForm: React.FC = () => {
 
     try {
       const cred = await signup(form.email, form.password);
-      const uid = cred.user.uid;
+      const uid = cred.uid;
 
       await setDoc(doc(db, "pendingTeachers", uid), {
         uid,
@@ -99,28 +99,19 @@ const TeacherApplicationForm: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const user = await loginWithGoogle();
-      const uid = user.uid;
-
-      await setDoc(doc(db, "pendingTeachers", uid), {
-        uid,
-        email: user.email!,
-        firstName: user.displayName?.split(" ")[0] || "",
-        lastName: user.displayName?.split(" ")[1] || "",
+      const user = await loginWithGoogle({
         ...form,
         references: [
           { name: form.ref1Name, contact: form.ref1Contact },
           { name: form.ref2Name, contact: form.ref2Contact },
         ],
-        role: "teacher",
-        status: "pending",
-        applicationStage: "applied",
-        createdAt: serverTimestamp(),
       });
 
-      localStorage.removeItem(STORAGE_KEY);
-      alert("✅ Application submitted via Google! Pending principal approval.");
-      navigate("/teacher-status");
+      if (user) {
+        localStorage.removeItem(STORAGE_KEY);
+        alert("✅ Application submitted via Google! Pending principal approval.");
+        navigate("/teacher-status");
+      }
     } catch (err: any) {
       setError(err.message);
     } finally {
