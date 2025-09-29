@@ -6,7 +6,6 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
 import { AuthProvider, useAuth } from "./components/auth/AuthProvider";
-import { ProtectedRoute } from "./components/auth/ProtectedRoute";
 
 // Teacher application
 import TeacherApplicationForm from "@/components/auth/TeacherApplicationForm";
@@ -31,13 +30,12 @@ import PaymentDetails from "./components/payments/PaymentDetails";
 import PaymentCancel from "./components/payments/PaymentCancel";
 import ParentRegistration from "./components/dashboards/parent/ParentRegistration";
 import PaymentPage from "./components/payments/PaymentPage";
-import PaymentsSection from "./components/dashboards/parent/sections/PaymentSection"
+import PaymentsSection from "./components/dashboards/parent/sections/PaymentSection";
 import StatusSection from "./components/dashboards/parent/sections/StatusSection";
-
 
 const queryClient = new QueryClient();
 
-// Wrapper for role-based routing
+// ✅ Single unified guard
 const RoleBasedRoute = ({
   allowedRoles,
   children,
@@ -49,6 +47,11 @@ const RoleBasedRoute = ({
 
   if (loading) return <div className="p-6 text-center">Loading...</div>;
   if (!user) return <Navigate to="/admin-login" replace />;
+
+  // Ensure role + status are loaded
+  if (!user.role || !user.status) {
+    return <div className="p-6 text-center">Fetching your profile...</div>;
+  }
 
   if (user.status === "pending") return <PendingApprovalScreen />;
   if (user.status === "suspended") return <SuspendedScreen />;
@@ -76,9 +79,9 @@ const App = () => {
                 <Route
                   path="/admin-dashboard"
                   element={
-                    <ProtectedRoute allowedRoles={["admin"]}>
+                    <RoleBasedRoute allowedRoles={["admin"]}>
                       <AdminDashboard />
-                    </ProtectedRoute>
+                    </RoleBasedRoute>
                   }
                 />
 
@@ -118,8 +121,8 @@ const App = () => {
                 <Route path="/payment-details/:regId" element={<PaymentDetails />} />
                 <Route path="/payment-success" element={<PaymentSuccess />} />
                 <Route path="/payment-cancel" element={<PaymentCancel />} />
-                 <Route path="/status" element={<StatusSection />} /> 
-                 <Route path="/payments" element={<PaymentsSection />} /> 
+                <Route path="/status" element={<StatusSection />} /> 
+                <Route path="/payments" element={<PaymentsSection />} /> 
 
                 {/* Other */}
                 <Route path="/admin-login" element={<AdminLoginForm />} />
@@ -130,7 +133,6 @@ const App = () => {
                 <Route path="/upload-teacher-docs" element={<TeacherDocumentUpload />} />
                 <Route path="/teacher-status" element={<TeacherApprovalStatus />} />
                 <Route path="/teacher-result" element={<TeacherCongratsOrReject />} />
-
 
                 {/* Catch-all */}
                 <Route path="*" element={<NotFound />} />
