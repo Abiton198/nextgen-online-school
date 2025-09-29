@@ -26,16 +26,16 @@ const TeacherApprovalStatus: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
+  // 🔹 Load teacher application record
   useEffect(() => {
     if (!currentUser?.uid) return;
 
-    // 🔹 Listen to teacher records
     const unsub = onSnapshot(doc(db, "pendingTeachers", currentUser.uid), (snap) => {
       if (snap.exists()) {
         setTeacher({ uid: snap.id, ...snap.data() } as TeacherRecord);
         setLoading(false);
       } else {
-        // If not pending, check in approved teachers
+        // If not in pending, check approved teachers
         onSnapshot(doc(db, "teachers", currentUser.uid), (snap2) => {
           if (snap2.exists()) {
             setTeacher({ uid: snap2.id, ...snap2.data() } as TeacherRecord);
@@ -50,6 +50,13 @@ const TeacherApprovalStatus: React.FC = () => {
     return () => unsub();
   }, [currentUser?.uid]);
 
+  // 🔹 Auto-redirect to upload docs if stage = "applied"
+  useEffect(() => {
+    if (teacher?.applicationStage === "applied") {
+      navigate("/upload-teacher-docs");
+    }
+  }, [teacher, navigate]);
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center text-gray-600">
@@ -62,6 +69,15 @@ const TeacherApprovalStatus: React.FC = () => {
     return (
       <div className="min-h-screen flex items-center justify-center text-gray-600">
         ❌ No application record found. Please submit an application first.
+      </div>
+    );
+  }
+
+  // If redirect is in progress
+  if (teacher.applicationStage === "applied") {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-gray-600">
+        Redirecting you to upload documents...
       </div>
     );
   }
@@ -85,7 +101,11 @@ const TeacherApprovalStatus: React.FC = () => {
       label: "Under Review",
       active: stage === "under-review",
       done: stage === "under-review" || stage === "approved" || stage === "rejected",
-      date: stage === "under-review" ? (teacher.reviewedAt ? new Date(teacher.reviewedAt).toLocaleString() : "Awaiting principal review") : "—",
+      date: stage === "under-review"
+        ? teacher.reviewedAt
+          ? new Date(teacher.reviewedAt).toLocaleString()
+          : "Awaiting principal review"
+        : "—",
     },
     {
       label: "Approved",
@@ -120,13 +140,15 @@ const TeacherApprovalStatus: React.FC = () => {
               <li key={idx} className="mb-8 ml-6">
                 <span
                   className={`absolute -left-3 flex items-center justify-center w-6 h-6 rounded-full 
-                  ${step.done
+                  ${
+                    step.done
                       ? step.label === "Rejected"
                         ? "bg-red-500 text-white"
                         : step.label === "Approved"
                         ? "bg-green-500 text-white"
                         : "bg-blue-500 text-white"
-                      : "bg-gray-300 text-gray-600"}`}
+                      : "bg-gray-300 text-gray-600"
+                  }`}
                 >
                   ✓
                 </span>
@@ -160,9 +182,9 @@ const TeacherApprovalStatus: React.FC = () => {
               🔎 Your application is under review by the principal. Please check back later.
             </div>
           )}
-          {(stage === "applied" || stage === "documents-submitted") && (
+          {stage === "documents-submitted" && (
             <div className="mt-4 p-3 text-yellow-700 bg-yellow-100 rounded-md text-center">
-              ⏳ Your application has been submitted. Please wait for further updates.
+              📂 Your documents have been uploaded. Please wait for the principal to review your application.
             </div>
           )}
         </CardContent>

@@ -40,25 +40,37 @@ const TeacherDocumentUpload: React.FC = () => {
       };
 
       if (idFile) uploads.idUrl = await uploadDoc(idFile, "id.pdf");
-      if (qualificationFile) uploads.qualUrl = await uploadDoc(qualificationFile, "qualification.pdf");
+      if (qualificationFile)
+        uploads.qualUrl = await uploadDoc(qualificationFile, "qualification.pdf");
       if (photoFile) uploads.photoUrl = await uploadDoc(photoFile, "photo.jpg");
       if (cetaFile) uploads.cetaUrl = await uploadDoc(cetaFile, "ceta.pdf");
-      if (workPermitFile) uploads.workPermitUrl = await uploadDoc(workPermitFile, "work_permit.pdf");
+      if (workPermitFile)
+        uploads.workPermitUrl = await uploadDoc(workPermitFile, "work_permit.pdf");
 
+      // 🔹 Update Firestore with uploaded docs + next stage
       await updateDoc(doc(db, "pendingTeachers", uid), {
         ...uploads,
         updatedAt: serverTimestamp(),
-        applicationStage: "documents-submitted", // 🔑 next stage
+        applicationStage: "documents-submitted",
       });
 
-      alert("✅ Documents uploaded successfully! Your application is now under review.");
+      // Redirect back to status page (auto shows timeline)
       navigate("/teacher-status");
     } catch (err: any) {
-      alert(err.message);
+      console.error("Upload failed:", err);
+      alert("❌ Upload failed: " + err.message);
     } finally {
       setIsLoading(false);
     }
   };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-gray-600">
+        ⏳ Uploading your documents, please wait...
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4">
@@ -114,7 +126,7 @@ const TeacherDocumentUpload: React.FC = () => {
               disabled={isLoading}
               className="w-full bg-blue-600 hover:bg-blue-700"
             >
-              {isLoading ? "Uploading..." : "Submit & Continue"}
+              Submit & Continue
             </Button>
           </form>
         </CardContent>
