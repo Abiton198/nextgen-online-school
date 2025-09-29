@@ -30,6 +30,7 @@ import ParentRegistration from "./components/dashboards/parent/ParentRegistratio
 import PaymentPage from "./components/payments/PaymentPage";
 import PaymentsSection from "./components/dashboards/parent/sections/PaymentSection";
 import StatusSection from "./components/dashboards/parent/sections/StatusSection";
+import AboutUs from "./components/AboutUs";
 
 const queryClient = new QueryClient();
 
@@ -74,6 +75,7 @@ const App = () => {
             <BrowserRouter>
               <Routes>
                 <Route path="/" element={<Index />} />
+                 <Route path="/about" element={<AboutUs />} />
 
                 {/* Admin */}
                 <Route

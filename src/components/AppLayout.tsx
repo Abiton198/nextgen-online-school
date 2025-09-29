@@ -39,54 +39,64 @@ const AppContent: React.FC = () => {
 
         {/* Content wrapper */}
         <div className="relative z-10 flex flex-col items-center justify-center min-h-screen px-6 text-center text-white">
-          {/* Branding */}
-          <h1 className="text-4xl md:text-6xl font-bold mb-4 leading-tight drop-shadow-lg">
-            NextGen Independent Online{" "}
-            <span className="block text-yellow-300">School Portal</span>
-          </h1>
-          <p className="text-lg md:text-xl max-w-2xl mb-10 text-blue-100 drop-shadow-md">
-            “A New Age STEM High School — CAPS-Aligned, Future-Ready, and
-            inspiring the next generation in Mathematics, Medicine, Technology,
-            and Innovation.”
-          </p>
+         {/* Branding */}
+<h1 className="text-4xl md:text-6xl font-bold mb-4 leading-tight drop-shadow-lg">
+  NextGen Independent Online{" "}
+  <span className="block text-yellow-300">School Portal</span>
+</h1>
+<p className="text-lg md:text-xl max-w-2xl mb-10 text-blue-100 drop-shadow-md">
+  “A New Age STEM High School — CAPS-Aligned, Future-Ready, and
+  inspiring the next generation in Mathematics, Medicine, Technology,
+  and Innovation.”
+</p>
 
-          {/* Collapsible Login Box */}
-          <div
-            className="bg-white rounded-lg shadow-2xl text-gray-800 cursor-pointer transition-all duration-300 overflow-hidden"
-            style={{
-              width: expanded ? "320px" : "120px",
-              height: expanded ? "auto" : "120px",
-            }}
-            onClick={() => !expanded && setExpanded(true)}
-          >
-            {!expanded ? (
-              <div className="flex flex-col items-center justify-center h-full p-4">
-                {/* Logo */}
-                <img
-                  src={logo}
-                  alt="NextGen Logo"
-                  className="w-18 h-18 mb-2"
-                />
-                <p className="text-sm font-medium text-blue-700 underline">
-                  Access here!
-                </p>
-              </div>
-            ) : (
-              <div className="p-6">
-                <h2 className="text-xl font-semibold text-center mb-4">
-                  Login to Continue
-                </h2>
-                <LoginForm />
-                {/* Optional close link */}
-                <p
-                  className="text-center text-xs mt-4 text-blue-600 underline cursor-pointer"
-                  onClick={() => setExpanded(false)}
-                >
-                  Close
-                </p>
-              </div>
-            )}
-          </div>
+{/* Collapsible Login Box */}
+<div
+  className="bg-white rounded-lg shadow-2xl text-gray-800 cursor-pointer transition-all duration-300 overflow-hidden"
+  style={{
+    width: expanded ? "320px" : "120px",
+    height: expanded ? "auto" : "120px",
+  }}
+  onClick={() => !expanded && setExpanded(true)}
+>
+  {!expanded ? (
+    <div className="flex flex-col items-center justify-center h-full p-4">
+      {/* Logo */}
+      <img src={logo} alt="NextGen Logo" className="w-18 h-18 mb-2" />
+      <p className="text-sm font-medium text-blue-700 underline">
+        Access here!
+      </p>
+    </div>
+  ) : (
+    <div className="p-6">
+      <h2 className="text-xl font-semibold text-center mb-4">
+        Login to Continue
+      </h2>
+      <LoginForm />
+      {/* Optional close link */}
+      <p
+        className="text-center text-xs mt-4 text-blue-600 underline cursor-pointer"
+        onClick={() => setExpanded(false)}
+      >
+        Close
+      </p>
+    </div>
+  )}
+</div>
+
+{/* Payoff Line */}
+<div className="mt-6 max-w-md">
+  <p className="text-sm md:text-base text-blue-100 drop-shadow-sm">
+    Convenient, connected, and career-focused — an integrated online school
+    experience built for modern learning and future pathways.
+  </p>
+  <a
+    href="/about"
+    className="mt-2 inline-block text-sm font-medium text-yellow-300 hover:text-yellow-400 transition"
+  >
+    Learn more about our school →
+  </a>
+</div>
         </div>
       </div>
     );
