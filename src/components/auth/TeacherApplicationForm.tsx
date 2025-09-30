@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,6 +18,8 @@ const STORAGE_KEY = "teacherApplicationDraft";
 const TeacherApplicationForm: React.FC = () => {
   const { signup, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
+  const addressRef = useRef<HTMLInputElement | null>(null);
+  const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
 
   // --- Form State ---
   const [form, setForm] = useState({
@@ -28,6 +30,7 @@ const TeacherApplicationForm: React.FC = () => {
     gender: "",
     province: "",
     country: "",
+    postalCode: "",
     address: "",
     contact: "",
     subject: "",
@@ -55,19 +58,59 @@ const TeacherApplicationForm: React.FC = () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(form));
   }, [form]);
 
+  // ---- Google Places Autocomplete Init ----
+  useEffect(() => {
+    if (addressRef.current && window.google) {
+      autocompleteRef.current = new window.google.maps.places.Autocomplete(
+        addressRef.current,
+        { types: ["geocode"], componentRestrictions: { country: "za" } } // restrict to South Africa
+      );
+
+      autocompleteRef.current.addListener("place_changed", () => {
+        const place = autocompleteRef.current?.getPlace();
+        if (!place) return;
+
+        let province = "";
+        let country = "";
+        let postalCode = "";
+
+        place.address_components?.forEach((component) => {
+          const types = component.types;
+          if (types.includes("administrative_area_level_1")) {
+            province = component.long_name;
+          }
+          if (types.includes("country")) {
+            country = component.long_name;
+          }
+          if (types.includes("postal_code")) {
+            postalCode = component.long_name;
+          }
+        });
+
+        setForm((prev) => ({
+          ...prev,
+          address: place.formatted_address || prev.address,
+          province,
+          country,
+          postalCode,
+        }));
+      });
+    }
+  }, []);
+
   // ---- Input Handler ----
   const handleChange = (field: string, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  // ---- Submit Application with Email/Password ----
+  // ---- Submit Application ----
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setIsLoading(true);
 
     try {
-      const user = await signup(form.email, form.password); // signup returns user
+      const user = await signup(form.email, form.password);
       const uid = user.uid;
 
       await setDoc(doc(db, "pendingTeachers", uid), {
@@ -79,13 +122,13 @@ const TeacherApplicationForm: React.FC = () => {
         ],
         role: "teacher",
         status: "pending",
-        applicationStage: "uploading-docs", // 👈 move to docs stage
+        applicationStage: "uploading-docs",
         createdAt: serverTimestamp(),
       });
 
       localStorage.removeItem(STORAGE_KEY);
       alert("✅ Application submitted! Please upload your supporting documents.");
-      navigate("/upload-teacher-docs"); // 👈 redirect to upload stage
+      navigate("/upload-teacher-docs");
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -99,34 +142,25 @@ const TeacherApplicationForm: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const user = await loginWithGoogle(); // get Firebase user
+      const user = await loginWithGoogle();
       if (user) {
         await setDoc(doc(db, "pendingTeachers", user.uid), {
           uid: user.uid,
           email: user.email,
-          firstName: form.firstName,
-          lastName: form.lastName,
-          gender: form.gender,
-          province: form.province,
-          country: form.country,
-          address: form.address,
-          contact: form.contact,
-          subject: form.subject,
-          experience: form.experience,
-          previousSchool: form.previousSchool,
+          ...form,
           references: [
             { name: form.ref1Name, contact: form.ref1Contact },
             { name: form.ref2Name, contact: form.ref2Contact },
           ],
           role: "teacher",
           status: "pending",
-          applicationStage: "uploading-docs", // 👈 same stage
+          applicationStage: "uploading-docs",
           createdAt: serverTimestamp(),
         });
 
         localStorage.removeItem(STORAGE_KEY);
         alert("✅ Application submitted via Google! Please upload your documents.");
-        navigate("/upload-teacher-docs"); // 👈 redirect
+        navigate("/upload-teacher-docs");
       }
     } catch (err: any) {
       setError(err.message);
@@ -149,7 +183,7 @@ const TeacherApplicationForm: React.FC = () => {
             Back
           </Button>
           <CardTitle className="text-xl">Teacher Application</CardTitle>
-          <div className="w-10" /> {/* spacer */}
+          <div className="w-10" />
         </CardHeader>
 
         <CardContent>
@@ -160,6 +194,42 @@ const TeacherApplicationForm: React.FC = () => {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Address First */}
+            <div>
+              <Label>Full Address</Label>
+              <Input
+                ref={addressRef}
+                value={form.address}
+                onChange={(e) => handleChange("address", e.target.value)}
+                placeholder="Start typing address..."
+                required
+              />
+            </div>
+            <div>
+              <Label>Province</Label>
+              <Input
+                value={form.province}
+                onChange={(e) => handleChange("province", e.target.value)}
+                placeholder="Auto-filled from address"
+              />
+            </div>
+            <div>
+              <Label>Country</Label>
+              <Input
+                value={form.country}
+                onChange={(e) => handleChange("country", e.target.value)}
+                placeholder="Auto-filled from address"
+              />
+            </div>
+            <div>
+              <Label>Postal Code</Label>
+              <Input
+                value={form.postalCode}
+                onChange={(e) => handleChange("postalCode", e.target.value)}
+                placeholder="Auto-filled or enter manually"
+              />
+            </div>
+
             {/* Personal Info */}
             <div>
               <Label>First Name</Label>
@@ -216,34 +286,24 @@ const TeacherApplicationForm: React.FC = () => {
                 onChange={(e) => handleChange("contact", e.target.value)}
               />
             </div>
-            <div>
-              <Label>Province</Label>
-              <Input
-                value={form.province}
-                onChange={(e) => handleChange("province", e.target.value)}
-              />
-            </div>
-            <div>
-              <Label>Country</Label>
-              <Input
-                value={form.country}
-                onChange={(e) => handleChange("country", e.target.value)}
-              />
-            </div>
-            <div>
-              <Label>Full Address</Label>
-              <Input
-                value={form.address}
-                onChange={(e) => handleChange("address", e.target.value)}
-              />
-            </div>
+
+            {/* Subject Dropdown */}
             <div>
               <Label>Subject to Teach</Label>
-              <Input
+              <select
                 value={form.subject}
                 onChange={(e) => handleChange("subject", e.target.value)}
+                className="w-full border border-gray-300 rounded px-3 py-2"
                 required
-              />
+              >
+                <option value="">-- Select Subject --</option>
+                <option value="Mathematics">Mathematics</option>
+                <option value="Physical Sciences">Physical Sciences</option>
+                <option value="Life Sciences">Life Sciences</option>
+                <option value="Information Technology">Information Technology</option>
+                <option value="Engineering Graphics & Design">Engineering Graphics & Design</option>
+                <option value="Computer Applications Technology">Computer Applications Technology</option>
+              </select>
             </div>
 
             {/* Professional Info */}
