@@ -25,23 +25,5 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
-
-    <!-- 🔹 Dynamically load Google Maps API without exposing the key in the build -->
-    <script>
-      fetch("/.netlify/functions/maps-key")
-        .then((res) => res.json())
-        .then(({ key }) => {
-          if (!key) {
-            console.error("Google Maps API key not returned");
-            return;
-          }
-          const script = document.createElement("script");
-          script.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=places`;
-          script.async = true;
-          script.defer = true;
-          document.head.appendChild(script);
-        })
-        .catch((err) => console.error("Failed to load Maps key:", err));
-    </script>
   </body>
 </html>

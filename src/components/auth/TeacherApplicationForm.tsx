@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,8 +18,6 @@ const STORAGE_KEY = "teacherApplicationDraft";
 const TeacherApplicationForm: React.FC = () => {
   const { signup, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
-  const addressRef = useRef<HTMLInputElement | null>(null);
-  const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
 
   // --- Form State ---
   const [form, setForm] = useState({
@@ -44,7 +42,6 @@ const TeacherApplicationForm: React.FC = () => {
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
-  const [mapsReady, setMapsReady] = useState(false);
 
   // ---- Load draft from localStorage ----
   useEffect(() => {
@@ -56,79 +53,6 @@ const TeacherApplicationForm: React.FC = () => {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(form));
   }, [form]);
-
-  // ---- Load Google Maps script dynamically via Netlify Function ----
-  useEffect(() => {
-    if (window.google && window.google.maps) {
-      setMapsReady(true);
-      return;
-    }
-
-    fetch("/.netlify/functions/maps-key")
-      .then((res) => res.json())
-      .then(({ key }) => {
-        if (!key) {
-          setError("❌ Google Maps API key not returned from server.");
-          return;
-        }
-
-        const script = document.createElement("script");
-        script.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=places`;
-        script.async = true;
-        script.defer = true;
-
-        script.onload = () => setMapsReady(true);
-        script.onerror = () =>
-          setError(
-            "❌ Failed to load Google Maps. You can still enter your address manually."
-          );
-
-        document.body.appendChild(script);
-      })
-      .catch(() =>
-        setError("❌ Could not load Google Maps API key from server.")
-      );
-  }, []);
-
-  // ---- Initialize Autocomplete ----
-  useEffect(() => {
-    if (!mapsReady || !addressRef.current) return;
-
-    autocompleteRef.current = new window.google.maps.places.Autocomplete(
-      addressRef.current,
-      { types: ["geocode"], componentRestrictions: { country: "za" } }
-    );
-
-    autocompleteRef.current.addListener("place_changed", () => {
-      const place = autocompleteRef.current?.getPlace();
-      if (!place) return;
-
-      let province = "";
-      let country = "";
-      let postalCode = "";
-
-      place.address_components?.forEach((component) => {
-        const types = component.types;
-        if (types.includes("administrative_area_level_1")) {
-          province = component.long_name;
-        }
-        if (types.includes("country")) {
-          country = component.long_name;
-        }
-        if (types.includes("postal_code")) {
-          postalCode = component.long_name;
-        }
-      });
-
-      setForm((prev) => ({
-        ...prev,
-        address: place.formatted_address || prev.address,
-        province,
-        country,
-        postalCode,
-      }));
-    });
-  }, [mapsReady]);
 
   // ---- Input Handler ----
   const handleChange = (field: string, value: string) =>
@@ -190,9 +114,7 @@ const TeacherApplicationForm: React.FC = () => {
         });
 
         localStorage.removeItem(STORAGE_KEY);
-        alert(
-          "✅ Application submitted via Google! Please upload your documents."
-        );
+        alert("✅ Application submitted via Google! Please upload your documents.");
         navigate("/upload-teacher-docs");
       }
     } catch (err: any) {
@@ -228,30 +150,21 @@ const TeacherApplicationForm: React.FC = () => {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Address */}
+            {/* Address fields (manual only) */}
             <div>
               <Label>Full Address</Label>
-              {!mapsReady && !error ? (
-                <p className="text-xs text-gray-500 italic">
-                  Loading Google Maps…
-                </p>
-              ) : (
-                <Input
-                  ref={addressRef}
-                  value={form.address}
-                  onChange={(e) => handleChange("address", e.target.value)}
-                  placeholder="Enter your address"
-                  required
-                />
-              )}
+              <Input
+                value={form.address}
+                onChange={(e) => handleChange("address", e.target.value)}
+                placeholder="Enter your address"
+                required
+              />
             </div>
-
             <div>
               <Label>Province</Label>
               <Input
                 value={form.province}
                 onChange={(e) => handleChange("province", e.target.value)}
-                placeholder="Auto-filled or enter manually"
               />
             </div>
             <div>
@@ -259,7 +172,6 @@ const TeacherApplicationForm: React.FC = () => {
               <Input
                 value={form.country}
                 onChange={(e) => handleChange("country", e.target.value)}
-                placeholder="Auto-filled or enter manually"
               />
             </div>
             <div>
@@ -267,7 +179,6 @@ const TeacherApplicationForm: React.FC = () => {
               <Input
                 value={form.postalCode}
                 onChange={(e) => handleChange("postalCode", e.target.value)}
-                placeholder="Auto-filled or enter manually"
               />
             </div>
 
@@ -341,15 +252,9 @@ const TeacherApplicationForm: React.FC = () => {
                 <option value="Mathematics">Mathematics</option>
                 <option value="Physical Sciences">Physical Sciences</option>
                 <option value="Life Sciences">Life Sciences</option>
-                <option value="Information Technology">
-                  Information Technology
-                </option>
-                <option value="Engineering Graphics & Design">
-                  Engineering Graphics & Design
-                </option>
-                <option value="Computer Applications Technology">
-                  Computer Applications Technology
-                </option>
+                <option value="Information Technology">Information Technology</option>
+                <option value="Engineering Graphics & Design">Engineering Graphics & Design</option>
+                <option value="Computer Applications Technology">Computer Applications Technology</option>
               </select>
             </div>
 
