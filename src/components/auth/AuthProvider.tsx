@@ -129,7 +129,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signup = async (email: string, password: string) => {
     const { user } = await createUserWithEmailAndPassword(auth, email, password);
-    return user;
+    return user; // ✅ always return user, not UserCredential
   };
 
   const loginWithGoogle = async (extraData: Record<string, any> = {}) => {
@@ -158,15 +158,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           updatedAt: serverTimestamp(),
         });
       } else {
-        // 🆕 New teacher → create pending application
+        // 🆕 New teacher → create pending application (NO role/status here!)
         await setDoc(pendingRef, {
           uid,
           email: gUser.email!,
           firstName: gUser.displayName?.split(" ")[0] || "",
           lastName: gUser.displayName?.split(" ")[1] || "",
           ...extraData,
-          role: "teacher",
-          status: "pending",
           applicationStage: "applied",
           createdAt: serverTimestamp(),
         });

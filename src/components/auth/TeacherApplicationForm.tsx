@@ -58,59 +58,40 @@ const TeacherApplicationForm: React.FC = () => {
   const handleChange = (field: string, value: string) =>
     setForm((prev) => ({ ...prev, [field]: value }));
 
-  // ---- Submit Application ----
+  // ---- Submit Application (Email/Password) ----
   const handleSubmit = async (e: React.FormEvent) => {
-  e.preventDefault();
-  setError("");
-  setIsLoading(true);
+    e.preventDefault();
+    setError("");
+    setIsLoading(true);
 
-  try {
-    // ✅ Step 1: Sign up user
-    const { user } = await signup(form.email, form.password);
-    const uid = user.uid;
+    try {
+      // ✅ Step 1: Sign up user (returns user directly from AuthProvider)
+      const user = await signup(form.email, form.password);
+      const uid = user.uid;
 
-    // ✅ Step 2: Wait until Firebase Auth state is fully updated
-    await new Promise<void>((resolve) => {
-      const unsub = onAuthStateChanged(auth, (currentUser) => {
-        if (currentUser && currentUser.uid === uid) {
-          unsub();
-          resolve();
-        }
+      // ✅ Step 2: Write only allowed fields
+      await setDoc(doc(db, "pendingTeachers", uid), {
+        uid,
+        ...form,
+        references: [
+          { name: form.ref1Name, contact: form.ref1Contact },
+          { name: form.ref2Name, contact: form.ref2Contact },
+        ],
+        applicationStage: "uploading-docs",
+        createdAt: serverTimestamp(),
       });
-    });
 
-    // ✅ Step 3: Strip forbidden fields
-    // (remove anything that rules forbid like role/status)
-    const {
-      role,    // 🚫 forbidden
-      status,  // 🚫 forbidden
-      ...allowedForm
-    } = form;
-
-    // ✅ Step 4: Write only allowed fields
-    await setDoc(doc(db, "pendingTeachers", uid), {
-      uid,
-      ...allowedForm,
-      references: [
-        { name: form.ref1Name, contact: form.ref1Contact },
-        { name: form.ref2Name, contact: form.ref2Contact },
-      ],
-      applicationStage: "uploading-docs",
-      createdAt: serverTimestamp(),
-    });
-
-    // ✅ Step 5: Clean up + navigate
-    localStorage.removeItem(STORAGE_KEY);
-    alert("✅ Application submitted! Please upload your supporting documents.");
-    navigate("/upload-teacher-docs");
-  } catch (err: any) {
-    console.error("❌ Teacher application failed:", err.code, err.message);
-    setError(err.message);
-  } finally {
-    setIsLoading(false);
-  }
-};
-
+      // ✅ Step 3: Clean up + navigate
+      localStorage.removeItem(STORAGE_KEY);
+      alert("✅ Application submitted! Please upload your supporting documents.");
+      navigate("/upload-teacher-docs");
+    } catch (err: any) {
+      console.error("❌ Teacher application failed:", err.code, err.message);
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // ---- Google Signup ----
   const handleGoogleSignup = async () => {
@@ -128,8 +109,6 @@ const TeacherApplicationForm: React.FC = () => {
             { name: form.ref1Name, contact: form.ref1Contact },
             { name: form.ref2Name, contact: form.ref2Contact },
           ],
-          role: "teacher",
-          status: "pending",
           applicationStage: "uploading-docs",
           createdAt: serverTimestamp(),
         });
@@ -139,6 +118,7 @@ const TeacherApplicationForm: React.FC = () => {
         navigate("/upload-teacher-docs");
       }
     } catch (err: any) {
+      console.error("❌ Google teacher application failed:", err.code, err.message);
       setError(err.message);
     } finally {
       setIsLoading(false);
@@ -171,7 +151,7 @@ const TeacherApplicationForm: React.FC = () => {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Address fields (manual only) */}
+            {/* Address fields */}
             <div>
               <Label>Full Address</Label>
               <Input
@@ -274,8 +254,12 @@ const TeacherApplicationForm: React.FC = () => {
                 <option value="Physical Sciences">Physical Sciences</option>
                 <option value="Life Sciences">Life Sciences</option>
                 <option value="Information Technology">Information Technology</option>
-                <option value="Engineering Graphics & Design">Engineering Graphics & Design</option>
-                <option value="Computer Applications Technology">Computer Applications Technology</option>
+                <option value="Engineering Graphics & Design">
+                  Engineering Graphics & Design
+                </option>
+                <option value="Computer Applications Technology">
+                  Computer Applications Technology
+                </option>
               </select>
             </div>
 
