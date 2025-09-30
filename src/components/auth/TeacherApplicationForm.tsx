@@ -57,31 +57,37 @@ const TeacherApplicationForm: React.FC = () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(form));
   }, [form]);
 
-  // ---- Load Google Maps script dynamically ----
+  // ---- Load Google Maps script dynamically via Netlify Function ----
   useEffect(() => {
     if (window.google && window.google.maps) {
       setMapsReady(true);
       return;
     }
 
-    const script = document.createElement("script");
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${
-      import.meta.env.VITE_GOOGLE_MAPS_API_KEY
-    }&libraries=places`;
-    script.async = true;
-    script.defer = true;
+    fetch("/.netlify/functions/maps-key")
+      .then((res) => res.json())
+      .then(({ key }) => {
+        if (!key) {
+          setError("❌ Google Maps API key not returned from server.");
+          return;
+        }
 
-    script.onload = () => setMapsReady(true);
-    script.onerror = () =>
-      setError(
-        "❌ Failed to load Google Maps. You can still enter your address manually."
+        const script = document.createElement("script");
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=places`;
+        script.async = true;
+        script.defer = true;
+
+        script.onload = () => setMapsReady(true);
+        script.onerror = () =>
+          setError(
+            "❌ Failed to load Google Maps. You can still enter your address manually."
+          );
+
+        document.body.appendChild(script);
+      })
+      .catch(() =>
+        setError("❌ Could not load Google Maps API key from server.")
       );
-
-    document.body.appendChild(script);
-
-    return () => {
-      document.body.removeChild(script);
-    };
   }, []);
 
   // ---- Initialize Autocomplete ----
