@@ -65,14 +65,32 @@ const TeacherApplicationForm: React.FC = () => {
   setIsLoading(true);
 
   try {
-    // ✅ Create Firebase Auth account
-    const user = await signup(form.email, form.password);
+    // ✅ Step 1: Sign up user
+    const { user } = await signup(form.email, form.password);
     const uid = user.uid;
 
-    // ✅ Save teacher application (NO role/status)
+    // ✅ Step 2: Wait until Firebase Auth state is fully updated
+    await new Promise<void>((resolve) => {
+      const unsub = onAuthStateChanged(auth, (currentUser) => {
+        if (currentUser && currentUser.uid === uid) {
+          unsub();
+          resolve();
+        }
+      });
+    });
+
+    // ✅ Step 3: Strip forbidden fields
+    // (remove anything that rules forbid like role/status)
+    const {
+      role,    // 🚫 forbidden
+      status,  // 🚫 forbidden
+      ...allowedForm
+    } = form;
+
+    // ✅ Step 4: Write only allowed fields
     await setDoc(doc(db, "pendingTeachers", uid), {
       uid,
-      ...form,
+      ...allowedForm,
       references: [
         { name: form.ref1Name, contact: form.ref1Contact },
         { name: form.ref2Name, contact: form.ref2Contact },
@@ -81,7 +99,7 @@ const TeacherApplicationForm: React.FC = () => {
       createdAt: serverTimestamp(),
     });
 
-    // ✅ Cleanup and redirect
+    // ✅ Step 5: Clean up + navigate
     localStorage.removeItem(STORAGE_KEY);
     alert("✅ Application submitted! Please upload your supporting documents.");
     navigate("/upload-teacher-docs");
@@ -92,6 +110,7 @@ const TeacherApplicationForm: React.FC = () => {
     setIsLoading(false);
   }
 };
+
 
   // ---- Google Signup ----
   const handleGoogleSignup = async () => {
