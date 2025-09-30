@@ -44,13 +44,12 @@ const TeacherApplicationForm: React.FC = () => {
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [mapsReady, setMapsReady] = useState(false);
 
   // ---- Load draft from localStorage ----
   useEffect(() => {
     const draft = localStorage.getItem(STORAGE_KEY);
-    if (draft) {
-      setForm(JSON.parse(draft));
-    }
+    if (draft) setForm(JSON.parse(draft));
   }, []);
 
   // ---- Auto-save to localStorage ----
@@ -58,50 +57,76 @@ const TeacherApplicationForm: React.FC = () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(form));
   }, [form]);
 
-  // ---- Google Places Autocomplete Init ----
+  // ---- Load Google Maps script dynamically ----
   useEffect(() => {
-    if (addressRef.current && window.google) {
-      autocompleteRef.current = new window.google.maps.places.Autocomplete(
-        addressRef.current,
-        { types: ["geocode"], componentRestrictions: { country: "za" } } // restrict to South Africa
+    if (window.google && window.google.maps) {
+      setMapsReady(true);
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${
+      import.meta.env.VITE_GOOGLE_MAPS_API_KEY
+    }&libraries=places`;
+    script.async = true;
+    script.defer = true;
+
+    script.onload = () => setMapsReady(true);
+    script.onerror = () =>
+      setError(
+        "❌ Failed to load Google Maps. You can still enter your address manually."
       );
 
-      autocompleteRef.current.addListener("place_changed", () => {
-        const place = autocompleteRef.current?.getPlace();
-        if (!place) return;
+    document.body.appendChild(script);
 
-        let province = "";
-        let country = "";
-        let postalCode = "";
-
-        place.address_components?.forEach((component) => {
-          const types = component.types;
-          if (types.includes("administrative_area_level_1")) {
-            province = component.long_name;
-          }
-          if (types.includes("country")) {
-            country = component.long_name;
-          }
-          if (types.includes("postal_code")) {
-            postalCode = component.long_name;
-          }
-        });
-
-        setForm((prev) => ({
-          ...prev,
-          address: place.formatted_address || prev.address,
-          province,
-          country,
-          postalCode,
-        }));
-      });
-    }
+    return () => {
+      document.body.removeChild(script);
+    };
   }, []);
 
+  // ---- Initialize Autocomplete ----
+  useEffect(() => {
+    if (!mapsReady || !addressRef.current) return;
+
+    autocompleteRef.current = new window.google.maps.places.Autocomplete(
+      addressRef.current,
+      { types: ["geocode"], componentRestrictions: { country: "za" } }
+    );
+
+    autocompleteRef.current.addListener("place_changed", () => {
+      const place = autocompleteRef.current?.getPlace();
+      if (!place) return;
+
+      let province = "";
+      let country = "";
+      let postalCode = "";
+
+      place.address_components?.forEach((component) => {
+        const types = component.types;
+        if (types.includes("administrative_area_level_1")) {
+          province = component.long_name;
+        }
+        if (types.includes("country")) {
+          country = component.long_name;
+        }
+        if (types.includes("postal_code")) {
+          postalCode = component.long_name;
+        }
+      });
+
+      setForm((prev) => ({
+        ...prev,
+        address: place.formatted_address || prev.address,
+        province,
+        country,
+        postalCode,
+      }));
+    });
+  }, [mapsReady]);
+
   // ---- Input Handler ----
-  const handleChange = (field: string, value: string) => {
+  const handleChange = (field: string, value: string) =>
     setForm((prev) => ({ ...prev, [field]: value }));
-  };
 
   // ---- Submit Application ----
   const handleSubmit = async (e: React.FormEvent) => {
@@ -159,7 +184,9 @@ const TeacherApplicationForm: React.FC = () => {
         });
 
         localStorage.removeItem(STORAGE_KEY);
-        alert("✅ Application submitted via Google! Please upload your documents.");
+        alert(
+          "✅ Application submitted via Google! Please upload your documents."
+        );
         navigate("/upload-teacher-docs");
       }
     } catch (err: any) {
@@ -169,6 +196,7 @@ const TeacherApplicationForm: React.FC = () => {
     }
   };
 
+  // ---- Render ----
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
       <Card className="w-full max-w-md max-h-screen overflow-y-auto">
@@ -194,23 +222,30 @@ const TeacherApplicationForm: React.FC = () => {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Address First */}
+            {/* Address */}
             <div>
               <Label>Full Address</Label>
-              <Input
-                ref={addressRef}
-                value={form.address}
-                onChange={(e) => handleChange("address", e.target.value)}
-                placeholder="Start typing address..."
-                required
-              />
+              {!mapsReady && !error ? (
+                <p className="text-xs text-gray-500 italic">
+                  Loading Google Maps…
+                </p>
+              ) : (
+                <Input
+                  ref={addressRef}
+                  value={form.address}
+                  onChange={(e) => handleChange("address", e.target.value)}
+                  placeholder="Enter your address"
+                  required
+                />
+              )}
             </div>
+
             <div>
               <Label>Province</Label>
               <Input
                 value={form.province}
                 onChange={(e) => handleChange("province", e.target.value)}
-                placeholder="Auto-filled from address"
+                placeholder="Auto-filled or enter manually"
               />
             </div>
             <div>
@@ -218,7 +253,7 @@ const TeacherApplicationForm: React.FC = () => {
               <Input
                 value={form.country}
                 onChange={(e) => handleChange("country", e.target.value)}
-                placeholder="Auto-filled from address"
+                placeholder="Auto-filled or enter manually"
               />
             </div>
             <div>
@@ -300,9 +335,15 @@ const TeacherApplicationForm: React.FC = () => {
                 <option value="Mathematics">Mathematics</option>
                 <option value="Physical Sciences">Physical Sciences</option>
                 <option value="Life Sciences">Life Sciences</option>
-                <option value="Information Technology">Information Technology</option>
-                <option value="Engineering Graphics & Design">Engineering Graphics & Design</option>
-                <option value="Computer Applications Technology">Computer Applications Technology</option>
+                <option value="Information Technology">
+                  Information Technology
+                </option>
+                <option value="Engineering Graphics & Design">
+                  Engineering Graphics & Design
+                </option>
+                <option value="Computer Applications Technology">
+                  Computer Applications Technology
+                </option>
               </select>
             </div>
 
@@ -375,6 +416,7 @@ const TeacherApplicationForm: React.FC = () => {
             </div>
           </form>
 
+          {/* Google Signup */}
           <div className="mt-4 flex justify-center">
             <Button
               type="button"
