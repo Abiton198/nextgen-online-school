@@ -60,36 +60,38 @@ const TeacherApplicationForm: React.FC = () => {
 
   // ---- Submit Application ----
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-    setIsLoading(true);
+  e.preventDefault();
+  setError("");
+  setIsLoading(true);
 
-    try {
-      const user = await signup(form.email, form.password);
-      const uid = user.uid;
+  try {
+    // ✅ Create Firebase Auth account
+    const user = await signup(form.email, form.password);
+    const uid = user.uid;
 
-      await setDoc(doc(db, "pendingTeachers", uid), {
-        uid,
-        ...form,
-        references: [
-          { name: form.ref1Name, contact: form.ref1Contact },
-          { name: form.ref2Name, contact: form.ref2Contact },
-        ],
-        role: "teacher",
-        status: "pending",
-        applicationStage: "uploading-docs",
-        createdAt: serverTimestamp(),
-      });
+    // ✅ Save teacher application (NO role/status)
+    await setDoc(doc(db, "pendingTeachers", uid), {
+      uid,
+      ...form,
+      references: [
+        { name: form.ref1Name, contact: form.ref1Contact },
+        { name: form.ref2Name, contact: form.ref2Contact },
+      ],
+      applicationStage: "uploading-docs",
+      createdAt: serverTimestamp(),
+    });
 
-      localStorage.removeItem(STORAGE_KEY);
-      alert("✅ Application submitted! Please upload your supporting documents.");
-      navigate("/upload-teacher-docs");
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    // ✅ Cleanup and redirect
+    localStorage.removeItem(STORAGE_KEY);
+    alert("✅ Application submitted! Please upload your supporting documents.");
+    navigate("/upload-teacher-docs");
+  } catch (err: any) {
+    console.error("❌ Teacher application failed:", err.code, err.message);
+    setError(err.message);
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   // ---- Google Signup ----
   const handleGoogleSignup = async () => {
