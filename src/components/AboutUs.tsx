@@ -32,7 +32,7 @@ const AboutUs: React.FC = () => {
             ← Return Home
           </Link>
           <Link
-            to="/"
+            to="/login"
             className="bg-blue-600 text-white px-4 py-2 rounded-lg shadow hover:bg-blue-700 transition"
           >
             Enrol Now
@@ -124,11 +124,51 @@ const AboutUs: React.FC = () => {
                 </p>
               </section>
 
+              {/* Subjects Offered */}
               <section>
                 <h2 className="text-2xl font-semibold text-blue-600 mb-2">Subjects Offered</h2>
-                <ul className="list-disc list-inside space-y-2">
-                  <li>5 CAPS Compulsory Subjects (including Pure Mathematics and Physical Sciences).</li>
-                  <li>Complementary Programs: Artificial Intelligence, Robotics, and Programming.</li>
+                <p className="mb-4">
+                  Learners are required to choose a <strong>minimum of 5 subjects</strong> including at least one{" "}
+                  <strong>language</strong>, as outlined by the CAPS curriculum. At NextGen, our focus is on{" "}
+                  <strong>STEM pathways</strong> with modern integration.
+                </p>
+
+                <h3 className="text-xl font-semibold text-blue-500 mt-4 mb-2">
+                  Senior Phase (Grades 7–9) – Foundations
+                </h3>
+                <ul className="list-disc list-inside space-y-1">
+                  <li>English Language</li>
+                  <li>Mathematics (Pure)</li>
+                  <li>Natural Sciences (combined Physical & Life Sciences)</li>
+                  <li>Digital Technology</li>
+                  <li>Life Orientation</li>
+                  
+                </ul>
+
+                <h3 className="text-xl font-semibold text-blue-500 mt-6 mb-2">
+                  FET Phase (Grades 10–12) – STEM Core Pathways
+                </h3>
+                <p className="mb-2 text-sm text-gray-600">
+                  Learners specialize in career-focused STEM subjects while completing the CAPS compulsory requirements.
+                </p>
+                <ul className="list-disc list-inside space-y-1">
+          
+                  <li>English Language</li>
+                  <li>Mathematics (Pure)</li>
+                  <li>Life Orientation</li>
+                  <li>Physical Sciences</li>
+                  <li>Life Sciences</li>
+                  <li>Information Technology (IT)</li>
+                  <li>Computer Applications Technology (CAT)</li>
+                </ul>
+
+                <h3 className="text-xl font-semibold text-blue-500 mt-6 mb-2">
+                  Beyond CAPS – Future-Focused
+                </h3>
+                <ul className="list-disc list-inside space-y-1">
+                  <li>Artificial Intelligence (AI)</li>
+                  <li>Robotics</li>
+                  <li>Programming & App Development</li>
                 </ul>
               </section>
 
@@ -166,7 +206,7 @@ const AboutUs: React.FC = () => {
                   ← Return Home
                 </Link>
                 <Link
-                  to="/"
+                  to="/login"
                   className="bg-blue-600 text-white px-4 py-2 rounded-lg shadow hover:bg-blue-700 transition"
                 >
                   Enrol Now

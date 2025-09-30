@@ -79,13 +79,13 @@ const TeacherApplicationForm: React.FC = () => {
         ],
         role: "teacher",
         status: "pending",
-        applicationStage: "applied", // ✅ key stage
+        applicationStage: "uploading-docs", // 👈 move to docs stage
         createdAt: serverTimestamp(),
       });
 
       localStorage.removeItem(STORAGE_KEY);
-      alert("✅ Application submitted! A principal will review your request.");
-      navigate("/teacher-status");
+      alert("✅ Application submitted! Please upload your supporting documents.");
+      navigate("/upload-teacher-docs"); // 👈 redirect to upload stage
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -120,13 +120,13 @@ const TeacherApplicationForm: React.FC = () => {
           ],
           role: "teacher",
           status: "pending",
-          applicationStage: "applied",
+          applicationStage: "uploading-docs", // 👈 same stage
           createdAt: serverTimestamp(),
         });
 
         localStorage.removeItem(STORAGE_KEY);
-        alert("✅ Application submitted via Google! Pending principal approval.");
-        navigate("/teacher-status");
+        alert("✅ Application submitted via Google! Please upload your documents.");
+        navigate("/upload-teacher-docs"); // 👈 redirect
       }
     } catch (err: any) {
       setError(err.message);
