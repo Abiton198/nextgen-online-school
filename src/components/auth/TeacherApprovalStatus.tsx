@@ -27,31 +27,37 @@ const TeacherApprovalStatus: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
-  // 🔹 Load teacher application record
+  // 🔹 Subscribe to both pending + teachers collection
   useEffect(() => {
     if (!currentUser?.uid) return;
 
-    const unsub = onSnapshot(doc(db, "pendingTeachers", currentUser.uid), (snap) => {
-      if (snap.exists()) {
-        setTeacher({ uid: snap.id, ...snap.data() } as TeacherRecord);
-        setLoading(false);
-      } else {
-        // If not in pending, check approved teachers
-        onSnapshot(doc(db, "teachers", currentUser.uid), (snap2) => {
-          if (snap2.exists()) {
-            setTeacher({ uid: snap2.id, ...snap2.data() } as TeacherRecord);
-          } else {
-            setTeacher(null);
-          }
+    const unsubPending = onSnapshot(
+      doc(db, "pendingTeachers", currentUser.uid),
+      (snap) => {
+        if (snap.exists()) {
+          setTeacher({ uid: snap.id, ...snap.data() } as TeacherRecord);
           setLoading(false);
-        });
+        }
       }
-    });
+    );
 
-    return () => unsub();
+    const unsubApproved = onSnapshot(
+      doc(db, "teachers", currentUser.uid),
+      (snap) => {
+        if (snap.exists()) {
+          setTeacher({ uid: snap.id, ...snap.data() } as TeacherRecord);
+          setLoading(false);
+        }
+      }
+    );
+
+    return () => {
+      unsubPending();
+      unsubApproved();
+    };
   }, [currentUser?.uid]);
 
-  // 🔹 Auto-redirect to upload docs if stage = "awaiting-documents"
+  // 🔹 Auto-redirect if awaiting documents
   useEffect(() => {
     if (teacher?.applicationStage === "awaiting-documents") {
       navigate("/upload-teacher-docs");
@@ -82,7 +88,7 @@ const TeacherApprovalStatus: React.FC = () => {
     );
   }
 
-  // determine progression
+  // 🔹 Define timeline steps
   const stage = teacher.applicationStage;
   const steps = [
     {
@@ -97,9 +103,16 @@ const TeacherApprovalStatus: React.FC = () => {
     },
     {
       label: "Documents Uploaded",
-      done: stage === "documents-submitted" || stage === "under-review" || stage === "approved" || stage === "rejected",
+      done:
+        stage === "documents-submitted" ||
+        stage === "under-review" ||
+        stage === "approved" ||
+        stage === "rejected",
       date:
-        stage && ["documents-submitted", "under-review", "approved", "rejected"].includes(stage)
+        stage &&
+        ["documents-submitted", "under-review", "approved", "rejected"].includes(
+          stage
+        )
           ? teacher.updatedAt?.toDate?.().toLocaleString() || "Uploaded"
           : "—",
     },
