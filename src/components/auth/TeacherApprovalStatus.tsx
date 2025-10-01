@@ -21,6 +21,14 @@ interface TeacherRecord {
   updatedAt?: any;
 }
 
+// 🔹 Safe date formatter
+const formatDate = (d: any): string => {
+  if (!d) return "—";
+  if (typeof d.toDate === "function") return d.toDate().toLocaleString();
+  if (typeof d === "string") return new Date(d).toLocaleString();
+  return "—";
+};
+
 const TeacherApprovalStatus: React.FC = () => {
   const { currentUser } = useAuth();
   const [teacher, setTeacher] = useState<TeacherRecord | null>(null);
@@ -31,25 +39,19 @@ const TeacherApprovalStatus: React.FC = () => {
   useEffect(() => {
     if (!currentUser?.uid) return;
 
-    const unsubPending = onSnapshot(
-      doc(db, "pendingTeachers", currentUser.uid),
-      (snap) => {
-        if (snap.exists()) {
-          setTeacher({ uid: snap.id, ...snap.data() } as TeacherRecord);
-          setLoading(false);
-        }
+    const unsubPending = onSnapshot(doc(db, "pendingTeachers", currentUser.uid), (snap) => {
+      if (snap.exists()) {
+        setTeacher({ uid: snap.id, ...snap.data() } as TeacherRecord);
+        setLoading(false);
       }
-    );
+    });
 
-    const unsubApproved = onSnapshot(
-      doc(db, "teachers", currentUser.uid),
-      (snap) => {
-        if (snap.exists()) {
-          setTeacher({ uid: snap.id, ...snap.data() } as TeacherRecord);
-          setLoading(false);
-        }
+    const unsubApproved = onSnapshot(doc(db, "teachers", currentUser.uid), (snap) => {
+      if (snap.exists()) {
+        setTeacher({ uid: snap.id, ...snap.data() } as TeacherRecord);
+        setLoading(false);
       }
-    );
+    });
 
     return () => {
       unsubPending();
@@ -74,16 +76,11 @@ const TeacherApprovalStatus: React.FC = () => {
 
   if (!teacher) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-gray-600">
+      <div className="min-h-screen flex flex-col items-center justify-center text-gray-600 space-y-4">
         ❌ No application record found. Please submit an application first.
-      </div>
-    );
-  }
-
-  if (teacher.applicationStage === "awaiting-documents") {
-    return (
-      <div className="min-h-screen flex items-center justify-center text-gray-600">
-        Redirecting you to upload documents...
+        <Button onClick={() => navigate("/apply-teacher")} className="bg-blue-600 hover:bg-blue-700">
+          Apply Now
+        </Button>
       </div>
     );
   }
@@ -94,7 +91,7 @@ const TeacherApprovalStatus: React.FC = () => {
     {
       label: "Application Submitted",
       done: true,
-      date: teacher.createdAt?.toDate?.().toLocaleString() || "—",
+      date: formatDate(teacher.createdAt),
     },
     {
       label: "Awaiting Documents",
@@ -103,38 +100,30 @@ const TeacherApprovalStatus: React.FC = () => {
     },
     {
       label: "Documents Uploaded",
-      done:
-        stage === "documents-submitted" ||
-        stage === "under-review" ||
-        stage === "approved" ||
-        stage === "rejected",
-      date:
-        stage &&
-        ["documents-submitted", "under-review", "approved", "rejected"].includes(
-          stage
-        )
-          ? teacher.updatedAt?.toDate?.().toLocaleString() || "Uploaded"
-          : "—",
+      done: ["documents-submitted", "under-review", "approved", "rejected"].includes(stage || ""),
+      date: ["documents-submitted", "under-review", "approved", "rejected"].includes(stage || "")
+        ? formatDate(teacher.updatedAt)
+        : "—",
     },
     {
       label: "Under Review",
-      done: stage === "under-review" || stage === "approved" || stage === "rejected",
+      done: ["under-review", "approved", "rejected"].includes(stage || ""),
       date:
         stage === "under-review"
           ? teacher.reviewedAt
-            ? new Date(teacher.reviewedAt).toLocaleString()
+            ? formatDate(teacher.reviewedAt)
             : "Awaiting principal review"
           : "—",
     },
     {
       label: "Approved",
       done: stage === "approved",
-      date: teacher.approvedAt ? new Date(teacher.approvedAt).toLocaleString() : "—",
+      date: formatDate(teacher.approvedAt),
     },
     {
       label: "Rejected",
       done: stage === "rejected",
-      date: teacher.reviewedAt ? new Date(teacher.reviewedAt).toLocaleString() : "—",
+      date: formatDate(teacher.reviewedAt),
     },
   ];
 

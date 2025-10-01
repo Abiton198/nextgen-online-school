@@ -22,7 +22,7 @@ const TeacherDocumentUpload: React.FC = () => {
   const navigate = useNavigate();
   const auth = getAuth();
 
-  // 🔹 Check where teacher record lives
+  // 🔹 Decide if teacher record is in teachers or pendingTeachers
   const [targetCollection, setTargetCollection] = useState<"pendingTeachers" | "teachers">("pendingTeachers");
 
   useEffect(() => {
@@ -32,9 +32,9 @@ const TeacherDocumentUpload: React.FC = () => {
 
       const teacherDoc = await getDoc(doc(db, "teachers", uid));
       if (teacherDoc.exists()) {
-        setTargetCollection("teachers"); // approved
+        setTargetCollection("teachers");
       } else {
-        setTargetCollection("pendingTeachers"); // still pending
+        setTargetCollection("pendingTeachers");
       }
     };
 
@@ -51,34 +51,38 @@ const TeacherDocumentUpload: React.FC = () => {
     try {
       const uploads: Record<string, string> = {};
 
-      // helper function for uploading & getting download URL
+      // helper for uploading with timestamp
       const uploadDoc = async (file: File, name: string) => {
-        const storageRef = ref(storage, `teachers/${uid}/${name}`);
+        const storageRef = ref(storage, `teachers/${uid}/${Date.now()}_${name}`);
         await uploadBytes(storageRef, file);
         return await getDownloadURL(storageRef);
       };
 
       if (idFile) uploads.idUrl = await uploadDoc(idFile, "id.pdf");
-      if (qualificationFile)
-        uploads.qualUrl = await uploadDoc(qualificationFile, "qualification.pdf");
+      if (qualificationFile) uploads.qualUrl = await uploadDoc(qualificationFile, "qualification.pdf");
       if (photoFile) uploads.photoUrl = await uploadDoc(photoFile, "photo.jpg");
       if (cetaFile) uploads.cetaUrl = await uploadDoc(cetaFile, "ceta.pdf");
-      if (workPermitFile)
-        uploads.workPermitUrl = await uploadDoc(workPermitFile, "work_permit.pdf");
+      if (workPermitFile) uploads.workPermitUrl = await uploadDoc(workPermitFile, "work_permit.pdf");
 
-      // 🔹 Update Firestore with uploaded docs
+      // 🚫 Prevent empty submissions
+      if (Object.keys(uploads).length === 0) {
+        alert("⚠️ Please upload at least one document before submitting.");
+        setIsLoading(false);
+        return;
+      }
+
+      // 🔹 Update Firestore with uploaded docs + mark stage
       await updateDoc(doc(db, targetCollection, uid), {
         ...uploads,
         updatedAt: serverTimestamp(),
         applicationStage: "documents-submitted",
       });
 
-      // Redirect back to status page
-      navigate("/teacher-status");
+      // ✅ Redirect with slight delay so Firestore syncs
+      setTimeout(() => navigate("/teacher-status"), 500);
     } catch (err: any) {
       console.error("Upload failed:", err);
       alert("❌ Upload failed: " + err.message);
-    } finally {
       setIsLoading(false);
     }
   };
