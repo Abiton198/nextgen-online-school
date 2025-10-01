@@ -18,6 +18,7 @@ interface TeacherRecord {
   createdAt?: any;
   reviewedAt?: any;
   approvedAt?: any;
+  updatedAt?: any;
 }
 
 const TeacherApprovalStatus: React.FC = () => {
@@ -50,9 +51,9 @@ const TeacherApprovalStatus: React.FC = () => {
     return () => unsub();
   }, [currentUser?.uid]);
 
-  // 🔹 Auto-redirect to upload docs if stage = "applied"
+  // 🔹 Auto-redirect to upload docs if stage = "awaiting-documents"
   useEffect(() => {
-    if (teacher?.applicationStage === "applied") {
+    if (teacher?.applicationStage === "awaiting-documents") {
       navigate("/upload-teacher-docs");
     }
   }, [teacher, navigate]);
@@ -73,8 +74,7 @@ const TeacherApprovalStatus: React.FC = () => {
     );
   }
 
-  // If redirect is in progress
-  if (teacher.applicationStage === "applied") {
+  if (teacher.applicationStage === "awaiting-documents") {
     return (
       <div className="min-h-screen flex items-center justify-center text-gray-600">
         Redirecting you to upload documents...
@@ -87,35 +87,39 @@ const TeacherApprovalStatus: React.FC = () => {
   const steps = [
     {
       label: "Application Submitted",
-      active: true,
       done: true,
       date: teacher.createdAt?.toDate?.().toLocaleString() || "—",
     },
     {
+      label: "Awaiting Documents",
+      done: stage !== "applied" && stage !== "awaiting-documents",
+      date: stage === "awaiting-documents" ? "Pending upload" : "—",
+    },
+    {
       label: "Documents Uploaded",
-      active: stage === "documents-submitted" || stage === "under-review" || stage === "approved" || stage === "rejected",
-      done: stage !== "applied",
-      date: stage && ["documents-submitted", "under-review", "approved", "rejected"].includes(stage) ? "Uploaded" : "—",
+      done: stage === "documents-submitted" || stage === "under-review" || stage === "approved" || stage === "rejected",
+      date:
+        stage && ["documents-submitted", "under-review", "approved", "rejected"].includes(stage)
+          ? teacher.updatedAt?.toDate?.().toLocaleString() || "Uploaded"
+          : "—",
     },
     {
       label: "Under Review",
-      active: stage === "under-review",
       done: stage === "under-review" || stage === "approved" || stage === "rejected",
-      date: stage === "under-review"
-        ? teacher.reviewedAt
-          ? new Date(teacher.reviewedAt).toLocaleString()
-          : "Awaiting principal review"
-        : "—",
+      date:
+        stage === "under-review"
+          ? teacher.reviewedAt
+            ? new Date(teacher.reviewedAt).toLocaleString()
+            : "Awaiting principal review"
+          : "—",
     },
     {
       label: "Approved",
-      active: stage === "approved",
       done: stage === "approved",
       date: teacher.approvedAt ? new Date(teacher.approvedAt).toLocaleString() : "—",
     },
     {
       label: "Rejected",
-      active: stage === "rejected",
       done: stage === "rejected",
       date: teacher.reviewedAt ? new Date(teacher.reviewedAt).toLocaleString() : "—",
     },
