@@ -1,3 +1,5 @@
+"use client";
+
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../auth/AuthProvider";
 import {
@@ -15,6 +17,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Loader2 } from "lucide-react";
+
+// Import your sync helper
 import { syncClassroomToFirestore } from "@/lib/classroomSync";
 
 interface TeacherProfile {
@@ -27,7 +31,7 @@ interface TeacherProfile {
 const TeacherDashboard: React.FC = () => {
   const { user, logout, linkClassroomScopes } = useAuth();
 
-  const [err, setErr] = useState("");
+  const [err, setErr] = useState<string>("");
   const [syncing, setSyncing] = useState(false);
   const [profile, setProfile] = useState<TeacherProfile | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
@@ -39,12 +43,16 @@ const TeacherDashboard: React.FC = () => {
   // ---------------- Load Teacher Profile ----------------
   useEffect(() => {
     if (!user?.uid) return;
-    setLoadingProfile(true);
 
     const fetchProfile = async () => {
+      setLoadingProfile(true);
       try {
         const snap = await getDoc(doc(db, "teachers", user.uid));
-        setProfile(snap.exists() ? (snap.data() as TeacherProfile) : null);
+        if (snap.exists()) {
+          setProfile(snap.data() as TeacherProfile);
+        } else {
+          setProfile(null);
+        }
       } catch (e: any) {
         setErr(e.message || "Failed to load teacher profile");
       } finally {
@@ -55,7 +63,7 @@ const TeacherDashboard: React.FC = () => {
     fetchProfile();
   }, [user?.uid]);
 
-  // ---------------- Guards ----------------
+  // ---------------- Guard: only approved teachers ----------------
   if (!user) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -86,7 +94,7 @@ const TeacherDashboard: React.FC = () => {
     );
   }
 
-  if (profile.status && profile.status !== "approved") {
+  if (profile.status !== "approved") {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Alert>
@@ -102,15 +110,16 @@ const TeacherDashboard: React.FC = () => {
   useEffect(() => {
     if (!user?.uid) return;
 
-    // Adjust Firestore path according to your structure
+    // ✅ Correct Firestore path for subcollection
     const qCourses = query(
-      collection(db, "users", user.uid, "classroomCourses"),
+      collection(db, "users", user.uid, "classroom", "courses"),
       orderBy("name")
     );
     const unsubCourses = onSnapshot(qCourses, (snap) =>
       setCourses(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
     );
 
+    // Coursework
     const qWork = query(
       collectionGroup(db, "coursework"),
       where("ownerUid", "==", user.uid)
@@ -119,6 +128,7 @@ const TeacherDashboard: React.FC = () => {
       setCoursework(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
     );
 
+    // Submissions
     const qSubs = query(
       collectionGroup(db, "submissions"),
       where("ownerUid", "==", user.uid)
@@ -136,14 +146,19 @@ const TeacherDashboard: React.FC = () => {
 
   // ---------------- Derived stats ----------------
   const pendingToGrade = useMemo(
-    () => submissions.filter((s) => s.state === "TURNED_IN" && s.assignedGrade == null),
+    () =>
+      submissions.filter(
+        (s) => s.state === "TURNED_IN" && s.assignedGrade == null
+      ),
     [submissions]
   );
 
   // ---------------- Connect / Sync handler ----------------
   const connectingRef = useRef(false);
+
   const handleConnectOrSync = async () => {
-    if (!user || connectingRef.current) return;
+    if (!user) return;
+    if (connectingRef.current) return;
     connectingRef.current = true;
 
     setErr("");
