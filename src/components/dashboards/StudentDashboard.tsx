@@ -1,202 +1,198 @@
-// src/components/dashboard/StudentDashboard.tsx
-import React, { useEffect, useState } from 'react';
-import { useAuth } from '../auth/AuthProvider';
-import { db } from '@/lib/firebaseConfig';
-import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
+"use client";
+
+import React, { useEffect, useState } from "react";
+import { useAuth } from "../auth/AuthProvider";
+import { db } from "@/lib/firebaseConfig";
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+  doc,
+  getDoc,
+} from "firebase/firestore";
 
 const StudentDashboard: React.FC = () => {
   const { user, logout } = useAuth();
-  const [loading, setLoading] = useState(true);
-  const [studentData, setStudentData] = useState<any>(null);
+  const [student, setStudent] = useState<any>(null);
+  const [activeTab, setActiveTab] = useState("classroom");
+  const [dateTime, setDateTime] = useState(new Date());
+
+  const [classes, setClasses] = useState<any[]>([]);
+  const [assignments, setAssignments] = useState<any[]>([]);
+  const [marks, setMarks] = useState<any[]>([]);
+  const [attendance, setAttendance] = useState(0);
+
+  // ⏱ live clock
+  useEffect(() => {
+    const timer = setInterval(() => setDateTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
-    const fetchStudentData = async () => {
+    const fetchData = async () => {
       if (!user?.uid) return;
 
-      try {
-        // 🔎 Fetch student profile
-        const studentRef = doc(db, 'students', user.uid);
-        const studentSnap = await getDoc(studentRef);
+      // 🔎 Student profile
+      const studentRef = doc(db, "students", user.uid);
+      const snap = await getDoc(studentRef);
+      if (!snap.exists()) return;
 
-        if (!studentSnap.exists()) {
-          console.error('No student record found.');
-          setLoading(false);
-          return;
-        }
-
-        const studentInfo = studentSnap.data();
-
-        // 🔎 Fetch today’s classes for grade + section
-        const classesQ = query(
-          collection(db, 'classes'),
-          where('grade', '==', studentInfo.grade),
-          where('classSection', '==', studentInfo.classSection)
-        );
-        const classesSnap = await getDocs(classesQ);
-        const currentClasses = classesSnap.docs.map((d) => d.data());
-
-        // 🔎 Fetch assignments
-        const assignmentsQ = query(
-          collection(db, 'assignments'),
-          where('grade', '==', studentInfo.grade),
-          where('classSection', '==', studentInfo.classSection)
-        );
-        const assignmentsSnap = await getDocs(assignmentsQ);
-        const assignments = assignmentsSnap.docs.map((d) => d.data());
-
-        // 🔎 Fetch upcoming exams
-        const examsQ = query(
-          collection(db, 'exams'),
-          where('grade', '==', studentInfo.grade),
-          where('classSection', '==', studentInfo.classSection)
-        );
-        const examsSnap = await getDocs(examsQ);
-        const upcomingExams = examsSnap.docs.map((d) => d.data());
-
-        setStudentData({
-          ...studentInfo,
-          currentClasses,
-          assignments,
-          upcomingExams,
-        });
-      } catch (err) {
-        console.error('Error fetching student dashboard:', err);
-      } finally {
-        setLoading(false);
+      const sData = snap.data();
+      if (sData.status !== "enrolled") {
+        setStudent({ status: sData.status });
+        return;
       }
+
+      setStudent(sData);
+
+      // 🔎 Classes
+      const cQ = query(
+        collection(db, "classes"),
+        where("grade", "==", sData.grade),
+        where("classSection", "==", sData.classSection)
+      );
+      const cSnap = await getDocs(cQ);
+      setClasses(cSnap.docs.map((d) => d.data()));
+
+      // 🔎 Assignments
+      const aQ = query(
+        collection(db, "assignments"),
+        where("grade", "==", sData.grade),
+        where("classSection", "==", sData.classSection)
+      );
+      const aSnap = await getDocs(aQ);
+      setAssignments(aSnap.docs.map((d) => d.data()));
+
+      // 🔎 Marks
+      const mQ = query(
+        collection(db, "marks"),
+        where("uid", "==", user.uid)
+      );
+      const mSnap = await getDocs(mQ);
+      setMarks(mSnap.docs.map((d) => d.data()));
+
+      // 🔎 Attendance (simple %)
+      setAttendance(sData.attendance || 0);
     };
 
-    fetchStudentData();
+    fetchData();
   }, [user]);
 
-  if (loading) {
+  if (!student) {
+    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  }
+
+  if (student.status !== "enrolled") {
     return (
-      <div className="min-h-screen flex items-center justify-center text-gray-600">
-        Loading your dashboard...
+      <div className="min-h-screen flex items-center justify-center text-yellow-600">
+        Your profile exists but is not yet <b>enrolled</b>. Wait for principal approval.
       </div>
     );
   }
 
-  if (!studentData) {
-    return (
-      <div className="min-h-screen flex items-center justify-center text-red-600">
-        No student data found. Contact your teacher or admin.
-      </div>
-    );
-  }
+  // 🔎 helper: check if class is active now
+  const isClassActive = (cls: any) => {
+    const now = new Date();
+    const [h, m] = cls.time.split(":").map(Number);
+    const start = new Date();
+    start.setHours(h, m, 0, 0);
+
+    const end = new Date(start.getTime() + (cls.duration || 60) * 60000);
+
+    return now >= start && now <= end && 
+           cls.day.toLowerCase() === now.toLocaleDateString("en-US", { weekday: "long" }).toLowerCase();
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-4">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">Student Dashboard</h1>
-              <p className="text-gray-600">Welcome back, {studentData.name}!</p>
-              <p className="text-sm text-gray-500">
-                {studentData.grade} - {studentData.classSection}
-              </p>
-            </div>
-            <button
-              onClick={logout}
-              className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
-            >
-              Logout
-            </button>
+      <div className="bg-white shadow border-b">
+        <div className="max-w-7xl mx-auto flex justify-between items-center py-4 px-6">
+          <div>
+            <h1 className="text-2xl font-bold">Welcome, {student.name}</h1>
+            <p className="text-gray-600">Grade {student.grade} - {student.classSection}</p>
+            <p className="text-sm text-gray-500">{dateTime.toLocaleDateString()} — {dateTime.toLocaleTimeString()}</p>
           </div>
+          <button
+            onClick={logout}
+            className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700"
+          >
+            Logout
+          </button>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex justify-center space-x-6 border-t bg-gray-100 py-2">
+          {["classroom", "assignments", "marks", "attendance"].map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`px-4 py-2 rounded ${
+                activeTab === tab ? "bg-blue-600 text-white" : "text-gray-700"
+              }`}
+            >
+              {tab.charAt(0).toUpperCase() + tab.slice(1)}
+            </button>
+          ))}
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <div className="bg-blue-600 text-white rounded-xl p-6">
-            <h3 className="text-lg font-semibold mb-2">Points</h3>
-            <p className="text-3xl font-bold">{studentData.points || 0}</p>
-          </div>
-          <div className="bg-green-600 text-white rounded-xl p-6">
-            <h3 className="text-lg font-semibold mb-2">Attendance</h3>
-            <p className="text-3xl font-bold">{studentData.attendance || 0}%</p>
-          </div>
-          <div className="bg-orange-600 text-white rounded-xl p-6">
-            <h3 className="text-lg font-semibold mb-2">Assignments</h3>
-            <p className="text-3xl font-bold">{studentData.assignments?.length || 0}</p>
-          </div>
-          <div className="bg-purple-600 text-white rounded-xl p-6">
-            <h3 className="text-lg font-semibold mb-2">Grade</h3>
-            <p className="text-3xl font-bold">
-              {studentData.grade?.replace('Grade ', '')}
-            </p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Today's Classes */}
-          <div className="bg-white rounded-xl shadow-lg p-6">
-            <h2 className="text-xl font-bold mb-4">Today's Classes</h2>
-            <div className="space-y-4">
-              {studentData.currentClasses?.map((cls: any, index: number) => (
-                <div key={index} className="flex items-center justify-between p-4 bg-blue-50 rounded-lg">
-                  <div>
-                    <h3 className="font-semibold text-gray-900">{cls.subject}</h3>
-                    <p className="text-sm text-gray-600">{cls.time} - {cls.teacher}</p>
-                  </div>
-                  <a
-                    href={cls.meetLink || '#'}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-                  >
-                    Join Class
-                  </a>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Assignments */}
-          <div className="bg-white rounded-xl shadow-lg p-6">
-            <h2 className="text-xl font-bold mb-4">Recent Assignments</h2>
-            <div className="space-y-4">
-              {studentData.assignments?.map((assignment: any, index: number) => (
-                <div key={index} className="flex items-center justify-between p-4 border rounded-lg">
-                  <div>
-                    <h3 className="font-semibold text-gray-900">{assignment.title}</h3>
-                    <p className="text-sm text-gray-600">
-                      {assignment.subject} - Due: {assignment.due}
-                    </p>
-                  </div>
-                  <span
-                    className={`px-3 py-1 rounded-full text-xs font-medium ${
-                      assignment.status === 'submitted'
-                        ? 'bg-green-100 text-green-800'
-                        : 'bg-yellow-100 text-yellow-800'
-                    }`}
-                  >
-                    {assignment.status}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Upcoming Exams */}
-        <div className="bg-white rounded-xl shadow-lg p-6 mt-8">
-          <h2 className="text-xl font-bold mb-4">Upcoming Exams</h2>
-          <div className="space-y-4">
-            {studentData.upcomingExams?.map((exam: any, index: number) => (
-              <div key={index} className="flex items-center justify-between p-4 border rounded-lg">
+      {/* Content */}
+      <div className="max-w-7xl mx-auto py-8 px-6">
+        {activeTab === "classroom" && (
+          <div className="grid gap-4">
+            {classes.map((cls, i) => (
+              <div key={i} className="flex justify-between items-center p-4 border rounded-lg bg-white">
                 <div>
-                  <h3 className="font-semibold text-gray-900">{exam.subject}</h3>
-                  <p className="text-sm text-gray-600">{exam.type}</p>
+                  <h3 className="font-bold">{cls.subject}</h3>
+                  <p className="text-sm text-gray-600">{cls.day} at {cls.time}</p>
                 </div>
-                <p className="text-sm font-medium text-purple-600">{exam.date}</p>
+                <a
+                  href={isClassActive(cls) ? cls.meetLink : "#"}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={`px-4 py-2 rounded ${
+                    isClassActive(cls)
+                      ? "bg-blue-600 text-white hover:bg-blue-700"
+                      : "bg-gray-300 text-gray-500 cursor-not-allowed"
+                  }`}
+                >
+                  {isClassActive(cls) ? "Join Class" : "Not Active"}
+                </a>
               </div>
             ))}
           </div>
-        </div>
+        )}
+
+        {activeTab === "assignments" && (
+          <div className="space-y-3">
+            {assignments.map((a, i) => (
+              <div key={i} className="p-4 border rounded bg-white">
+                <h3 className="font-semibold">{a.title}</h3>
+                <p className="text-sm">{a.subject} — Due {a.due}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {activeTab === "marks" && (
+          <div className="space-y-3">
+            {marks.map((m, i) => (
+              <div key={i} className="p-4 border rounded bg-white flex justify-between">
+                <span>{m.subject}</span>
+                <span className="font-bold">{m.score}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {activeTab === "attendance" && (
+          <div className="p-6 bg-white rounded shadow text-center">
+            <h3 className="text-xl font-bold">Attendance</h3>
+            <p className="text-3xl mt-2">{attendance}%</p>
+          </div>
+        )}
       </div>
     </div>
   );
