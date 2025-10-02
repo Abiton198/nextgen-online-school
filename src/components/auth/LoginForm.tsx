@@ -25,15 +25,14 @@ import {
 } from "firebase/firestore";
 
 const LoginForm: React.FC = () => {
-  const { login, loginWithGoogle, signup } = useAuth();
+  const { login, loginWithGoogle, resetPassword } = useAuth();
   const navigate = useNavigate();
 
   const [role, setRole] = useState<"student" | "teacher" | "parent" | "principal">("parent");
-  const [email, setEmail] = useState(""); // only used for parent/principal
+  const [email, setEmail] = useState(""); 
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [isSignup, setIsSignup] = useState(false);
 
   // --- Dropdown state ---
   const [grade, setGrade] = useState("");
@@ -97,9 +96,8 @@ const LoginForm: React.FC = () => {
         const snap = await getDocs(q);
         if (snap.empty) throw new Error("Student not found.");
         const student = snap.docs[0].data();
-        loginEmail = student.email || student.parentData?.email; // depends where you store student email
+        loginEmail = student.email || student.parentData?.email;
         if (!loginEmail) throw new Error("No email linked for this student.");
-        navigate("/student-dashboard");
       }
 
       if (role === "teacher") {
@@ -113,20 +111,18 @@ const LoginForm: React.FC = () => {
         if (snap.empty) throw new Error("Teacher not found.");
         const teacher = snap.docs[0].data();
         loginEmail = teacher.email;
-        navigate("/teacher-dashboard");
       }
 
-      if (role === "parent") {
-        navigate("/parent-dashboard");
-      }
-
-      if (role === "principal") {
-        navigate("/principal-dashboard");
-      }
-
-      // 🔑 Login with Firebase email/password
+      // 🔑 Attempt login
       const user = await login(loginEmail, password);
       console.log("Logged in:", user.uid);
+
+      // ✅ Navigate only after success
+      if (role === "student") navigate("/student-dashboard");
+      if (role === "teacher") navigate("/teacher-dashboard");
+      if (role === "parent") navigate("/parent-dashboard");
+      if (role === "principal") navigate("/principal-dashboard");
+
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -134,7 +130,7 @@ const LoginForm: React.FC = () => {
     }
   };
 
-  // ---------------- Google Login (for parents/teachers only) ----------------
+  // ---------------- Google Login ----------------
   const handleGoogleSignIn = async () => {
     setError("");
     setIsLoading(true);
@@ -150,15 +146,27 @@ const LoginForm: React.FC = () => {
     }
   };
 
+  // ---------------- Reset Password ----------------
+  const handleResetPassword = async () => {
+    if (!email) {
+      setError("Enter your email to reset password.");
+      return;
+    }
+    try {
+      await resetPassword(email);
+      alert("Password reset email sent. Check your inbox.");
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <GraduationCap className="w-10 h-10 text-blue-600 mx-auto" />
-          <CardTitle>{isSignup ? "Sign Up" : "Sign In"}</CardTitle>
-          <CardDescription>
-            {isSignup ? "Create your account" : "Access your dashboard"}
-          </CardDescription>
+          <CardTitle>Sign In</CardTitle>
+          <CardDescription>Access your dashboard</CardDescription>
         </CardHeader>
 
         <CardContent>
@@ -272,6 +280,17 @@ const LoginForm: React.FC = () => {
             >
               {isLoading ? "Signing in..." : "Sign In"}
             </Button>
+
+            {/* Reset password only for email-based logins */}
+            {(role === "parent" || role === "principal" || role === "teacher") && (
+              <button
+                type="button"
+                onClick={handleResetPassword}
+                className="text-sm text-blue-600 hover:underline mt-2"
+              >
+                Forgot password?
+              </button>
+            )}
 
             {(role === "parent" || role === "teacher") && (
               <Button
