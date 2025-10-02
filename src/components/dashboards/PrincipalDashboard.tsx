@@ -2,235 +2,288 @@
 
 import React, { useEffect, useState } from "react";
 import { db, auth } from "@/lib/firebaseConfig";
-import { collection, doc, onSnapshot } from "firebase/firestore";
-
+import {
+  collection,
+  onSnapshot,
+  doc,
+  updateDoc,
+  serverTimestamp,
+  query,
+  orderBy,
+  getDocs,
+} from "firebase/firestore";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
-import { approveTeacher, rejectTeacher } from "@/lib/teacherActions";
-import { approveStudent, rejectStudent } from "@/lib/studentActions";
-import { suspendUser, reinstateUser } from "@/lib/userActions";
-import { sendMessage, subscribeToMessages, Message } from "@/lib/chatActions";
-
-interface Reference {
-  name: string;
-  contact: string;
+interface Registration {
+  id: string;
+  learnerData?: { firstName?: string; lastName?: string; grade?: string };
+  parentData?: { name?: string; email?: string };
+  status: string;
+  principalReviewed?: boolean;
+  classActivated?: boolean;
 }
 
-interface UserRecord {
-  uid: string;
-  name?: string;
+interface Teacher {
+  id: string;
   firstName?: string;
   lastName?: string;
-  email: string;
-  role: string;
-  subject?: string;
-  parentId?: string;
-  status?: string;
-
-  gender?: string;
-  province?: string;
-  country?: string;
-  address?: string;
-  contact?: string;
-  experience?: string;
-  previousSchool?: string;
-  references?: Reference[];
-
-  idUrl?: string;
-  qualUrl?: string;
-  photoUrl?: string;
-  cetaUrl?: string;
-  workPermitUrl?: string;
-
-  applicationStage?: string;
+  email?: string;
+  status: string;
+  principalReviewed?: boolean;
+  classActivated?: boolean;
 }
 
+interface Parent {
+  id: string;
+  name: string;
+  email: string;
+  children: { name: string; grade: string; status: string }[];
+}
+
+interface Payment {
+  id: string;
+  amount: string;
+  paymentStatus: string;
+  processedAt: any;
+}
+
+// ---------------- Principal Dashboard ----------------
 const PrincipalDashboard: React.FC = () => {
-  const [pendingStudents, setPendingStudents] = useState<UserRecord[]>([]);
-  const [pendingTeachers, setPendingTeachers] = useState<UserRecord[]>([]);
-  const [approvedStudents, setApprovedStudents] = useState<UserRecord[]>([]);
-  const [approvedTeachers, setApprovedTeachers] = useState<UserRecord[]>([]);
-  const [suspendedStudents, setSuspendedStudents] = useState<UserRecord[]>([]);
-  const [suspendedTeachers, setSuspendedTeachers] = useState<UserRecord[]>([]);
-
-  const [chatOpen, setChatOpen] = useState(false);
-  const [chatTo, setChatTo] = useState<string>("helpdesk");
-  const [message, setMessage] = useState("");
-  const [messages, setMessages] = useState<Message[]>([]);
-
+  const [students, setStudents] = useState<Registration[]>([]);
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [parents, setParents] = useState<Parent[]>([]);
+  const [payments, setPayments] = useState<Record<string, Payment[]>>({});
   const [searchTerm, setSearchTerm] = useState("");
+  const [filter, setFilter] = useState<"all" | "failed" | "latest">("all");
 
-  const principalUid = auth.currentUser?.uid || "";
+  const [time, setTime] = useState(new Date());
+  const principalName = auth.currentUser?.displayName || "Principal";
+  const schoolName = "Springfield Online School";
 
-  // ---------------- Realtime Listeners ----------------
+  // ⏰ Update time
   useEffect(() => {
-    const unsubscribers: (() => void)[] = [];
-
-    unsubscribers.push(
-      onSnapshot(collection(db, "pendingStudents"), (snap) =>
-        setPendingStudents(
-          snap.docs.map((d) => ({ uid: d.id, ...d.data() } as UserRecord))
-        )
-      )
-    );
-
-    unsubscribers.push(
-      onSnapshot(collection(db, "pendingTeachers"), (snap) =>
-        setPendingTeachers(
-          snap.docs.map((d) => ({ uid: d.id, ...d.data() } as UserRecord))
-        )
-      )
-    );
-
-    unsubscribers.push(
-      onSnapshot(collection(db, "students"), (snap) => {
-        const all = snap.docs.map(
-          (d) => ({ uid: d.id, ...d.data() } as UserRecord)
-        );
-        setApprovedStudents(all.filter((s) => s.status !== "suspended"));
-        setSuspendedStudents(all.filter((s) => s.status === "suspended"));
-      })
-    );
-
-    unsubscribers.push(
-      onSnapshot(collection(db, "teachers"), (snap) => {
-        const all = snap.docs.map(
-          (d) => ({ uid: d.id, ...d.data() } as UserRecord)
-        );
-        setApprovedTeachers(all.filter((t) => t.status !== "suspended"));
-        setSuspendedTeachers(all.filter((t) => t.status === "suspended"));
-      })
-    );
-
-    return () => unsubscribers.forEach((unsub) => unsub());
+    const timer = setInterval(() => setTime(new Date()), 1000);
+    return () => clearInterval(timer);
   }, []);
 
-  // 🔹 Subscribe to messages
+  // 🔄 Live listeners
   useEffect(() => {
-    if (!principalUid) return;
-    const unsub = subscribeToMessages(principalUid, chatTo, setMessages);
-    return () => unsub();
-  }, [principalUid, chatTo]);
+    const unsub1 = onSnapshot(collection(db, "registrations"), async (snap) => {
+      const regs = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Registration) }));
+      setStudents(regs);
 
-  // ---------------- Handlers ----------------
-  const handleApproveTeacher = async (teacher: UserRecord) => {
-    try {
-      await approveTeacher(teacher, principalUid);
-    } catch (err) {
-      console.error("Teacher approval failed:", err);
-    }
+      // build parents list
+      const parentMap: Record<string, Parent> = {};
+      regs.forEach((reg) => {
+        if (reg.parentData?.email) {
+          const pid = reg.parentData.email;
+          if (!parentMap[pid]) {
+            parentMap[pid] = {
+              id: pid,
+              name: reg.parentData.name || "Unknown Parent",
+              email: reg.parentData.email,
+              children: [],
+            };
+          }
+          parentMap[pid].children.push({
+            name: `${reg.learnerData?.firstName || ""} ${reg.learnerData?.lastName || ""}`,
+            grade: reg.learnerData?.grade || "-",
+            status: reg.status,
+          });
+        }
+      });
+      setParents(Object.values(parentMap));
+
+      // fetch payments for each student
+      for (const reg of regs) {
+        const payRef = collection(db, "registrations", reg.id, "payments");
+        const q = query(payRef, orderBy("processedAt", "desc"));
+        const snap = await getDocs(q);
+        const history: Payment[] = snap.docs.map((d) => ({
+          id: d.id,
+          ...(d.data() as any),
+        }));
+        setPayments((prev) => ({ ...prev, [reg.id]: history }));
+      }
+    });
+
+    const unsub2 = onSnapshot(collection(db, "teacherApplications"), (snap) => {
+      setTeachers(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Teacher) })));
+    });
+
+    return () => {
+      unsub1();
+      unsub2();
+    };
+  }, []);
+
+  // ---------------- Actions ----------------
+  const approve = async (col: "registrations" | "teacherApplications", id: string) => {
+    await updateDoc(doc(db, col, id), {
+      status: col === "registrations" ? "enrolled" : "approved",
+      principalReviewed: true,
+      reviewedAt: serverTimestamp(),
+    });
   };
 
-  const handleRejectTeacher = async (teacher: UserRecord) => {
-    try {
-      await rejectTeacher(teacher, principalUid);
-    } catch (err) {
-      console.error("Teacher rejection failed:", err);
-    }
+  const reject = async (col: "registrations" | "teacherApplications", id: string) => {
+    await updateDoc(doc(db, col, id), {
+      status: "rejected",
+      principalReviewed: true,
+      reviewedAt: serverTimestamp(),
+    });
   };
 
-  const handleApproveStudent = async (student: UserRecord) => {
-    try {
-      await approveStudent(student, principalUid);
-    } catch (err) {
-      console.error("Student approval failed:", err);
-    }
+  const suspend = async (col: "registrations" | "teacherApplications", id: string) => {
+    await updateDoc(doc(db, col, id), {
+      status: "suspended",
+      suspendedAt: serverTimestamp(),
+    });
   };
 
-  const handleRejectStudent = async (student: UserRecord) => {
-    try {
-      await rejectStudent(student, principalUid);
-    } catch (err) {
-      console.error("Student rejection failed:", err);
-    }
+  const reinstate = async (col: "registrations" | "teacherApplications", id: string) => {
+    await updateDoc(doc(db, col, id), {
+      status: col === "registrations" ? "enrolled" : "approved",
+      reinstatedAt: serverTimestamp(),
+    });
   };
 
-  const handleSendMessage = async () => {
-    try {
-      await sendMessage(principalUid, chatTo, message);
-      setMessage("");
-    } catch (err) {
-      console.error("Message send failed:", err);
-    }
+  const freezeClass = async (col: "registrations" | "teacherApplications", id: string, frozen: boolean) => {
+    await updateDoc(doc(db, col, id), {
+      classActivated: !frozen,
+    });
   };
 
-  // ---------------- Render Helper ----------------
-  const renderUserCard = (
+  // ---------------- Helpers ----------------
+  const filterStudents = (users: Registration[]): Registration[] => {
+    if (filter === "failed") {
+      return users.filter(
+        (u) =>
+          payments[u.id]?.some((p) => p.paymentStatus !== "COMPLETE") ?? false
+      );
+    }
+    if (filter === "latest") {
+      return [...users].sort((a, b) => {
+        const aDate = payments[a.id]?.[0]?.processedAt?.toDate?.() || new Date(0);
+        const bDate = payments[b.id]?.[0]?.processedAt?.toDate?.() || new Date(0);
+        return bDate.getTime() - aDate.getTime();
+      });
+    }
+    return users;
+  };
+
+  const failedCount = students.filter(
+    (s) => payments[s.id]?.some((p) => p.paymentStatus !== "COMPLETE") ?? false
+  ).length;
+
+  // ---------------- Render ----------------
+  const renderCard = (
     title: string,
-    users: UserRecord[],
-    onApprove?: (u: UserRecord) => void,
-    onReject?: (u: UserRecord) => void,
-    allowSuspend?: boolean,
-    allowReinstate?: boolean
+    users: (Registration | Teacher)[],
+    col: "registrations" | "teacherApplications"
   ) => {
-    const filteredUsers = users.filter(
-      (u) =>
-        u.firstName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        u.lastName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        u.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        u.email?.toLowerCase().includes(searchTerm.toLowerCase())
+    const filtered = users.filter((u) =>
+      (u.learnerData?.firstName || u.firstName || "")
+        .toLowerCase()
+        .includes(searchTerm.toLowerCase()) ||
+      (u.learnerData?.lastName || u.lastName || "")
+        .toLowerCase()
+        .includes(searchTerm.toLowerCase()) ||
+      (u.parentData?.email || u.email || "")
+        .toLowerCase()
+        .includes(searchTerm.toLowerCase())
     );
 
+    const displayUsers =
+      col === "registrations" ? filterStudents(filtered as Registration[]) : filtered;
+
     return (
-      <Card className="bg-white shadow-md">
+      <Card className="bg-white shadow">
         <CardHeader>
           <CardTitle>{title}</CardTitle>
         </CardHeader>
         <CardContent>
-          {filteredUsers.length === 0 && (
-            <p className="text-sm text-gray-500">No matching records found.</p>
-          )}
+          {displayUsers.length === 0 && <p className="text-sm text-gray-500">No records.</p>}
           <ul className="space-y-3">
-            {filteredUsers.map((u) => (
+            {displayUsers.map((u) => (
               <li
-                key={u.uid}
-                className="p-3 border rounded-md bg-gray-50 flex flex-col gap-2"
+                key={u.id}
+                className={`p-3 border rounded flex flex-col gap-2 ${
+                  "learnerData" in u &&
+                  payments[u.id]?.some((p) => p.paymentStatus !== "COMPLETE")
+                    ? "border-red-500 bg-red-50"
+                    : "bg-gray-50"
+                }`}
               >
                 <div>
                   <p className="font-medium">
-                    {u.firstName} {u.lastName}
+                    {u.learnerData
+                      ? `${u.learnerData.firstName} ${u.learnerData.lastName}`
+                      : `${u.firstName} ${u.lastName}`}
                   </p>
-                  <p className="text-xs text-gray-500">{u.email}</p>
+                  <p className="text-xs text-gray-500">{u.parentData?.email || u.email}</p>
                   <p className="text-xs text-gray-400">Status: {u.status}</p>
                 </div>
 
-                {/* Actions */}
-                {onApprove && onReject ? (
-                  <div className="flex gap-2 mt-2">
-                    <Button
-                      size="sm"
-                      className="bg-green-600 hover:bg-green-700"
-                      onClick={() => onApprove(u)}
-                    >
+                {/* 💳 Payment history */}
+                {"learnerData" in u && payments[u.id] && (
+                  <div className="bg-white border rounded p-2 text-xs">
+                    <p className="font-semibold mb-1">Payment History:</p>
+                    {payments[u.id].length === 0 ? (
+                      <p className="text-gray-400">No payments yet.</p>
+                    ) : (
+                      <ul className="space-y-1">
+                        {payments[u.id].map((p) => (
+                          <li key={p.id} className="flex justify-between">
+                            <span
+                              className={
+                                p.paymentStatus === "COMPLETE"
+                                  ? "text-green-600"
+                                  : "text-red-600 font-semibold"
+                              }
+                            >
+                              R{p.amount} — {p.paymentStatus}
+                            </span>
+                            <span className="text-gray-400">
+                              {new Date(p.processedAt.toDate()).toLocaleDateString()}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+
+                {/* Action buttons */}
+                {u.status === "pending_review" ? (
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={() => approve(col, u.id)} className="bg-green-600 hover:bg-green-700">
                       Approve
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      onClick={() => onReject(u)}
-                    >
+                    <Button size="sm" variant="destructive" onClick={() => reject(col, u.id)}>
                       Reject
                     </Button>
                   </div>
-                ) : allowSuspend ? (
-                  <Button
-                    size="sm"
-                    className="bg-yellow-500 hover:bg-yellow-600"
-                    onClick={() => suspendUser(u)}
-                  >
-                    Suspend
-                  </Button>
-                ) : allowReinstate ? (
-                  <Button
-                    size="sm"
-                    className="bg-green-600 hover:bg-green-700"
-                    onClick={() => reinstateUser(u)}
-                  >
+                ) : u.status === "suspended" ? (
+                  <Button size="sm" onClick={() => reinstate(col, u.id)} className="bg-green-600 hover:bg-green-700">
                     Reinstate
                   </Button>
-                ) : null}
+                ) : (
+                  <div className="flex gap-2">
+                    <Button size="sm" className="bg-yellow-500 hover:bg-yellow-600" onClick={() => suspend(col, u.id)}>
+                      Suspend
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => freezeClass(col, u.id, u.classActivated === false)}
+                    >
+                      {u.classActivated === false ? "Unfreeze Class" : "Freeze Class"}
+                    </Button>
+                  </div>
+                )}
               </li>
             ))}
           </ul>
@@ -239,116 +292,80 @@ const PrincipalDashboard: React.FC = () => {
     );
   };
 
-  // ---------------- Dashboard Layout ----------------
-  return (
-    <div className="min-h-screen bg-gray-50 p-6 relative">
-      <h1 className="text-3xl font-bold mb-6 text-gray-800">
-        Principal Dashboard
-      </h1>
+  const renderParents = () => {
+    const filtered = parents.filter((p) =>
+      p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      p.email.toLowerCase().includes(searchTerm.toLowerCase())
+    );
 
-      {/* 🔍 Search Bar */}
-      <div className="mb-6">
+    return (
+      <Card className="bg-white shadow">
+        <CardHeader>
+          <CardTitle>Parents</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {filtered.length === 0 && <p className="text-sm text-gray-500">No parents found.</p>}
+          <ul className="space-y-3">
+            {filtered.map((p) => (
+              <li key={p.id} className="p-3 border rounded bg-gray-50">
+                <p className="font-medium">{p.name}</p>
+                <p className="text-xs text-gray-500">{p.email}</p>
+                <p className="text-xs text-gray-400">Children:</p>
+                <ul className="ml-4 list-disc text-xs text-gray-600">
+                  {p.children.map((c, i) => (
+                    <li key={i}>
+                      {c.name} – Grade {c.grade} ({c.status})
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            ))}
+          </ul>
+        </CardContent>
+      </Card>
+    );
+  };
+
+  // ---------------- Layout ----------------
+  return (
+    <div className="min-h-screen bg-gray-50 p-6 space-y-6">
+      {/* Welcome */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between">
+        <h1 className="text-2xl font-bold">Welcome, {principalName} 👋</h1>
+        <p className="text-gray-600">
+          {schoolName} | {time.toLocaleDateString()} {time.toLocaleTimeString()}
+        </p>
+      </div>
+
+      {/* Search + Filter + Counter */}
+      <div className="flex flex-col md:flex-row gap-4 items-center">
         <Input
           type="text"
-          placeholder="Search by name or email..."
+          placeholder="Search students, teachers, or parents..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           className="w-full max-w-md"
         />
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {renderUserCard(
-          "Pending Students",
-          pendingStudents,
-          handleApproveStudent,
-          handleRejectStudent
-        )}
-        {renderUserCard(
-          "Pending Teachers",
-          pendingTeachers,
-          handleApproveTeacher,
-          handleRejectTeacher
-        )}
-
-        {renderUserCard("Approved Students", approvedStudents, undefined, undefined, true)}
-        {renderUserCard("Approved Teachers", approvedTeachers, undefined, undefined, true)}
-
-        {renderUserCard("Suspended Students", suspendedStudents, undefined, undefined, false, true)}
-        {renderUserCard("Suspended Teachers", suspendedTeachers, undefined, undefined, false, true)}
-      </div>
-
-      {/* 💬 Floating Chat */}
-      <div className="fixed bottom-6 right-6">
-        <button
-          onClick={() => setChatOpen(!chatOpen)}
-          className="bg-blue-600 text-white rounded-full p-4 shadow-lg hover:bg-blue-700"
+        <select
+          value={filter}
+          onChange={(e) => setFilter(e.target.value as any)}
+          className="border rounded p-2"
         >
-          💬
-        </button>
+          <option value="all">All Students</option>
+          <option value="failed">Failed Payments Only</option>
+          <option value="latest">Sort by Latest Payment</option>
+        </select>
+        <span className="text-sm text-red-600 font-medium">
+          🚨 {failedCount} students with failed payments
+        </span>
       </div>
 
-      {/* Chatbox */}
-      {chatOpen && (
-        <div className="fixed bottom-20 right-6 w-80 bg-white border rounded-lg shadow-lg p-4">
-          <h2 className="text-sm font-semibold mb-2">Send a Message</h2>
-
-          <select
-            value={chatTo}
-            onChange={(e) => setChatTo(e.target.value)}
-            className="w-full border rounded p-1 mb-2 text-sm"
-          >
-            <option value="helpdesk">Helpdesk</option>
-            {approvedTeachers.map((t) => (
-              <option key={t.uid} value={t.uid}>
-                Teacher: {t.firstName} {t.lastName}
-              </option>
-            ))}
-            {approvedStudents.map((s) => (
-              <option key={s.uid} value={s.parentId || s.uid}>
-                Parent of: {s.name || s.email}
-              </option>
-            ))}
-          </select>
-
-          <div className="max-h-40 overflow-y-auto border rounded p-2 mb-2">
-            {messages.length > 0 ? (
-              messages.map((m) => (
-                <div key={m.id} className="text-xs mb-1">
-                  <span
-                    className={
-                      m.sender === principalUid
-                        ? "font-medium text-blue-600"
-                        : "font-medium text-gray-700"
-                    }
-                  >
-                    {m.sender === principalUid ? "You" : m.sender}:
-                  </span>{" "}
-                  {m.text}
-                </div>
-              ))
-            ) : (
-              <p className="text-gray-400 text-xs">No messages yet.</p>
-            )}
-          </div>
-
-          <div className="flex gap-2">
-            <input
-              type="text"
-              placeholder="Type message..."
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              className="flex-1 border rounded p-1 text-sm"
-            />
-            <button
-              onClick={handleSendMessage}
-              className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700"
-            >
-              Send
-            </button>
-          </div>
-        </div>
-      )}
+      {/* Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {renderCard("Students", students, "registrations")}
+        {renderCard("Teachers", teachers, "teacherApplications")}
+        {renderParents()}
+      </div>
     </div>
   );
 };

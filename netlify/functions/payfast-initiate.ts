@@ -15,12 +15,11 @@ export const handler: Handler = async (event) => {
   }
 
   try {
-    console.log("🔔 Raw ITN body:", event.body);
-
-    // PayFast sends urlencoded form-data
     const params = new URLSearchParams(event.body || "");
     const regId = params.get("m_payment_id");
-    const paymentStatus = params.get("payment_status"); // "COMPLETE" etc.
+    const paymentStatus = params.get("payment_status"); // "COMPLETE" | "FAILED" etc.
+    const amount = params.get("amount_gross") || "0";
+    const pfData = Object.fromEntries(params.entries());
 
     if (!regId) {
       return { statusCode: 400, body: "Missing m_payment_id" };
@@ -28,59 +27,26 @@ export const handler: Handler = async (event) => {
 
     const regRef = db.collection("registrations").doc(regId);
     const regSnap = await regRef.get();
-
     if (!regSnap.exists) {
       return { statusCode: 404, body: "Registration not found" };
     }
 
-    const registration = regSnap.data();
-    console.log("📄 Registration before update:", registration);
+    // ✅ Add payment record
+    const payRef = regRef.collection("payments").doc();
+    await payRef.set({
+      amount,
+      paymentStatus,
+      processedAt: new Date(),
+      pfData,
+    });
 
-    // Default update object
-    let update: Record<string, any> = {
+    // ✅ Optional quick reference on registration
+    await regRef.update({
       lastPaymentStatus: paymentStatus,
       lastPaymentAt: new Date(),
-    };
+    });
 
-    if (paymentStatus === "COMPLETE") {
-      if (registration?.purpose === "registration") {
-        // ✅ Registration fee paid → enroll student
-        update.status = "registered_pending_approval";
-        update.paymentReceived = true;
-
-        // Check if student already exists
-        if (!registration?.studentId) {
-          // Create new student doc
-          const studentRef = db.collection("students").doc();
-          await studentRef.set({
-            parentId: registration.parentId,
-            firstName: registration.student?.firstName || "Student",
-            lastName: registration.student?.lastName || "",
-            grade: registration.student?.grade || "",
-            createdAt: new Date(),
-            lessonsCompleted: 0,
-            targetLessons: 0,
-            points: 0,
-            status: "active",
-          });
-
-          update.studentId = studentRef.id;
-          console.log("🎓 Student created:", studentRef.id);
-        }
-      } else if (registration?.purpose === "fees") {
-        update.status = "up_to_date"; // tuition fees
-        update.paymentReceived = true;
-      } else {
-        update.status = "paid"; // donation, event, etc.
-        update.paymentReceived = true;
-      }
-    } else {
-      update.status = "payment_failed";
-      update.paymentReceived = false;
-    }
-
-    await regRef.update(update);
-    console.log("✅ Updated registration:", regId, update);
+    console.log("✅ Payment recorded:", regId, paymentStatus);
 
     return { statusCode: 200, body: "ITN processed" };
   } catch (err) {

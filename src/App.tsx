@@ -9,9 +9,7 @@ import { AuthProvider, useAuth } from "./components/auth/AuthProvider";
 
 // Teacher application
 import TeacherApplicationForm from "@/components/auth/TeacherApplicationForm";
-import TeacherDocumentUpload from "./components/auth/TeacherDocumentUpload";
-import TeacherApprovalStatus from "./components/auth/TeacherApprovalStatus";
-import TeacherCongratsOrReject from "./components/auth/TeacherCongratsOrReject";
+
 
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
@@ -22,15 +20,14 @@ import ParentDashboard from "./components/dashboards/parent/ParentDashboard";
 import { Footer } from "./components/Footer";
 import { AdminLoginForm } from "./components/auth/AdminLoginForm";
 
-// ✅ Payments
-import PaymentSuccess from "./components/payments/PaymentSuccess";
-import PaymentDetails from "./components/payments/PaymentDetails";
-import PaymentCancel from "./components/payments/PaymentCancel";
+// ✅ Payments (only relevant ones)
 import ParentRegistration from "./components/dashboards/parent/ParentRegistration";
-import PaymentPage from "./components/payments/PaymentPage";
 import PaymentsSection from "./components/dashboards/parent/sections/PaymentSection";
 import StatusSection from "./components/dashboards/parent/sections/StatusSection";
 import AboutUs from "./components/AboutUs";
+
+// Suspended screen
+import SuspendedScreen from "./components/auth/SuspendedScreen";
 
 const queryClient = new QueryClient();
 
@@ -47,15 +44,13 @@ const RoleBasedRoute = ({
   if (loading) return <div className="p-6 text-center">Loading...</div>;
   if (!user) return <Navigate to="/admin-login" replace />;
 
-  // Ensure role + status are loaded
   if (!user.role || !user.status) {
     return <div className="p-6 text-center">Fetching your profile...</div>;
   }
 
-  // 🔹 Redirect all pending/suspended users to /status
-  if (user.status === "pending" || user.status === "suspended") {
-    return <Navigate to="/status" replace />;
-  }
+  // 🔹 Redirect pending/suspended separately
+  if (user.status === "pending") return <Navigate to="/status" replace />;
+  if (user.status === "suspended") return <SuspendedScreen />;
 
   if (allowedRoles.includes(user.role)) {
     return <>{children}</>;
@@ -75,7 +70,7 @@ const App = () => {
             <BrowserRouter>
               <Routes>
                 <Route path="/" element={<Index />} />
-                 <Route path="/about" element={<AboutUs />} />
+                <Route path="/about" element={<AboutUs />} />
 
                 {/* Admin */}
                 <Route
@@ -117,14 +112,10 @@ const App = () => {
                   }
                 />
 
-                {/* Payments */}
+                {/* Registration + Payments */}
                 <Route path="/register" element={<ParentRegistration />} />
-                <Route path="/payments/:regId" element={<PaymentPage />} />
-                <Route path="/payment-details/:regId" element={<PaymentDetails />} />
-                <Route path="/payment-success" element={<PaymentSuccess />} />
-                <Route path="/payment-cancel" element={<PaymentCancel />} />
-                <Route path="/status" element={<StatusSection />} />
                 <Route path="/payments" element={<PaymentsSection />} />
+                <Route path="/status" element={<StatusSection />} />
 
                 {/* Other */}
                 <Route path="/admin-login" element={<AdminLoginForm />} />
@@ -132,9 +123,7 @@ const App = () => {
 
                 {/* Teacher Application */}
                 <Route path="/apply-teacher" element={<TeacherApplicationForm />} />
-                <Route path="/upload-teacher-docs" element={<TeacherDocumentUpload />} />
-                <Route path="/teacher-status" element={<TeacherApprovalStatus />} />
-                <Route path="/teacher-result" element={<TeacherCongratsOrReject />} />
+      
 
                 {/* Catch-all */}
                 <Route path="*" element={<NotFound />} />

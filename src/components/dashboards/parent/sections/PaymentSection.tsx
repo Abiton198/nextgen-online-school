@@ -1,119 +1,85 @@
-"use client";
-import { useState, useEffect } from "react";
-import { db } from "@/lib/firebaseConfig";
-import { doc, getDoc } from "firebase/firestore";
-import { useAuth } from "@/components/auth/AuthProvider";
-import { useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowLeft, X } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
 
-export default function PaymentsSection() {
-  const { user } = useAuth();
-  const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-
-  const regIdFromUrl = searchParams.get("regId");
-
-  const [purpose, setPurpose] = useState<
-    "registration" | "fees" | "donation" | "event" | "other"
-  >("fees");
-  const [amount, setAmount] = useState("");
-  const [customName, setCustomName] = useState("");
+export default function PaymentsSection({ parent, regId }: { parent: any; regId: string }) {
+  const [purpose, setPurpose] = useState("registration");
+  const [customAmount, setCustomAmount] = useState("");
+  const [itemName, setItemName] = useState("");
   const [loading, setLoading] = useState(false);
-  const [regId, setRegId] = useState<string | null>(regIdFromUrl);
+  const [alert, setAlert] = useState<{ type: "success" | "error" | null; message: string }>({
+    type: null,
+    message: "",
+  });
 
-  // 🔎 Fetch parent’s default regId if not passed in URL
+  const location = useLocation();
+
+  // 🔎 Get query params with React Router
   useEffect(() => {
-    const fetchRegId = async () => {
-      if (regIdFromUrl || !user?.uid) return;
-      const parentRef = doc(db, "parents", user.uid);
-      const snap = await getDoc(parentRef);
-      if (snap.exists()) {
-        const data = snap.data();
-        if (data.registrationId) {
-          setRegId(data.registrationId);
-        }
-      }
-    };
-    fetchRegId();
-  }, [user, regIdFromUrl]);
+    const searchParams = new URLSearchParams(location.search);
+    const status = searchParams.get("status");
 
-  const handleCheckout = async () => {
-    if (!user?.uid) {
-      alert("Please sign in first.");
-      return;
+    if (status === "success") {
+      setAlert({ type: "success", message: "✅ Payment completed successfully." });
+    } else if (status === "cancel") {
+      setAlert({ type: "error", message: "❌ Payment was cancelled." });
     }
-    if (!regId) {
-      alert("No registration found for this parent.");
-      return;
-    }
+  }, [location.search]);
 
+  // 🚀 Start PayFast payment
+  async function handlePayment(e: React.FormEvent) {
+    e.preventDefault();
     setLoading(true);
+    setAlert({ type: null, message: "" });
+
     try {
-      const resp = await fetch("/.netlify/functions/payfast-initiate", {
+      const res = await fetch("/api/payfast-initiate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          regId,
           purpose,
-          amount,
-          customName,
+          customAmount,
+          itemName,
+          regId,
+          parent,
         }),
       });
 
-      if (!resp.ok) throw new Error("Failed to initiate PayFast");
-      const { url } = await resp.json();
+      if (!res.ok) throw new Error("Failed to initiate payment");
 
-      window.location.href = url;
-    } catch (err) {
-      console.error(err);
-      alert("Could not start payment. Please try again.");
+      const { redirectUrl } = await res.json();
+      window.location.href = redirectUrl; // redirect to PayFast
+    } catch (err: any) {
+      setAlert({ type: "error", message: `⚠️ ${err.message}` });
+    } finally {
       setLoading(false);
     }
-  };
+  }
 
   return (
-    <div className="p-6 space-y-6">
-      {/* 🔝 Floating Navigation Bar */}
-      <div className="sticky top-0 z-10 bg-white border-b flex justify-between items-center px-2 py-2 mb-4">
-        <button
-          onClick={() => navigate(-1)}
-          className="flex items-center gap-1 text-gray-600 hover:text-black"
+    <div className="p-6 border rounded-lg shadow bg-white">
+      <h2 className="text-xl font-semibold mb-4">Payments</h2>
+
+      {/* 🔔 Inline Alert */}
+      {alert.type && (
+        <div
+          className={`p-3 mb-4 rounded ${
+            alert.type === "success" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+          }`}
         >
-          <ArrowLeft size={18} /> Back
-        </button>
-        <button
-          onClick={() => navigate("/parent-dashboard")}
-          className="text-gray-600 hover:text-red-600"
-        >
-          <X size={20} />
-        </button>
-      </div>
+          {alert.message}
+        </div>
+      )}
 
-      {/* Fee card */}
-      <div className="border rounded-lg p-4 bg-blue-50">
-        <h2 className="font-semibold text-gray-800 mb-2">
-          Current School Fees Structure
-        </h2>
-        <ul className="text-sm text-gray-700 space-y-1">
-          <li>Registration Fee: R1000.00</li>
-          <li>Tuition Fees: R2850.00</li>
-          <li>Event Ticket (average): R250.00</li>
-          <li>Donation: Any amount</li>
-        </ul>
-      </div>
-
-      {/* Form */}
-      <div className="border rounded-lg p-4 bg-white space-y-4">
-        <h3 className="font-semibold text-gray-800">Make a Payment</h3>
-
+      <form onSubmit={handlePayment} className="space-y-4">
+        {/* Purpose */}
         <div>
-          <label className="block text-sm text-gray-600">Payment Type</label>
+          <label className="block mb-1 font-medium">Payment Purpose</label>
           <select
             value={purpose}
-            onChange={(e) => setPurpose(e.target.value as any)}
-            className="w-full border rounded p-2 mt-1"
+            onChange={(e) => setPurpose(e.target.value)}
+            className="border rounded p-2 w-full"
           >
-            <option value="registration">Registration</option>
+            <option value="registration">Registration Fee</option>
             <option value="fees">Tuition Fees</option>
             <option value="donation">Donation</option>
             <option value="event">Event</option>
@@ -121,49 +87,42 @@ export default function PaymentsSection() {
           </select>
         </div>
 
-        <div>
-          <label className="block text-sm text-gray-600">
-            Amount (ZAR){" "}
-            {purpose !== "registration" && purpose !== "fees" && "(required)"}
-          </label>
-          <input
-            type="number"
-            step="0.01"
-            placeholder="Enter custom amount"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            className="w-full border rounded p-2 mt-1"
-            required={purpose !== "registration" && purpose !== "fees"}
-          />
-        </div>
-
-        {(purpose === "other" ||
-          purpose === "event" ||
-          purpose === "donation") && (
+        {/* Custom Amount */}
+        {(purpose === "donation" || purpose === "event" || purpose === "other") && (
           <div>
-            <label className="block text-sm text-gray-600">
-              Item Name (optional)
-            </label>
+            <label className="block mb-1 font-medium">Amount (ZAR)</label>
             <input
-              type="text"
-              placeholder="E.g., Science Fair Donation"
-              value={customName}
-              onChange={(e) => setCustomName(e.target.value)}
-              className="w-full border rounded p-2 mt-1"
+              type="number"
+              min="1"
+              step="0.01"
+              value={customAmount}
+              onChange={(e) => setCustomAmount(e.target.value)}
+              className="border rounded p-2 w-full"
+              placeholder="Enter amount"
             />
           </div>
         )}
 
+        {/* Item Name */}
+        <div>
+          <label className="block mb-1 font-medium">Item Name (optional)</label>
+          <input
+            type="text"
+            value={itemName}
+            onChange={(e) => setItemName(e.target.value)}
+            className="border rounded p-2 w-full"
+            placeholder="e.g. Term 1 Fees"
+          />
+        </div>
+
         <button
-          onClick={handleCheckout}
-          disabled={loading || !regId}
-          className={`w-full ${
-            loading ? "bg-gray-400" : "bg-blue-600 hover:bg-blue-700"
-          } text-white font-semibold py-2 rounded`}
+          type="submit"
+          disabled={loading}
+          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded"
         >
-          {loading ? "Processing..." : "Checkout with PayFast"}
+          {loading ? "Redirecting..." : "Pay Now"}
         </button>
-      </div>
+      </form>
     </div>
   );
 }

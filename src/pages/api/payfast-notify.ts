@@ -20,6 +20,8 @@ export const handler: Handler = async (event) => {
     const params = new URLSearchParams(event.body || "");
     const regId = params.get("m_payment_id"); // registrationId we passed to PayFast
     const paymentStatus = params.get("payment_status"); // COMPLETE, FAILED, etc.
+    const amount = params.get("amount_gross") || "0.00";
+    const pfPaymentId = params.get("pf_payment_id"); // PayFast’s ID
 
     if (!regId) {
       return { statusCode: 400, body: "Missing registration ID" };
@@ -32,36 +34,24 @@ export const handler: Handler = async (event) => {
       return { statusCode: 404, body: "Registration not found" };
     }
 
-    const regData = regSnap.data();
+    // ✅ Always log payment
+    const paymentsRef = regRef.collection("payments").doc();
+    await paymentsRef.set({
+      pfPaymentId,
+      amount,
+      paymentStatus,
+      raw: Object.fromEntries(params.entries()), // store full ITN payload for audit
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
 
-    if (paymentStatus === "COMPLETE") {
-      // ✅ Update registration status
-      await regRef.update({
-        status: "awaiting_approval",
-        paymentReceived: true,
-        paidAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
+    // ✅ Update quick references on registration
+    await regRef.update({
+      lastPaymentAt: admin.firestore.FieldValue.serverTimestamp(),
+      lastPaymentStatus: paymentStatus,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
 
-      // ✅ Create student record (if not already created)
-      if (regData && regData.learnerData) {
-        await db.collection("students").add({
-          parentId: regData.parentId,
-          ...regData.learnerData,
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
-          status: "active",
-        });
-      }
-    } else {
-      // ❌ Payment failed
-      await regRef.update({
-        status: "payment_failed",
-        paymentReceived: false,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
-    }
-
-    return { statusCode: 200, body: "Payment processed" };
+    return { statusCode: 200, body: "Payment logged" };
   } catch (err: any) {
     console.error("PayFast notify error:", err);
     return { statusCode: 500, body: "Server error" };

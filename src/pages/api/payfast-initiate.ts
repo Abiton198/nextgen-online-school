@@ -6,12 +6,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const { purpose, customAmount, itemName, regId, parent } = req.body;
 
-  // 💰 Fixed amounts by purpose
+  // 💰 Fixed amounts (registration & tuition are enforced)
   const defaultAmounts: Record<string, string> = {
     registration: "1000.00",
     fees: "2850.00",
-    donation: "100.00",  // fallback if no amount
-    event: "250.00",     // fallback if no amount
+    donation: "100.00",
+    event: "250.00",
     other: "100.00",
   };
 
@@ -27,24 +27,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // ✅ Final amount logic
   let finalAmount: string;
   if (purpose === "donation" || purpose === "event" || purpose === "other") {
-    // allow custom amount, but fallback to default
-    finalAmount = customAmount && Number(customAmount) > 0
-      ? Number(customAmount).toFixed(2)
-      : defaultAmounts[purpose];
+    finalAmount =
+      customAmount && Number(customAmount) > 0
+        ? Number(customAmount).toFixed(2)
+        : defaultAmounts[purpose];
   } else {
-    // enforce fixed for registration/fees
-    finalAmount = defaultAmounts[purpose];
+    finalAmount = defaultAmounts[purpose]; // enforce fixed amounts
   }
 
   const finalItemName = itemName || defaultItems[purpose];
-
   const payfastUrl = "https://www.payfast.co.za/eng/process";
+
+  const returnUrl = `${req.headers.origin}/dashboard/parent/payments?status=success&regId=${regId}`;
+  const cancelUrl = `${req.headers.origin}/dashboard/parent/payments?status=cancel&regId=${regId}`;
 
   const params = new URLSearchParams({
     merchant_id: process.env.PAYFAST_MERCHANT_ID!,
     merchant_key: process.env.PAYFAST_MERCHANT_KEY!,
-    return_url: `${req.headers.origin}/payment-success?regId=${regId}`,
-    cancel_url: `${req.headers.origin}/payment-cancel`,
+    return_url: returnUrl,
+    cancel_url: cancelUrl,
     notify_url: `${req.headers.origin}/api/payfast-notify`,
     m_payment_id: regId,
     name_first: parent.firstName,

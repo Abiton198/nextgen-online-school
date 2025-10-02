@@ -1,3 +1,5 @@
+"use client";
+
 import React, { createContext, useContext, useEffect, useState } from "react";
 import {
   onAuthStateChanged,
@@ -10,21 +12,14 @@ import {
   getRedirectResult,
   createUserWithEmailAndPassword,
 } from "firebase/auth";
-import {
-  doc,
-  onSnapshot,
-  getDoc,
-  setDoc,
-  updateDoc,
-  serverTimestamp,
-} from "firebase/firestore";
+import { doc, onSnapshot, getDoc, setDoc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "@/lib/firebaseConfig";
 
-// --- User type with FirebaseUser merged with Firestore profile ---
+// --- AppUser merges Firebase user with Firestore profile ---
 interface AppUser extends FirebaseUser {
   role?: string;
   status?: string;
-  [key: string]: any; // allow dynamic fields from Firestore
+  [key: string]: any;
 }
 
 interface AuthContextType {
@@ -54,24 +49,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
 
-      const idTokenResult = await firebaseUser.getIdTokenResult(true);
-      const claims = idTokenResult.claims;
       const uid = firebaseUser.uid;
 
-      const roleCollections = [
-        "admins",
-        "principals",
-        "teachers",
-        "students",
-        "parents",
-        "pendingTeachers",
-        "pendingStudents",
+      // collections to check in new model
+      const roleCollections: { name: string; role: string }[] = [
+        { name: "admins", role: "admin" },
+        { name: "principals", role: "principal" },
+        { name: "registrations", role: "student" },
+        { name: "teacherApplications", role: "teacher" },
       ];
 
       let profileFound = false;
 
-      for (const collectionName of roleCollections) {
-        const ref = doc(db, collectionName, uid);
+      for (const { name, role } of roleCollections) {
+        const ref = doc(db, name, uid);
         const snap = await getDoc(ref);
 
         if (snap.exists()) {
@@ -81,21 +72,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           unsubProfile = onSnapshot(ref, (profileSnap) => {
             if (profileSnap.exists()) {
               const data = profileSnap.data();
-              const isPending = collectionName.startsWith("pending");
-              const baseRole = isPending
-                ? collectionName.replace("pending", "").toLowerCase().slice(0, -1)
-                : collectionName.slice(0, -1);
-
               setUser({
                 ...firebaseUser,
                 ...data,
-                role: (claims.role as string) || data.role || baseRole,
-                status: data.status || (isPending ? "pending" : "approved"),
+                role: data.role || role,
+                status: data.status || "pending_review", // new model defaults
               });
             } else {
               setUser({
                 ...firebaseUser,
-                role: (claims.role as string) || "unassigned",
+                role,
                 status: "unknown",
               });
             }
@@ -107,16 +93,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       if (!profileFound) {
+        // no profile yet → treat as unassigned
         setUser({
           ...firebaseUser,
-          role: (claims.role as string) || "unassigned",
+          role: "unassigned",
           status: "unknown",
         });
         setLoading(false);
       }
     });
 
-    // 🔹 Handle Google Redirect
+    // Handle Google Redirect after login
     getRedirectResult(auth).then((result) => {
       if (result?.user) {
         setUser(result.user as AppUser);
@@ -147,24 +134,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const gUser = result.user;
       const uid = gUser.uid;
 
-      const teacherRef = doc(db, "teachers", uid);
-      const pendingRef = doc(db, "pendingTeachers", uid);
+      // teachers apply here
+      const teacherRef = doc(db, "teacherApplications", uid);
+      const snap = await getDoc(teacherRef);
 
-      const teacherSnap = await getDoc(teacherRef);
-      const pendingSnap = await getDoc(pendingRef);
-
-      if (teacherSnap.exists()) {
+      if (snap.exists()) {
         await updateDoc(teacherRef, { ...extraData, updatedAt: serverTimestamp() });
-      } else if (pendingSnap.exists()) {
-        await updateDoc(pendingRef, { ...extraData, updatedAt: serverTimestamp() });
       } else {
-        await setDoc(pendingRef, {
+        await setDoc(teacherRef, {
           uid,
           email: gUser.email!,
           firstName: gUser.displayName?.split(" ")[0] || "",
           lastName: gUser.displayName?.split(" ")[1] || "",
           ...extraData,
-          applicationStage: "applied",
+          status: "pending_review",
           createdAt: serverTimestamp(),
         });
       }
@@ -182,9 +165,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider
-      value={{ user, loading, login, signup, loginWithGoogle, logout, setUser }}
-    >
+    <AuthContext.Provider value={{ user, loading, login, signup, loginWithGoogle, logout, setUser }}>
       {children}
     </AuthContext.Provider>
   );

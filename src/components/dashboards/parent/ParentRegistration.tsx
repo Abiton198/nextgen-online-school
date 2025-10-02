@@ -15,58 +15,68 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-export default function ParentRegistration() {
+export default function ParentRegistration({
+  parentId,
+  onBack,
+}: {
+  parentId: string;
+  onBack: () => void;
+}) {
   const { user } = useAuth();
 
-  // Form states
+  // 🔹 Form states
   const [parentName, setParentName] = useState("");
-  const [parentEmail, setParentEmail] = useState("");
+  const [parentEmail, setParentEmail] = useState(user?.email || "");
   const [learnerName, setLearnerName] = useState("");
   const [learnerGrade, setLearnerGrade] = useState("");
   const [documents, setDocuments] = useState<FileList | null>(null);
-
   const [declarationAccepted, setDeclarationAccepted] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [successRegId, setSuccessRegId] = useState<string | null>(null);
 
+  // 📂 File upload handler
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setDocuments(e.target.files);
   };
 
+  // 📝 Submit handler
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) return;
+    if (!parentId || !declarationAccepted) return;
+
     setLoading(true);
 
     try {
+      // Split learner full name
       const [firstName, ...rest] = learnerName.trim().split(" ");
       const lastName = rest.join(" ") || "-";
 
-      // Step 1: Create Firestore doc first (without documents)
+      // Step 1: Create registration doc
       const docRef = await addDoc(collection(db, "registrations"), {
-        parentId: user.uid,
+        parentId,
         parentData: {
           name: parentName || "Unknown",
-          email: parentEmail || user.email || "-",
+          email: parentEmail || "-",
         },
         learnerData: {
           firstName: firstName || "Unknown",
           lastName,
           grade: learnerGrade || "-",
         },
-        complianceDocs: [], // will be updated after upload
-        status: "pending_review", // waiting for principal approval
+        complianceDocs: [],
+        status: "pending_review", // Principal must approve
         principalReviewed: false,
         createdAt: serverTimestamp(),
       });
 
-      // Step 2: Upload documents to Firebase Storage inside this registration folder
+      // Step 2: Upload compliance docs (if any)
       const docUrls: string[] = [];
       if (documents) {
         for (const file of Array.from(documents)) {
           const storageRef = ref(
             storage,
-            `registrations/${user.uid}/${docRef.id}/documents/${file.name}`
+            `registrations/${parentId}/${docRef.id}/documents/${file.name}`
           );
           await uploadBytes(storageRef, file);
           const url = await getDownloadURL(storageRef);
@@ -74,7 +84,7 @@ export default function ParentRegistration() {
         }
       }
 
-      // Step 3: Update Firestore doc with uploaded document URLs
+      // Step 3: Update registration doc with doc URLs
       if (docUrls.length > 0) {
         await updateDoc(doc(db, "registrations", docRef.id), {
           complianceDocs: docUrls,
@@ -84,13 +94,14 @@ export default function ParentRegistration() {
       setSuccessRegId(docRef.id);
     } catch (err) {
       console.error("Error saving registration:", err);
+      alert("Something went wrong. Please try again.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="max-w-2xl mx-auto p-6 space-y-6">
+    <div className="max-w-2xl mx-auto p-6 space-y-6 bg-white border rounded-lg shadow">
       <h2 className="text-2xl font-bold">Parent & Learner Registration</h2>
 
       {!successRegId ? (
@@ -105,7 +116,6 @@ export default function ParentRegistration() {
               value={parentName}
               onChange={(e) => setParentName(e.target.value)}
             />
-
             <Label className="mt-3">Email</Label>
             <Input
               type="email"
@@ -125,7 +135,6 @@ export default function ParentRegistration() {
               value={learnerName}
               onChange={(e) => setLearnerName(e.target.value)}
             />
-
             <Label className="mt-3">Grade</Label>
             <Input
               type="text"
@@ -135,36 +144,29 @@ export default function ParentRegistration() {
             />
           </div>
 
-          {/* Upload Compliance Docs */}
+          {/* Compliance Documents */}
           <div className="border rounded-lg p-6 bg-blue-50">
             <h3 className="text-lg font-semibold mb-2">Required Documents</h3>
-            <p className="text-sm text-gray-600 mb-2">
-              Please upload the following documents:
-            </p>
             <ul className="list-disc list-inside text-sm text-gray-700 mb-3">
-              <li>Copy of Parent/Guardian ID</li>
+              <li>Parent/Guardian ID</li>
               <li>Learner’s Birth Certificate</li>
               <li>Proof of Address</li>
-              <li>Learner’s Previous Report (if applicable)</li>
-              <li>Medical Information (allergies, conditions)</li>
+              <li>Previous Report (if applicable)</li>
+              <li>Medical Information</li>
             </ul>
             <Input type="file" multiple onChange={handleFileChange} />
           </div>
 
-          {/* Requirements & Fees */}
+          {/* Enrolment Requirements */}
           <div className="border rounded-lg p-6 bg-green-50">
-            <h3 className="text-lg font-semibold mb-2">Enrolment Requirements</h3>
-            <ul className="list-disc list-inside space-y-1 text-sm text-gray-700">
+            <h3 className="text-lg font-semibold mb-2">Requirements & Fees</h3>
+            <ul className="list-disc list-inside text-sm text-gray-700 space-y-1">
               <li>Stable internet connection</li>
-              <li>Computer with at least Intel Core i5, 4GB RAM, 240GB SSD</li>
+              <li>Computer: i5 / 4GB RAM / 240GB SSD</li>
               <li>Working camera for online classes</li>
-              <li>Ability to set up a monthly stop-order for tuition fees</li>
-              <li>
-                <span className="font-medium">Registration Fee:</span> R500 (once-off, non-refundable)
-              </li>
-              <li>
-                <span className="font-medium">Tuition Fees:</span> R2000 per month
-              </li>
+              <li>Monthly tuition stop-order setup</li>
+              <li><b>Registration Fee:</b> R500 once-off</li>
+              <li><b>Tuition Fees:</b> R2000 per month</li>
             </ul>
           </div>
 
@@ -178,27 +180,39 @@ export default function ParentRegistration() {
                 onChange={(e) => setDeclarationAccepted(e.target.checked)}
                 className="w-4 h-4"
               />
-              I confirm that all provided information and documents are valid, and I accept
-              the school’s enrolment requirements and fee obligations.
+              I confirm that all provided information is valid, and I accept the
+              school’s requirements and fee obligations.
             </label>
           </div>
 
           {/* Submit */}
-          <Button
-            type="submit"
-            disabled={loading || !declarationAccepted}
-            className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400"
-          >
-            {loading ? "Submitting..." : "Submit Application"}
-          </Button>
+          <div className="flex gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onBack}
+              disabled={loading}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={loading || !declarationAccepted}
+              className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400"
+            >
+              {loading ? "Submitting..." : "Submit Application"}
+            </Button>
+          </div>
         </form>
       ) : (
-        <div className="p-6 bg-green-50 border rounded-lg">
-          <h3 className="text-lg font-semibold">Application Submitted!</h3>
+        <div className="p-6 bg-green-50 border rounded-lg text-center">
+          <h3 className="text-lg font-semibold">✅ Application Submitted</h3>
           <p className="mt-2 text-sm text-gray-700">
-            Your application ID is: <strong>{successRegId}</strong>. <br />
-            The principal will review your application and notify you once your child is enrolled.
+            Your application ID is: <b>{successRegId}</b> <br />
+            The principal will review your application and notify you once your
+            child is enrolled.
           </p>
+          <Button onClick={onBack} className="mt-4">Back to Dashboard</Button>
         </div>
       )}
     </div>

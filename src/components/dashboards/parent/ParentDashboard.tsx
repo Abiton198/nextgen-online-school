@@ -12,19 +12,19 @@ import { auth, db } from "@/lib/firebaseConfig";
 import { signOut } from "firebase/auth";
 import { doc, getDoc, collection, query, where, getDocs } from "firebase/firestore";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, ArrowRight, LogOut } from "lucide-react"; // 🔹 icons
+import { LogOut } from "lucide-react"; // 🔹 icons
 
 const sections = ["Registration", "Payments", "Settings", "Communications", "Status"];
 
 export default function ParentDashboard() {
   const { user } = useAuth();
-  const [activeIndex, setActiveIndex] = useState<number>(-1); // -1 means none selected
-  const [parentName, setParentName] = useState<string>("");
-  const [title, setTitle] = useState<string>("Mr/Mrs");
+  const [activeTab, setActiveTab] = useState("Registration"); // default tab
+  const [parentName, setParentName] = useState("");
+  const [title, setTitle] = useState("Mr/Mrs");
   const [children, setChildren] = useState<{ firstName?: string; grade?: string }[]>([]);
   const navigate = useNavigate();
 
-  // Fetch parent + children
+  // 🔎 Fetch parent & children info
   useEffect(() => {
     if (!user?.uid) return;
 
@@ -56,22 +56,14 @@ export default function ParentDashboard() {
     fetchChildren();
   }, [user]);
 
-  // 🔹 Navigation logic
-  const goBack = () => {
-    if (activeIndex > 0) setActiveIndex((prev) => prev - 1);
-  };
-  const goForward = () => {
-    if (activeIndex < sections.length - 1) setActiveIndex((prev) => prev + 1);
-  };
-
   const handleLogout = async () => {
     await signOut(auth);
-    navigate("/signin"); // redirect to sign in page
+    navigate("/signin");
   };
 
+  // 🔹 Tab switcher
   const renderSection = () => {
-    const activeSection = sections[activeIndex];
-    switch (activeSection) {
+    switch (activeTab) {
       case "Registration":
         return <RegistrationSection />;
       case "Payments":
@@ -83,13 +75,13 @@ export default function ParentDashboard() {
       case "Status":
         return <StatusSection />;
       default:
-        return <p>Select a card above to view details.</p>;
+        return <p>Select a tab above.</p>;
     }
   };
 
   return (
     <div className="p-6 space-y-6">
-      {/* Top bar with greeting + logout */}
+      {/* Header */}
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl font-bold">
@@ -105,7 +97,6 @@ export default function ParentDashboard() {
             </div>
           )}
         </div>
-
         <button
           onClick={handleLogout}
           className="flex items-center gap-2 px-3 py-2 bg-red-600 text-white rounded hover:bg-red-700"
@@ -114,54 +105,30 @@ export default function ParentDashboard() {
         </button>
       </div>
 
-      {/* Overview cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {sections.map((s, idx) => (
-          <Card
+      {/* Tabs */}
+      <div className="flex space-x-4 border-b pb-2">
+        {sections.map((s) => (
+          <button
             key={s}
-            className={`cursor-pointer hover:shadow-lg transition ${
-              activeIndex === idx ? "ring-2 ring-blue-500" : ""
+            onClick={() => setActiveTab(s)}
+            className={`px-4 py-2 rounded-t ${
+              activeTab === s
+                ? "bg-blue-600 text-white"
+                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
             }`}
-            onClick={() => setActiveIndex(idx)}
           >
-            <CardHeader>
-              <CardTitle>{s}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p>Quick overview about {s.toLowerCase()}…</p>
-            </CardContent>
-          </Card>
+            {s}
+          </button>
         ))}
       </div>
 
-      {/* Section Details + nav arrows */}
-      {activeIndex >= 0 && (
-        <div className="mt-8 space-y-4">
-          <div className="flex justify-between">
-            <button
-              onClick={goBack}
-              disabled={activeIndex <= 0}
-              className="flex items-center gap-2 px-3 py-2 bg-gray-200 rounded disabled:opacity-50"
-            >
-              <ArrowLeft size={18} /> Previous
-            </button>
-            <button
-              onClick={goForward}
-              disabled={activeIndex >= sections.length - 1}
-              className="flex items-center gap-2 px-3 py-2 bg-gray-200 rounded disabled:opacity-50"
-            >
-              Next <ArrowRight size={18} />
-            </button>
-          </div>
-
-          <Card className="border">
-            <CardHeader>
-              <CardTitle>{sections[activeIndex]} Details</CardTitle>
-            </CardHeader>
-            <CardContent>{renderSection()}</CardContent>
-          </Card>
-        </div>
-      )}
+      {/* Content */}
+      <Card className="border mt-4">
+        <CardHeader>
+          <CardTitle>{activeTab} Section</CardTitle>
+        </CardHeader>
+        <CardContent>{renderSection()}</CardContent>
+      </Card>
     </div>
   );
 }
