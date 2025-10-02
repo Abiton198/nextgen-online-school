@@ -129,7 +129,7 @@ const AppLayout: React.FC = () => {
             onClick={() => (window.location.href = "/admin-login")}
             className="hover:text-blue-600"
           >
-            © 2025 NextGen Independent Online School
+            © 2025 NextGen Independent Online High School
           </button>
         </footer>
       </div>
