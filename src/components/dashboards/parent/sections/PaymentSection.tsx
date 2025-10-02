@@ -1,7 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 
-export default function PaymentsSection({ parent, regId }: { parent: any; regId: string }) {
+interface PaymentsSectionProps {
+  parent: any;   // Replace `any` with your parent type (e.g., { id: string; email: string; ... })
+  regId: string;
+}
+
+const PaymentsSection: React.FC<PaymentsSectionProps> = ({ parent, regId }) => {
   const [purpose, setPurpose] = useState("registration");
   const [customAmount, setCustomAmount] = useState("");
   const [itemName, setItemName] = useState("");
@@ -13,7 +18,7 @@ export default function PaymentsSection({ parent, regId }: { parent: any; regId:
 
   const location = useLocation();
 
-  // 🔎 Get query params with React Router
+  // 🔎 Read query params (success/cancel status)
   useEffect(() => {
     const searchParams = new URLSearchParams(location.search);
     const status = searchParams.get("status");
@@ -125,4 +130,6 @@ export default function PaymentsSection({ parent, regId }: { parent: any; regId:
       </form>
     </div>
   );
-}
+};
+
+export default PaymentsSection;
