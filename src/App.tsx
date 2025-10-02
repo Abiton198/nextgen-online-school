@@ -10,24 +10,27 @@ import { AuthProvider, useAuth } from "./components/auth/AuthProvider";
 // Teacher application
 import TeacherApplicationForm from "@/components/auth/TeacherApplicationForm";
 
+// Auth
+import LoginForm from "./components/auth/LoginForm";   // ✅ add this
+import { AdminLoginForm } from "./components/auth/AdminLoginForm";
+import SuspendedScreen from "./components/auth/SuspendedScreen";
 
+// Pages
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
+import AboutUs from "./components/AboutUs";
+import { Footer } from "./components/Footer";
+
+// Dashboards
 import AdminDashboard from "./components/dashboards/AdminDashboard";
 import TeacherDashboard from "./components/dashboards/TeacherDashboard";
 import StudentDashboard from "./components/dashboards/StudentDashboard";
 import ParentDashboard from "./components/dashboards/parent/ParentDashboard";
-import { Footer } from "./components/Footer";
-import { AdminLoginForm } from "./components/auth/AdminLoginForm";
 
-// ✅ Payments (only relevant ones)
+// Parent sections
 import ParentRegistration from "./components/dashboards/parent/ParentRegistration";
 import PaymentsSection from "./components/dashboards/parent/sections/PaymentSection";
 import StatusSection from "./components/dashboards/parent/sections/StatusSection";
-import AboutUs from "./components/AboutUs";
-
-// Suspended screen
-import SuspendedScreen from "./components/auth/SuspendedScreen";
 
 const queryClient = new QueryClient();
 
@@ -42,7 +45,7 @@ const RoleBasedRoute = ({
   const { user, loading } = useAuth();
 
   if (loading) return <div className="p-6 text-center">Loading...</div>;
-  if (!user) return <Navigate to="/admin-login" replace />;
+  if (!user) return <Navigate to="/" replace />;   // ⬅️ now points to LoginForm
 
   if (!user.role || !user.status) {
     return <div className="p-6 text-center">Fetching your profile...</div>;
@@ -69,7 +72,10 @@ const App = () => {
           <AuthProvider>
             <BrowserRouter>
               <Routes>
-                <Route path="/" element={<Index />} />
+                {/* ✅ LoginForm becomes root route */}
+                <Route path="/" element={<LoginForm />} />
+
+                {/* Public pages */}
                 <Route path="/about" element={<AboutUs />} />
 
                 {/* Admin */}
@@ -123,7 +129,6 @@ const App = () => {
 
                 {/* Teacher Application */}
                 <Route path="/apply-teacher" element={<TeacherApplicationForm />} />
-      
 
                 {/* Catch-all */}
                 <Route path="*" element={<NotFound />} />

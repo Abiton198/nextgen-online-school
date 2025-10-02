@@ -3,17 +3,13 @@
 import React, { useEffect, useState } from "react";
 import { useAuth } from "../auth/AuthProvider";
 import { db } from "@/lib/firebaseConfig";
-import {
-  collection,
-  query,
-  where,
-  getDocs,
-  doc,
-  getDoc,
-} from "firebase/firestore";
+import { collection, query, where, getDocs, doc, getDoc } from "firebase/firestore";
+import { useNavigate } from "react-router-dom";
 
 const StudentDashboard: React.FC = () => {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
+
   const [student, setStudent] = useState<any>(null);
   const [activeTab, setActiveTab] = useState("classroom");
   const [dateTime, setDateTime] = useState(new Date());
@@ -29,11 +25,12 @@ const StudentDashboard: React.FC = () => {
     return () => clearInterval(timer);
   }, []);
 
+  // 🔎 fetch student + related data
   useEffect(() => {
     const fetchData = async () => {
       if (!user?.uid) return;
 
-      // 🔎 Student profile
+      // profile
       const studentRef = doc(db, "students", user.uid);
       const snap = await getDoc(studentRef);
       if (!snap.exists()) return;
@@ -46,7 +43,7 @@ const StudentDashboard: React.FC = () => {
 
       setStudent(sData);
 
-      // 🔎 Classes
+      // classes
       const cQ = query(
         collection(db, "classes"),
         where("grade", "==", sData.grade),
@@ -55,7 +52,7 @@ const StudentDashboard: React.FC = () => {
       const cSnap = await getDocs(cQ);
       setClasses(cSnap.docs.map((d) => d.data()));
 
-      // 🔎 Assignments
+      // assignments
       const aQ = query(
         collection(db, "assignments"),
         where("grade", "==", sData.grade),
@@ -64,20 +61,23 @@ const StudentDashboard: React.FC = () => {
       const aSnap = await getDocs(aQ);
       setAssignments(aSnap.docs.map((d) => d.data()));
 
-      // 🔎 Marks
-      const mQ = query(
-        collection(db, "marks"),
-        where("uid", "==", user.uid)
-      );
+      // marks
+      const mQ = query(collection(db, "marks"), where("uid", "==", user.uid));
       const mSnap = await getDocs(mQ);
       setMarks(mSnap.docs.map((d) => d.data()));
 
-      // 🔎 Attendance (simple %)
+      // attendance
       setAttendance(sData.attendance || 0);
     };
 
     fetchData();
   }, [user]);
+
+  // 🚪 logout
+  const handleLogout = async () => {
+    await logout();
+    navigate("/"); // back to login
+  };
 
   if (!student) {
     return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
@@ -100,8 +100,12 @@ const StudentDashboard: React.FC = () => {
 
     const end = new Date(start.getTime() + (cls.duration || 60) * 60000);
 
-    return now >= start && now <= end && 
-           cls.day.toLowerCase() === now.toLocaleDateString("en-US", { weekday: "long" }).toLowerCase();
+    return (
+      now >= start &&
+      now <= end &&
+      cls.day.toLowerCase() ===
+        now.toLocaleDateString("en-US", { weekday: "long" }).toLowerCase()
+    );
   };
 
   return (
@@ -111,11 +115,15 @@ const StudentDashboard: React.FC = () => {
         <div className="max-w-7xl mx-auto flex justify-between items-center py-4 px-6">
           <div>
             <h1 className="text-2xl font-bold">Welcome, {student.name}</h1>
-            <p className="text-gray-600">Grade {student.grade} - {student.classSection}</p>
-            <p className="text-sm text-gray-500">{dateTime.toLocaleDateString()} — {dateTime.toLocaleTimeString()}</p>
+            <p className="text-gray-600">
+              Grade {student.grade} - {student.classSection}
+            </p>
+            <p className="text-sm text-gray-500">
+              {dateTime.toLocaleDateString()} — {dateTime.toLocaleTimeString()}
+            </p>
           </div>
           <button
-            onClick={logout}
+            onClick={handleLogout}
             className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700"
           >
             Logout
@@ -143,10 +151,15 @@ const StudentDashboard: React.FC = () => {
         {activeTab === "classroom" && (
           <div className="grid gap-4">
             {classes.map((cls, i) => (
-              <div key={i} className="flex justify-between items-center p-4 border rounded-lg bg-white">
+              <div
+                key={i}
+                className="flex justify-between items-center p-4 border rounded-lg bg-white"
+              >
                 <div>
                   <h3 className="font-bold">{cls.subject}</h3>
-                  <p className="text-sm text-gray-600">{cls.day} at {cls.time}</p>
+                  <p className="text-sm text-gray-600">
+                    {cls.day} at {cls.time}
+                  </p>
                 </div>
                 <a
                   href={isClassActive(cls) ? cls.meetLink : "#"}
@@ -170,7 +183,9 @@ const StudentDashboard: React.FC = () => {
             {assignments.map((a, i) => (
               <div key={i} className="p-4 border rounded bg-white">
                 <h3 className="font-semibold">{a.title}</h3>
-                <p className="text-sm">{a.subject} — Due {a.due}</p>
+                <p className="text-sm">
+                  {a.subject} — Due {a.due}
+                </p>
               </div>
             ))}
           </div>
@@ -179,7 +194,10 @@ const StudentDashboard: React.FC = () => {
         {activeTab === "marks" && (
           <div className="space-y-3">
             {marks.map((m, i) => (
-              <div key={i} className="p-4 border rounded bg-white flex justify-between">
+              <div
+                key={i}
+                className="p-4 border rounded bg-white flex justify-between"
+              >
                 <span>{m.subject}</span>
                 <span className="font-bold">{m.score}</span>
               </div>

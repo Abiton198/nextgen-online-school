@@ -16,6 +16,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Loader2 } from "lucide-react";
 import { syncClassroomToFirestore } from "@/lib/classroomSync";
+import { useNavigate } from "react-router-dom";
 
 interface TeacherProfile {
   firstName?: string;
@@ -27,6 +28,7 @@ interface TeacherProfile {
 
 const TeacherDashboard: React.FC = () => {
   const { user, logout, linkClassroomScopes } = useAuth();
+  const navigate = useNavigate();
 
   const [err, setErr] = useState<string>("");
   const [syncing, setSyncing] = useState(false);
@@ -211,6 +213,12 @@ const TeacherDashboard: React.FC = () => {
     }
   };
 
+  // 🚪 logout
+  const handleLogout = async () => {
+    await logout();
+    navigate("/"); // back to login
+  };
+
   // ---------------- UI ----------------
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -239,7 +247,7 @@ const TeacherDashboard: React.FC = () => {
                 "Connect / Sync Classroom"
               )}
             </Button>
-            <Button onClick={logout} className="bg-red-600 hover:bg-red-700">
+            <Button onClick={handleLogout} className="bg-red-600 hover:bg-red-700">
               Logout
             </Button>
           </div>

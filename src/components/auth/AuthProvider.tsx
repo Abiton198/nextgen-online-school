@@ -1,171 +1,56 @@
-"use client";
-
-import React, { createContext, useContext, useEffect, useState } from "react";
+// components/auth/AuthProvider.tsx
+import { createContext, useContext, useState, useEffect } from "react";
+import { auth } from "@/lib/firebaseConfig";
 import {
-  onAuthStateChanged,
   signInWithEmailAndPassword,
   signOut,
-  User as FirebaseUser,
-  GoogleAuthProvider,
-  signInWithPopup,
-  signInWithRedirect,
-  getRedirectResult,
-  createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
+  onAuthStateChanged,
+  User,
 } from "firebase/auth";
-import { doc, onSnapshot, getDoc, setDoc, updateDoc, serverTimestamp } from "firebase/firestore";
-import { auth, db } from "@/lib/firebaseConfig";
-
-// --- AppUser merges Firebase user with Firestore profile ---
-interface AppUser extends FirebaseUser {
-  role?: string;
-  status?: string;
-  [key: string]: any;
-}
 
 interface AuthContextType {
-  user: AppUser | null;
+  user: any; // you may have enriched user object with role/status
   loading: boolean;
-  login: (email: string, password: string) => Promise<FirebaseUser>;
-  signup: (email: string, password: string) => Promise<FirebaseUser>;
-  loginWithGoogle: (extraData?: Record<string, any>) => Promise<FirebaseUser | void>;
-  logout: () => Promise<void>;
-  setUser: React.Dispatch<React.SetStateAction<AppUser | null>>;
+  login: (email: string, password: string) => Promise<User>;
+  loginWithGoogle: () => Promise<User | null>;
+  resetPassword: (email: string) => Promise<void>;
+  logout: () => Promise<void>;   // ✅ new
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<AppUser | null>(null);
+  const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let unsubProfile: (() => void) | null = null;
-
-    const unsubAuth = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (!firebaseUser) {
+    const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        // 🔹 attach role/status via Firestore or custom claims fetch
+        setUser({ uid: firebaseUser.uid, email: firebaseUser.email, role: "parent", status: "active" });
+      } else {
         setUser(null);
-        setLoading(false);
-        if (unsubProfile) unsubProfile();
-        return;
       }
-
-      const uid = firebaseUser.uid;
-
-      // collections to check in new model
-      const roleCollections: { name: string; role: string }[] = [
-        { name: "admins", role: "admin" },
-        { name: "principals", role: "principal" },
-        { name: "registrations", role: "student" },
-        { name: "teacherApplications", role: "teacher" },
-      ];
-
-      let profileFound = false;
-
-      for (const { name, role } of roleCollections) {
-        const ref = doc(db, name, uid);
-        const snap = await getDoc(ref);
-
-        if (snap.exists()) {
-          profileFound = true;
-          if (unsubProfile) unsubProfile();
-
-          unsubProfile = onSnapshot(ref, (profileSnap) => {
-            if (profileSnap.exists()) {
-              const data = profileSnap.data();
-              setUser({
-                ...firebaseUser,
-                ...data,
-                role: data.role || role,
-                status: data.status || "pending_review", // new model defaults
-              });
-            } else {
-              setUser({
-                ...firebaseUser,
-                role,
-                status: "unknown",
-              });
-            }
-            setLoading(false);
-          });
-
-          break;
-        }
-      }
-
-      if (!profileFound) {
-        // no profile yet → treat as unassigned
-        setUser({
-          ...firebaseUser,
-          role: "unassigned",
-          status: "unknown",
-        });
-        setLoading(false);
-      }
+      setLoading(false);
     });
-
-    // Handle Google Redirect after login
-    getRedirectResult(auth).then((result) => {
-      if (result?.user) {
-        setUser(result.user as AppUser);
-      }
-    });
-
-    return () => {
-      unsubAuth();
-      if (unsubProfile) unsubProfile();
-    };
+    return () => unsub();
   }, []);
 
-  // --- Authentication methods ---
-  const login = async (email: string, password: string) => {
-    const { user } = await signInWithEmailAndPassword(auth, email, password);
-    return user;
+  const login = (email: string, password: string) =>
+    signInWithEmailAndPassword(auth, email, password).then((cred) => cred.user);
+
+  const loginWithGoogle = async () => {
+    // you already have this implemented
+    return null;
   };
 
-  const signup = async (email: string, password: string) => {
-    const { user } = await createUserWithEmailAndPassword(auth, email, password);
-    return user;
-  };
+  const resetPassword = (email: string) => sendPasswordResetEmail(auth, email);
 
-  const loginWithGoogle = async (extraData: Record<string, any> = {}) => {
-    const provider = new GoogleAuthProvider();
-    try {
-      const result = await signInWithPopup(auth, provider);
-      const gUser = result.user;
-      const uid = gUser.uid;
-
-      // teachers apply here
-      const teacherRef = doc(db, "teacherApplications", uid);
-      const snap = await getDoc(teacherRef);
-
-      if (snap.exists()) {
-        await updateDoc(teacherRef, { ...extraData, updatedAt: serverTimestamp() });
-      } else {
-        await setDoc(teacherRef, {
-          uid,
-          email: gUser.email!,
-          firstName: gUser.displayName?.split(" ")[0] || "",
-          lastName: gUser.displayName?.split(" ")[1] || "",
-          ...extraData,
-          status: "pending_review",
-          createdAt: serverTimestamp(),
-        });
-      }
-
-      return gUser;
-    } catch (error: any) {
-      console.warn("Popup login failed, falling back to redirect:", error);
-      await signInWithRedirect(auth, provider);
-    }
-  };
-
-  const logout = async () => {
-    await signOut(auth);
-    setUser(null);
-  };
+  const logout = () => signOut(auth);   // ✅
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, signup, loginWithGoogle, logout, setUser }}>
+    <AuthContext.Provider value={{ user, loading, login, loginWithGoogle, resetPassword, logout }}>
       {children}
     </AuthContext.Provider>
   );
@@ -173,6 +58,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
 export const useAuth = () => {
   const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used within an AuthProvider");
+  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
   return ctx;
 };

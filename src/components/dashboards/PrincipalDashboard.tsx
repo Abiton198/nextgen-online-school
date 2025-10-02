@@ -15,7 +15,10 @@ import {
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useAuth } from "@/components/auth/AuthProvider";
+import { useNavigate } from "react-router-dom";
 
+// ---------------- Types ----------------
 interface Registration {
   id: string;
   learnerData?: { firstName?: string; lastName?: string; grade?: string };
@@ -62,19 +65,22 @@ const PrincipalDashboard: React.FC = () => {
   const principalName = auth.currentUser?.displayName || "Principal";
   const schoolName = "Springfield Online School";
 
-  // ⏰ Update time
+  const { logout } = useAuth();
+  const navigate = useNavigate();
+
+  // ⏰ Live clock
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  // 🔄 Live listeners
+  // 🔄 Live Firestore listeners
   useEffect(() => {
-    const unsub1 = onSnapshot(collection(db, "registrations"), async (snap) => {
+    const unsubRegistrations = onSnapshot(collection(db, "registrations"), async (snap) => {
       const regs = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Registration) }));
       setStudents(regs);
 
-      // build parents list
+      // Build parents list dynamically
       const parentMap: Record<string, Parent> = {};
       regs.forEach((reg) => {
         if (reg.parentData?.email) {
@@ -96,73 +102,63 @@ const PrincipalDashboard: React.FC = () => {
       });
       setParents(Object.values(parentMap));
 
-      // fetch payments for each student
+      // Fetch payment histories for each student
       for (const reg of regs) {
         const payRef = collection(db, "registrations", reg.id, "payments");
         const q = query(payRef, orderBy("processedAt", "desc"));
-        const snap = await getDocs(q);
-        const history: Payment[] = snap.docs.map((d) => ({
-          id: d.id,
-          ...(d.data() as any),
-        }));
+        const paySnap = await getDocs(q);
+        const history: Payment[] = paySnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
         setPayments((prev) => ({ ...prev, [reg.id]: history }));
       }
     });
 
-    const unsub2 = onSnapshot(collection(db, "teacherApplications"), (snap) => {
+    const unsubTeachers = onSnapshot(collection(db, "teacherApplications"), (snap) => {
       setTeachers(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Teacher) })));
     });
 
     return () => {
-      unsub1();
-      unsub2();
+      unsubRegistrations();
+      unsubTeachers();
     };
   }, []);
 
   // ---------------- Actions ----------------
-  const approve = async (col: "registrations" | "teacherApplications", id: string) => {
-    await updateDoc(doc(db, col, id), {
+  const updateStatus = async (
+    col: "registrations" | "teacherApplications",
+    id: string,
+    updates: Record<string, any>
+  ) => updateDoc(doc(db, col, id), updates);
+
+  const approve = (col: "registrations" | "teacherApplications", id: string) =>
+    updateStatus(col, id, {
       status: col === "registrations" ? "enrolled" : "approved",
       principalReviewed: true,
       reviewedAt: serverTimestamp(),
     });
-  };
 
-  const reject = async (col: "registrations" | "teacherApplications", id: string) => {
-    await updateDoc(doc(db, col, id), {
+  const reject = (col: "registrations" | "teacherApplications", id: string) =>
+    updateStatus(col, id, {
       status: "rejected",
       principalReviewed: true,
       reviewedAt: serverTimestamp(),
     });
-  };
 
-  const suspend = async (col: "registrations" | "teacherApplications", id: string) => {
-    await updateDoc(doc(db, col, id), {
-      status: "suspended",
-      suspendedAt: serverTimestamp(),
-    });
-  };
+  const suspend = (col: "registrations" | "teacherApplications", id: string) =>
+    updateStatus(col, id, { status: "suspended", suspendedAt: serverTimestamp() });
 
-  const reinstate = async (col: "registrations" | "teacherApplications", id: string) => {
-    await updateDoc(doc(db, col, id), {
+  const reinstate = (col: "registrations" | "teacherApplications", id: string) =>
+    updateStatus(col, id, {
       status: col === "registrations" ? "enrolled" : "approved",
       reinstatedAt: serverTimestamp(),
     });
-  };
 
-  const freezeClass = async (col: "registrations" | "teacherApplications", id: string, frozen: boolean) => {
-    await updateDoc(doc(db, col, id), {
-      classActivated: !frozen,
-    });
-  };
+  const freezeClass = (col: "registrations" | "teacherApplications", id: string, frozen: boolean) =>
+    updateStatus(col, id, { classActivated: !frozen });
 
   // ---------------- Helpers ----------------
   const filterStudents = (users: Registration[]): Registration[] => {
     if (filter === "failed") {
-      return users.filter(
-        (u) =>
-          payments[u.id]?.some((p) => p.paymentStatus !== "COMPLETE") ?? false
-      );
+      return users.filter((u) => payments[u.id]?.some((p) => p.paymentStatus !== "COMPLETE"));
     }
     if (filter === "latest") {
       return [...users].sort((a, b) => {
@@ -174,9 +170,15 @@ const PrincipalDashboard: React.FC = () => {
     return users;
   };
 
-  const failedCount = students.filter(
-    (s) => payments[s.id]?.some((p) => p.paymentStatus !== "COMPLETE") ?? false
+  const failedCount = students.filter((s) =>
+    payments[s.id]?.some((p) => p.paymentStatus !== "COMPLETE")
   ).length;
+
+  // ---------------- Logout ----------------
+  const handleLogout = async () => {
+    await logout();
+    navigate("/"); // back to login
+  };
 
   // ---------------- Render ----------------
   const renderCard = (
@@ -217,11 +219,12 @@ const PrincipalDashboard: React.FC = () => {
                     : "bg-gray-50"
                 }`}
               >
+                {/* Basic Info */}
                 <div>
                   <p className="font-medium">
-                    {u.learnerData
-                      ? `${u.learnerData.firstName} ${u.learnerData.lastName}`
-                      : `${u.firstName} ${u.lastName}`}
+                    {"learnerData" in u
+                      ? `${u.learnerData?.firstName ?? ""} ${u.learnerData?.lastName ?? ""}`
+                      : `${u.firstName ?? ""} ${u.lastName ?? ""}`}
                   </p>
                   <p className="text-xs text-gray-500">{u.parentData?.email || u.email}</p>
                   <p className="text-xs text-gray-400">Status: {u.status}</p>
@@ -293,9 +296,10 @@ const PrincipalDashboard: React.FC = () => {
   };
 
   const renderParents = () => {
-    const filtered = parents.filter((p) =>
-      p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      p.email.toLowerCase().includes(searchTerm.toLowerCase())
+    const filtered = parents.filter(
+      (p) =>
+        p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        p.email.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
     return (
@@ -329,12 +333,17 @@ const PrincipalDashboard: React.FC = () => {
   // ---------------- Layout ----------------
   return (
     <div className="min-h-screen bg-gray-50 p-6 space-y-6">
-      {/* Welcome */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between">
+      {/* Welcome + Logout */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <h1 className="text-2xl font-bold">Welcome, {principalName} 👋</h1>
-        <p className="text-gray-600">
-          {schoolName} | {time.toLocaleDateString()} {time.toLocaleTimeString()}
-        </p>
+        <div className="flex items-center gap-4">
+          <p className="text-gray-600">
+            {schoolName} | {time.toLocaleDateString()} {time.toLocaleTimeString()}
+          </p>
+          <Button variant="destructive" size="sm" onClick={handleLogout}>
+            Logout
+          </Button>
+        </div>
       </div>
 
       {/* Search + Filter + Counter */}
