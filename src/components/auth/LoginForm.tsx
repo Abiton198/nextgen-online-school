@@ -1,6 +1,4 @@
-"use client";
-
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   Card,
   CardContent,
@@ -17,91 +15,26 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { useNavigate } from "react-router-dom";
 import { FcGoogle } from "react-icons/fc";
 import { db } from "@/lib/firebaseConfig";
-import {
-  doc,
-  getDoc,
-  setDoc,
-  collection,
-  getDocs,
-  serverTimestamp,
-} from "firebase/firestore";
-import { getAuth } from "firebase/auth";
+import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 
-export const LoginForm: React.FC = () => {
+const LoginForm: React.FC = () => {
   const { login, loginWithGoogle, signup } = useAuth();
   const navigate = useNavigate();
-  const auth = getAuth();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState<
-    "principal" | "teacher" | "parent" | "student"
-  >("parent");
+  const [role, setRole] = useState<"principal" | "teacher" | "parent">("parent");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isSignup, setIsSignup] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
-  // ---------- Parent-specific ----------
+  // ---------- Parent-specific signup fields ----------
   const [title, setTitle] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [contact, setContact] = useState("");
   const [address, setAddress] = useState("");
-
-  // ---------- Student-specific ----------
-  const [grades] = useState([
-    "Grade 8",
-    "Grade 9",
-    "Grade 10",
-    "Grade 11",
-    "Grade 12",
-  ]);
-  const [selectedGrade, setSelectedGrade] = useState("");
-  const [students, setStudents] = useState<any[]>([]);
-  const [selectedStudentId, setSelectedStudentId] = useState("");
-
-  // ---------- Teacher-specific ----------
-  const [subjects, setSubjects] = useState<string[]>([]);
-  const [selectedSubject, setSelectedSubject] = useState("");
-
-  // ---------------- Fetch teacher subjects ----------------
-  useEffect(() => {
-    if (role === "teacher") {
-      const fetchSubjects = async () => {
-        const q = collection(db, "teachers");
-        const snapshot = await getDocs(q);
-        const subs: string[] = [];
-        snapshot.forEach((docSnap) => {
-          const data = docSnap.data();
-          if (data.subject && !subs.includes(data.subject)) {
-            subs.push(data.subject);
-          }
-        });
-        setSubjects(subs);
-      };
-      fetchSubjects();
-    }
-  }, [role]);
-
-  // ---------------- Fetch students by grade ----------------
-  useEffect(() => {
-    if (role === "student" && selectedGrade) {
-      const fetchStudents = async () => {
-        const q = collection(db, "students");
-        const snapshot = await getDocs(q);
-        const list: any[] = [];
-        snapshot.forEach((docSnap) => {
-          const data = docSnap.data();
-          if (data.grade === selectedGrade) {
-            list.push({ id: docSnap.id, ...data });
-          }
-        });
-        setStudents(list);
-      };
-      fetchStudents();
-    }
-  }, [role, selectedGrade]);
 
   // ---------------- Email/Password Login ----------------
   const handleLogin = async (e: React.FormEvent) => {
@@ -111,23 +44,13 @@ export const LoginForm: React.FC = () => {
 
     try {
       if (role === "student") {
-        if (!selectedStudentId) throw new Error("Please select your name.");
-        const studentRef = doc(db, "students", selectedStudentId);
-        const studentSnap = await getDoc(studentRef);
-        if (!studentSnap.exists()) throw new Error("No student record found.");
-        const studentData = studentSnap.data();
-        const emailToUse = studentData.email;
-
-        const user = await login(emailToUse, password); // returns FirebaseUser
-        if (user.uid !== selectedStudentId)
-          throw new Error("Account mismatch.");
-        navigate("/student-dashboard");
-        return;
+        throw new Error("Students cannot log in directly. Please log in as a parent.");
       }
 
       if (role === "teacher") {
-        const user = await login(email, password); // returns FirebaseUser
+        const user = await login(email, password);
         const uid = user.uid;
+
         const approvedSnap = await getDoc(doc(db, "teachers", uid));
         const pendingSnap = await getDoc(doc(db, "pendingTeachers", uid));
 
@@ -136,17 +59,27 @@ export const LoginForm: React.FC = () => {
         } else if (pendingSnap.exists()) {
           navigate("/teacher-status");
         } else {
-          throw new Error("No teacher record found. Apply first.");
+          navigate("/apply-teacher");
         }
         return;
       }
 
-      // principal or parent
-      const user = await login(email, password);
-      const uid = user.uid;
-      const snap = await getDoc(doc(db, `${role}s`, uid));
-      if (!snap.exists()) throw new Error(`No ${role} record found.`);
-      navigate(`/${role}-dashboard`);
+      if (role === "parent") {
+        const user = await login(email, password);
+        const uid = user.uid;
+        const snap = await getDoc(doc(db, "parents", uid));
+        if (!snap.exists()) throw new Error("No parent record found.");
+        navigate("/parent-dashboard");
+        return;
+      }
+
+      if (role === "principal") {
+        const user = await login(email, password);
+        const uid = user.uid;
+        const snap = await getDoc(doc(db, "principals", uid));
+        if (!snap.exists()) throw new Error("No principal record found.");
+        navigate("/principal-dashboard");
+      }
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -157,12 +90,13 @@ export const LoginForm: React.FC = () => {
   // ---------------- Signup ----------------
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
+
     if (role === "student") {
-      setError("Students cannot sign up. Ask your parent to register you.");
+      setError("Students cannot self-register. Ask your parent to register.");
       return;
     }
     if (role === "principal") {
-      setError("Principals cannot self-register. Contact admin.");
+      setError("Principals cannot self-register. Contact the admin.");
       return;
     }
     if (role === "teacher") {
@@ -186,6 +120,7 @@ export const LoginForm: React.FC = () => {
           contact,
           address,
           role: "parent",
+          children: [], // start empty, later filled by parent
           createdAt: serverTimestamp(),
         });
         navigate("/parent-dashboard");
@@ -204,10 +139,12 @@ export const LoginForm: React.FC = () => {
 
     try {
       const loggedUser = await loginWithGoogle();
+      if (!loggedUser) throw new Error("Google sign-in failed");
       const uid = loggedUser.uid;
 
-      if (role === "student")
+      if (role === "student") {
         throw new Error("Students cannot sign up with Google.");
+      }
 
       if (role === "teacher") {
         const approvedSnap = await getDoc(doc(db, "teachers", uid));
@@ -221,7 +158,8 @@ export const LoginForm: React.FC = () => {
           navigate("/teacher-status");
           return;
         }
-        throw new Error("No teacher record found. Apply first.");
+        navigate("/apply-teacher");
+        return;
       }
 
       if (role === "parent") {
@@ -240,6 +178,7 @@ export const LoginForm: React.FC = () => {
           address: "",
           photoURL: loggedUser.photoURL || "",
           role: "parent",
+          children: [],
           createdAt: serverTimestamp(),
         });
         navigate("/parent-dashboard");
@@ -298,62 +237,21 @@ export const LoginForm: React.FC = () => {
               >
                 <option value="principal">Principal</option>
                 <option value="teacher">Teacher</option>
-                <option value="student">Student</option>
                 <option value="parent">Parent</option>
+                {/* no student option for signup/login */}
               </select>
             </div>
 
-            {/* Student Login Fields */}
-            {role === "student" && !isSignup && (
-              <>
-                <div className="space-y-2">
-                  <Label>Grade</Label>
-                  <select
-                    value={selectedGrade}
-                    onChange={(e) => setSelectedGrade(e.target.value)}
-                    className="w-full border rounded-md p-2"
-                    required
-                  >
-                    <option value="">-- Select Grade --</option>
-                    {grades.map((g) => (
-                      <option key={g} value={g}>
-                        {g}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Student Name</Label>
-                  <select
-                    value={selectedStudentId}
-                    onChange={(e) => setSelectedStudentId(e.target.value)}
-                    className="w-full border rounded-md p-2"
-                    required
-                  >
-                    <option value="">-- Select Student --</option>
-                    {students.map((stu) => (
-                      <option key={stu.id} value={stu.id}>
-                        {stu.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </>
-            )}
-
-            {/* Non-student Email */}
-            {role !== "student" && (
-              <div className="space-y-2">
-                <Label>Email Address</Label>
-                <Input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                />
-              </div>
-            )}
+            {/* Email */}
+            <div className="space-y-2">
+              <Label>Email Address</Label>
+              <Input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </div>
 
             {/* Password */}
             <div className="space-y-2">

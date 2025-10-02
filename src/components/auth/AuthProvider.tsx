@@ -20,20 +20,27 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "@/lib/firebaseConfig";
 
+// --- User type with FirebaseUser merged with Firestore profile ---
+interface AppUser extends FirebaseUser {
+  role?: string;
+  status?: string;
+  [key: string]: any; // allow dynamic fields from Firestore
+}
+
 interface AuthContextType {
-  user: any;
+  user: AppUser | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<FirebaseUser>;
   signup: (email: string, password: string) => Promise<FirebaseUser>;
   loginWithGoogle: (extraData?: Record<string, any>) => Promise<FirebaseUser | void>;
   logout: () => Promise<void>;
-  setUser: React.Dispatch<React.SetStateAction<any>>;
+  setUser: React.Dispatch<React.SetStateAction<AppUser | null>>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -49,8 +56,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const idTokenResult = await firebaseUser.getIdTokenResult(true);
       const claims = idTokenResult.claims;
-
       const uid = firebaseUser.uid;
+
       const roleCollections = [
         "admins",
         "principals",
@@ -82,13 +89,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               setUser({
                 ...firebaseUser,
                 ...data,
-                role: claims.role || data.role || baseRole,
+                role: (claims.role as string) || data.role || baseRole,
                 status: data.status || (isPending ? "pending" : "approved"),
               });
             } else {
               setUser({
                 ...firebaseUser,
-                role: claims.role || "unassigned",
+                role: (claims.role as string) || "unassigned",
                 status: "unknown",
               });
             }
@@ -102,16 +109,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!profileFound) {
         setUser({
           ...firebaseUser,
-          role: claims.role || "unassigned",
+          role: (claims.role as string) || "unassigned",
           status: "unknown",
         });
         setLoading(false);
       }
     });
 
+    // 🔹 Handle Google Redirect
     getRedirectResult(auth).then((result) => {
       if (result?.user) {
-        setUser(result.user);
+        setUser(result.user as AppUser);
       }
     });
 
@@ -129,7 +137,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signup = async (email: string, password: string) => {
     const { user } = await createUserWithEmailAndPassword(auth, email, password);
-    return user; // ✅ always return user, not UserCredential
+    return user;
   };
 
   const loginWithGoogle = async (extraData: Record<string, any> = {}) => {
@@ -137,8 +145,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const result = await signInWithPopup(auth, provider);
       const gUser = result.user;
-
       const uid = gUser.uid;
+
       const teacherRef = doc(db, "teachers", uid);
       const pendingRef = doc(db, "pendingTeachers", uid);
 
@@ -146,19 +154,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const pendingSnap = await getDoc(pendingRef);
 
       if (teacherSnap.exists()) {
-        // ✅ Already approved teacher → update profile if needed
-        await updateDoc(teacherRef, {
-          ...extraData,
-          updatedAt: serverTimestamp(),
-        });
+        await updateDoc(teacherRef, { ...extraData, updatedAt: serverTimestamp() });
       } else if (pendingSnap.exists()) {
-        // 🟡 Pending teacher → merge new data
-        await updateDoc(pendingRef, {
-          ...extraData,
-          updatedAt: serverTimestamp(),
-        });
+        await updateDoc(pendingRef, { ...extraData, updatedAt: serverTimestamp() });
       } else {
-        // 🆕 New teacher → create pending application (NO role/status here!)
         await setDoc(pendingRef, {
           uid,
           email: gUser.email!,

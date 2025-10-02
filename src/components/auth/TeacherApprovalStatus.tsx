@@ -1,5 +1,3 @@
-"use client";
-
 import React, { useEffect, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { db } from "@/lib/firebaseConfig";
@@ -10,7 +8,7 @@ import { useNavigate } from "react-router-dom";
 
 interface TeacherRecord {
   uid: string;
-  email: string;
+  email?: string;
   firstName?: string;
   lastName?: string;
   status?: string;
@@ -21,7 +19,7 @@ interface TeacherRecord {
   updatedAt?: any;
 }
 
-// 🔹 Safe date formatter
+// Format Firestore dates
 const formatDate = (d: any): string => {
   if (!d) return "—";
   if (typeof d.toDate === "function") return d.toDate().toLocaleString();
@@ -35,20 +33,20 @@ const TeacherApprovalStatus: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
-  // 🔹 Subscribe to both pending + teachers collection
+  // Subscribe to teacher status
   useEffect(() => {
     if (!currentUser?.uid) return;
 
     const unsubPending = onSnapshot(doc(db, "pendingTeachers", currentUser.uid), (snap) => {
       if (snap.exists()) {
-        setTeacher({ uid: snap.id, ...snap.data() } as TeacherRecord);
+        setTeacher((prev) => ({ ...prev, uid: snap.id, ...snap.data() } as TeacherRecord));
         setLoading(false);
       }
     });
 
     const unsubApproved = onSnapshot(doc(db, "teachers", currentUser.uid), (snap) => {
       if (snap.exists()) {
-        setTeacher({ uid: snap.id, ...snap.data() } as TeacherRecord);
+        setTeacher((prev) => ({ ...prev, uid: snap.id, ...snap.data() } as TeacherRecord));
         setLoading(false);
       }
     });
@@ -59,7 +57,7 @@ const TeacherApprovalStatus: React.FC = () => {
     };
   }, [currentUser?.uid]);
 
-  // 🔹 Auto-redirect if awaiting documents
+  // Auto-redirect if awaiting docs
   useEffect(() => {
     if (teacher?.applicationStage === "awaiting-documents") {
       navigate("/upload-teacher-docs");
@@ -85,14 +83,9 @@ const TeacherApprovalStatus: React.FC = () => {
     );
   }
 
-  // 🔹 Define timeline steps
   const stage = teacher.applicationStage;
   const steps = [
-    {
-      label: "Application Submitted",
-      done: true,
-      date: formatDate(teacher.createdAt),
-    },
+    { label: "Application Submitted", done: true, date: formatDate(teacher.createdAt) },
     {
       label: "Awaiting Documents",
       done: stage !== "applied" && stage !== "awaiting-documents",
@@ -115,29 +108,19 @@ const TeacherApprovalStatus: React.FC = () => {
             : "Awaiting principal review"
           : "—",
     },
-    {
-      label: "Approved",
-      done: stage === "approved",
-      date: formatDate(teacher.approvedAt),
-    },
-    {
-      label: "Rejected",
-      done: stage === "rejected",
-      date: formatDate(teacher.reviewedAt),
-    },
+    { label: "Approved", done: stage === "approved", date: formatDate(teacher.approvedAt) },
+    { label: "Rejected", done: stage === "rejected", date: formatDate(teacher.reviewedAt) },
   ];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-6">
       <Card className="w-full max-w-lg shadow-lg">
         <CardHeader>
-          <CardTitle className="text-xl text-center">
-            Teacher Application Status
-          </CardTitle>
+          <CardTitle className="text-xl text-center">Teacher Application Status</CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-center mb-6 text-gray-600">
-            {teacher.firstName} {teacher.lastName} ({teacher.email})
+            {teacher?.firstName ?? ""} {teacher?.lastName ?? ""} ({teacher?.email ?? ""})
           </p>
 
           {/* Timeline */}
@@ -164,7 +147,7 @@ const TeacherApprovalStatus: React.FC = () => {
             ))}
           </ol>
 
-          {/* ✅ Conditional Messages */}
+          {/* Status messages */}
           {stage === "approved" && (
             <div className="mt-4 p-3 text-green-700 bg-green-100 rounded-md text-center">
               🎉 Congratulations! Your application has been approved.

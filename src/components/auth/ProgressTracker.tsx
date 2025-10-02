@@ -1,7 +1,5 @@
-"use client";
-
 import React from "react";
-import { cn } from "@/lib/utils"; // tailwind helper if you have it, otherwise replace with className joiner
+import { cn } from "@/lib/utils"; // tailwind helper
 
 interface ProgressTrackerProps {
   stage: string; // current application stage
@@ -18,6 +16,9 @@ const stages = [
 const ProgressTracker: React.FC<ProgressTrackerProps> = ({ stage }) => {
   const currentIndex = stages.findIndex((s) => s.key === stage);
 
+  // fallback if stage is not found
+  const safeIndex = currentIndex === -1 ? 0 : currentIndex;
+
   return (
     <div className="flex flex-col gap-4 w-full">
       {stages.map((s, i) => (
@@ -25,7 +26,7 @@ const ProgressTracker: React.FC<ProgressTrackerProps> = ({ stage }) => {
           <div
             className={cn(
               "w-6 h-6 rounded-full flex items-center justify-center border-2",
-              i <= currentIndex
+              i <= safeIndex
                 ? "bg-blue-600 text-white border-blue-600"
                 : "bg-gray-200 border-gray-300 text-gray-500"
             )}
@@ -35,7 +36,7 @@ const ProgressTracker: React.FC<ProgressTrackerProps> = ({ stage }) => {
           <span
             className={cn(
               "text-sm",
-              i <= currentIndex ? "text-blue-600 font-medium" : "text-gray-500"
+              i <= safeIndex ? "text-blue-600 font-medium" : "text-gray-500"
             )}
           >
             {s.label}

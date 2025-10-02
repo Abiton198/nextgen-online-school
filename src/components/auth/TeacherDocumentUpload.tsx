@@ -1,5 +1,3 @@
-"use client";
-
 import React, { useState, useEffect } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -22,24 +20,31 @@ const TeacherDocumentUpload: React.FC = () => {
   const navigate = useNavigate();
   const auth = getAuth();
 
-  // 🔹 Decide if teacher record is in teachers or pendingTeachers
-  const [targetCollection, setTargetCollection] = useState<"pendingTeachers" | "teachers">("pendingTeachers");
+  // Which collection should this teacher be in?
+  const [targetCollection, setTargetCollection] = useState<"pendingTeachers" | "teachers">(
+    "pendingTeachers"
+  );
 
   useEffect(() => {
     const checkCollection = async () => {
       if (!auth.currentUser) return;
       const uid = auth.currentUser.uid;
 
-      const teacherDoc = await getDoc(doc(db, "teachers", uid));
-      if (teacherDoc.exists()) {
-        setTargetCollection("teachers");
-      } else {
-        setTargetCollection("pendingTeachers");
+      try {
+        const teacherDoc = await getDoc(doc(db, "teachers", uid));
+        if (teacherDoc.exists()) {
+          setTargetCollection("teachers");
+        } else {
+          setTargetCollection("pendingTeachers");
+        }
+      } catch (err) {
+        console.error("Error checking teacher collection:", err);
       }
     };
 
     checkCollection();
-  }, [auth.currentUser]);
+    // run once on mount
+  }, []);
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -51,7 +56,6 @@ const TeacherDocumentUpload: React.FC = () => {
     try {
       const uploads: Record<string, string> = {};
 
-      // helper for uploading with timestamp
       const uploadDoc = async (file: File, name: string) => {
         const storageRef = ref(storage, `teachers/${uid}/${Date.now()}_${name}`);
         await uploadBytes(storageRef, file);
@@ -64,25 +68,24 @@ const TeacherDocumentUpload: React.FC = () => {
       if (cetaFile) uploads.cetaUrl = await uploadDoc(cetaFile, "ceta.pdf");
       if (workPermitFile) uploads.workPermitUrl = await uploadDoc(workPermitFile, "work_permit.pdf");
 
-      // 🚫 Prevent empty submissions
       if (Object.keys(uploads).length === 0) {
         alert("⚠️ Please upload at least one document before submitting.");
         setIsLoading(false);
         return;
       }
 
-      // 🔹 Update Firestore with uploaded docs + mark stage
       await updateDoc(doc(db, targetCollection, uid), {
         ...uploads,
         updatedAt: serverTimestamp(),
         applicationStage: "documents-submitted",
       });
 
-      // ✅ Redirect with slight delay so Firestore syncs
+      // Redirect after upload
       setTimeout(() => navigate("/teacher-status"), 500);
     } catch (err: any) {
       console.error("Upload failed:", err);
-      alert("❌ Upload failed: " + err.message);
+      alert("❌ Upload failed: " + (err.message || "Unknown error"));
+    } finally {
       setIsLoading(false);
     }
   };

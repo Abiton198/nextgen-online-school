@@ -1,5 +1,3 @@
-"use client";
-
 import React, { useState, useEffect } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -19,7 +17,6 @@ const TeacherApplicationForm: React.FC = () => {
   const { signup, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
 
-  // --- Form State ---
   const [form, setForm] = useState({
     email: "",
     password: "",
@@ -43,33 +40,30 @@ const TeacherApplicationForm: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // ---- Load draft from localStorage ----
+  // Load draft
   useEffect(() => {
     const draft = localStorage.getItem(STORAGE_KEY);
     if (draft) setForm(JSON.parse(draft));
   }, []);
 
-  // ---- Auto-save to localStorage ----
+  // Auto-save draft
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(form));
   }, [form]);
 
-  // ---- Input Handler ----
   const handleChange = (field: string, value: string) =>
     setForm((prev) => ({ ...prev, [field]: value }));
 
-  // ---- Submit Application (Email/Password) ----
+  // Submit Application
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setIsLoading(true);
 
     try {
-      // ✅ Step 1: Sign up user (returns user directly from AuthProvider)
       const user = await signup(form.email, form.password);
       const uid = user.uid;
 
-      // ✅ Step 2: Write only allowed fields
       await setDoc(doc(db, "pendingTeachers", uid), {
         uid,
         ...form,
@@ -81,7 +75,6 @@ const TeacherApplicationForm: React.FC = () => {
         createdAt: serverTimestamp(),
       });
 
-      // ✅ Step 3: Clean up + navigate
       localStorage.removeItem(STORAGE_KEY);
       alert("✅ Application submitted! Please upload your supporting documents.");
       navigate("/upload-teacher-docs");
@@ -93,7 +86,6 @@ const TeacherApplicationForm: React.FC = () => {
     }
   };
 
-  // ---- Google Signup ----
   const handleGoogleSignup = async () => {
     setError("");
     setIsLoading(true);
@@ -125,7 +117,6 @@ const TeacherApplicationForm: React.FC = () => {
     }
   };
 
-  // ---- Render ----
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
       <Card className="w-full max-w-md max-h-screen overflow-y-auto">
