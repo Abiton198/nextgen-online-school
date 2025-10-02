@@ -5,8 +5,6 @@ import { useAuth } from "../auth/AuthProvider";
 import {
   collection,
   collectionGroup,
-  doc,
-  getDoc,
   onSnapshot,
   orderBy,
   query,
@@ -17,8 +15,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Loader2 } from "lucide-react";
-
-// Import your sync helper
 import { syncClassroomToFirestore } from "@/lib/classroomSync";
 
 interface TeacherProfile {
@@ -26,6 +22,7 @@ interface TeacherProfile {
   lastName?: string;
   subject?: string;
   status?: string;
+  classActivated?: boolean;
 }
 
 const TeacherDashboard: React.FC = () => {
@@ -40,30 +37,37 @@ const TeacherDashboard: React.FC = () => {
   const [coursework, setCoursework] = useState<any[]>([]);
   const [submissions, setSubmissions] = useState<any[]>([]);
 
-  // ---------------- Load Teacher Profile ----------------
+  // ---------------- Live Teacher Application Profile ----------------
   useEffect(() => {
     if (!user?.uid) return;
 
-    const fetchProfile = async () => {
-      setLoadingProfile(true);
-      try {
-        const snap = await getDoc(doc(db, "teachers", user.uid));
-        if (snap.exists()) {
-          setProfile(snap.data() as TeacherProfile);
+    setLoadingProfile(true);
+
+    const q = query(
+      collection(db, "teacherApplications"),
+      where("uid", "==", user.uid)
+    );
+
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        if (!snap.empty) {
+          setProfile(snap.docs[0].data() as TeacherProfile);
         } else {
           setProfile(null);
         }
-      } catch (e: any) {
-        setErr(e.message || "Failed to load teacher profile");
-      } finally {
+        setLoadingProfile(false);
+      },
+      (error) => {
+        setErr(error.message || "Failed to load teacher profile");
         setLoadingProfile(false);
       }
-    };
+    );
 
-    fetchProfile();
+    return () => unsub();
   }, [user?.uid]);
 
-  // ---------------- Guard: only approved teachers ----------------
+  // ---------------- Guards ----------------
   if (!user) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -87,21 +91,52 @@ const TeacherDashboard: React.FC = () => {
       <div className="min-h-screen flex items-center justify-center">
         <Alert variant="destructive">
           <AlertDescription>
-            No teacher record found. Please ensure your application was approved.
+            No teacher application found. Please complete your application.
           </AlertDescription>
         </Alert>
       </div>
     );
   }
 
-  if (profile.status !== "approved") {
+  // ---------------- Status Banner ----------------
+  const renderStatusBanner = () => {
+    if (!profile) return null;
+
+    if (profile.status === "approved" && profile.classActivated) {
+      return (
+        <div className="bg-green-600 text-white text-center py-2">
+          ✅ Your application is approved and your class is active!
+        </div>
+      );
+    }
+
+    if (profile.status === "rejected") {
+      return (
+        <div className="bg-red-600 text-white text-center py-2">
+          ❌ Your application has been rejected. Please contact the principal.
+        </div>
+      );
+    }
+
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Alert>
-          <AlertDescription>
-            Your application is <b>{profile.status}</b>. You’ll gain access once approved.
-          </AlertDescription>
-        </Alert>
+      <div className="bg-yellow-500 text-white text-center py-2">
+        ⏳ Your application is <b>{profile.status}</b>.{" "}
+        {!profile.classActivated && "Waiting for class activation."}
+      </div>
+    );
+  };
+
+  if (profile.status !== "approved" || !profile.classActivated) {
+    return (
+      <div className="min-h-screen flex flex-col">
+        {renderStatusBanner()}
+        <div className="flex-grow flex items-center justify-center">
+          <Alert>
+            <AlertDescription>
+              You’ll gain access once approved and your class is activated.
+            </AlertDescription>
+          </Alert>
+        </div>
       </div>
     );
   }
@@ -110,7 +145,7 @@ const TeacherDashboard: React.FC = () => {
   useEffect(() => {
     if (!user?.uid) return;
 
-    // ✅ Correct Firestore path for subcollection
+    // Courses
     const qCourses = query(
       collection(db, "users", user.uid, "classroom", "courses"),
       orderBy("name")
@@ -178,7 +213,9 @@ const TeacherDashboard: React.FC = () => {
 
   // ---------------- UI ----------------
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      {renderStatusBanner()}
+
       {/* Header */}
       <div className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 flex justify-between items-center py-4">
@@ -218,7 +255,7 @@ const TeacherDashboard: React.FC = () => {
       )}
 
       {/* Stats */}
-      <div className="max-w-7xl mx-auto px-4 py-8">
+      <div className="max-w-7xl mx-auto px-4 py-8 flex-grow">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <Card className="bg-orange-600 text-white">
             <CardContent className="p-6">
@@ -238,8 +275,6 @@ const TeacherDashboard: React.FC = () => {
               <p className="text-3xl font-bold">{coursework.length}</p>
             </CardContent>
           </Card>
-
-          
         </div>
       </div>
     </div>
