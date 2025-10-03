@@ -281,9 +281,10 @@ export default function TeacherApplicationForm() {
                 <ul className="list-disc list-inside text-sm text-gray-700 mb-2">
                   <li>Copy of ID / Passport</li>
                   <li>Teaching Qualification Certificates</li>
-                  <li>Proof of Address</li>
-                  <li>Police Clearance or Background Check</li>
+                  {/* <li>Proof of Address</li> */}
+                  {/* <li>Police Clearance or Background Check</li> */}
                   <li>CV (Curriculum Vitae)</li>
+                  <li>CETA Certification</li>
                 </ul>
                 <Input type="file" multiple accept=".pdf,image/*" onChange={handleFileChange} />
               </div>

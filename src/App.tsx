@@ -26,6 +26,8 @@ import TeacherDashboard from "@/components/dashboards/TeacherDashboard";
 import StudentDashboard from "@/components/dashboards/StudentDashboard";
 import ParentDashboard from "@/components/dashboards/parent/ParentDashboard";
 import PrincipalDashboard from "@/components/dashboards/PrincipalDashboard";
+import TeacherApplicationForm from "@/components/auth/TeacherApplicationForm";
+
 
 // Parent sections
 import ParentRegistration from "@/components/auth/ParentRegistration";
@@ -67,6 +69,10 @@ const App: React.FC = () => {
                 <Route path="/student-dashboard" element={<StudentDashboard />} />
                 <Route path="/parent-dashboard" element={<ParentDashboard />} />
                 <Route path="/principal-dashboard" element={<PrincipalDashboard />} />
+
+
+                {/* Teacher Application */}
+                <Route path="/teacher-application" element={<TeacherApplicationForm />} />
 
                 {/* Catch-all (404) */}
                 <Route path="*" element={<NotFound />} />
