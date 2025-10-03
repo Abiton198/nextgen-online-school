@@ -3,24 +3,22 @@
 import React, { useState } from "react";
 import { db, storage } from "@/lib/firebaseConfig";
 import {
-  addDoc,
-  collection,
-  serverTimestamp,
-  updateDoc,
   doc,
+  setDoc,
+  serverTimestamp,
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { useAuth } from "@/components/auth/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useNavigate } from "react-router-dom";
+import { v4 as uuidv4 } from "uuid";
 
 const ParentRegistration: React.FC = () => {
-  const { user } = useAuth();
-  const parentId = user?.uid;
+  const navigate = useNavigate();
 
   const [parentName, setParentName] = useState("");
-  const [parentEmail, setParentEmail] = useState(user?.email || "");
+  const [parentEmail, setParentEmail] = useState("");
   const [learnerName, setLearnerName] = useState("");
   const [learnerGrade, setLearnerGrade] = useState("");
   const [documents, setDocuments] = useState<FileList | null>(null);
@@ -34,15 +32,19 @@ const ParentRegistration: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!parentId || !declarationAccepted) return;
+    if (!declarationAccepted) return;
 
     setLoading(true);
     try {
+      // generate a unique ID for this registration
+      const regId = uuidv4();
+
       const [firstName, ...rest] = learnerName.trim().split(" ");
       const lastName = rest.join(" ") || "-";
 
-      const docRef = await addDoc(collection(db, "registrations"), {
-        parentId,
+      const regRef = doc(db, "registrations", regId);
+
+      await setDoc(regRef, {
         parentData: {
           name: parentName || "Unknown",
           email: parentEmail || "-",
@@ -58,13 +60,11 @@ const ParentRegistration: React.FC = () => {
         createdAt: serverTimestamp(),
       });
 
+      // Upload documents if any
       const docUrls: string[] = [];
       if (documents) {
         for (const file of Array.from(documents)) {
-          const storageRef = ref(
-            storage,
-            `registrations/${parentId}/${docRef.id}/documents/${file.name}`
-          );
+          const storageRef = ref(storage, `registrations/${regId}/documents/${file.name}`);
           await uploadBytes(storageRef, file);
           const url = await getDownloadURL(storageRef);
           docUrls.push(url);
@@ -72,12 +72,10 @@ const ParentRegistration: React.FC = () => {
       }
 
       if (docUrls.length > 0) {
-        await updateDoc(doc(db, "registrations", docRef.id), {
-          complianceDocs: docUrls,
-        });
+        await setDoc(regRef, { complianceDocs: docUrls }, { merge: true });
       }
 
-      setSuccessRegId(docRef.id);
+      setSuccessRegId(regId);
     } catch (err) {
       console.error("Error saving registration:", err);
       alert("Something went wrong. Please try again.");
@@ -130,7 +128,7 @@ const ParentRegistration: React.FC = () => {
             />
           </div>
 
-          {/* Compliance Documents */}
+          {/* Documents */}
           <div className="border rounded-lg p-6 bg-blue-50">
             <h3 className="text-lg font-semibold mb-2">Required Documents</h3>
             <Input type="file" multiple onChange={handleFileChange} />
@@ -146,17 +144,16 @@ const ParentRegistration: React.FC = () => {
                 onChange={(e) => setDeclarationAccepted(e.target.checked)}
                 className="w-4 h-4"
               />
-              I confirm all information is valid and I accept the school’s
-              requirements.
+              I confirm all information is valid and I accept the school’s requirements.
             </label>
           </div>
 
-          {/* Submit */}
+          {/* Submit / Cancel */}
           <div className="flex gap-3">
             <Button
               type="button"
               variant="outline"
-              onClick={() => window.history.back()}
+              onClick={() => navigate("/")} // return to main page
               disabled={loading}
             >
               Cancel
@@ -177,8 +174,8 @@ const ParentRegistration: React.FC = () => {
             Application ID: <b>{successRegId}</b> <br />
             The principal will review and notify you.
           </p>
-          <Button onClick={() => window.history.back()} className="mt-4">
-            Back to Dashboard
+          <Button onClick={() => navigate("/")} className="mt-4">
+            Back to Main Page
           </Button>
         </div>
       )}

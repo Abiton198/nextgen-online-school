@@ -27,14 +27,16 @@ function stringToColor(str: string) {
 function getInitials(name: string, email: string) {
   if (name) {
     const parts = name.split(" ");
-    return parts.length > 1
-      ? parts[0][0] + parts[1][0]
-      : parts[0][0];
+    return parts.length > 1 ? parts[0][0] + parts[1][0] : parts[0][0];
   }
   return email ? email[0] : "?";
 }
 
-export default function ProfileSettings() {
+interface ProfileSettingsProps {
+  onProfileUpdate?: (updated: { title: string; firstName: string }) => void;
+}
+
+export default function ProfileSettings({ onProfileUpdate }: ProfileSettingsProps) {
   const [title, setTitle] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -152,6 +154,11 @@ export default function ProfileSettings() {
         },
         { merge: true }
       );
+
+      // 🔥 instantly update dashboard welcome
+      if (onProfileUpdate) {
+        onProfileUpdate({ title, firstName });
+      }
 
       alert("Profile updated successfully ✅");
       setEditing(false);

@@ -1,12 +1,15 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { db } from "@/lib/firebaseConfig";
+import { addDoc, collection, serverTimestamp } from "firebase/firestore";
+import { Button } from "@/components/ui/button";
 
 const PaymentsSection: React.FC = () => {
   const { user } = useAuth();
-  const parent = user;
+  const navigate = useNavigate();
 
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
@@ -21,7 +24,7 @@ const PaymentsSection: React.FC = () => {
     message: "",
   });
 
-  // Read ?status=success|cancel from redirect
+  // Show status if redirected back
   useEffect(() => {
     const status = searchParams.get("status");
     if (status === "success") {
@@ -33,19 +36,36 @@ const PaymentsSection: React.FC = () => {
 
   async function handlePayment(e: React.FormEvent) {
     e.preventDefault();
+    if (!user) return;
+
     setLoading(true);
     setAlert({ type: null, message: "" });
 
     try {
+      // 1️⃣ Save a pending payment record
+      const paymentRef = await addDoc(collection(db, "payments"), {
+        parentId: user.uid,
+        parentEmail: user.email,
+        regId,
+        purpose,
+        amount: purpose === "registration" ? 1000 : customAmount || null, // example default fee
+        itemName,
+        status: "initiated",
+        createdAt: serverTimestamp(),
+      });
+
+      // 2️⃣ Call your backend to get PayFast redirect URL
       const res = await fetch("/api/payfast-initiate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           purpose,
-          customAmount,
+          amount: customAmount,
           itemName,
           regId,
-          parent,
+          parentId: user.uid,
+          parentEmail: user.email,
+          paymentId: paymentRef.id, // so backend can update this record
         }),
       });
 
@@ -75,6 +95,7 @@ const PaymentsSection: React.FC = () => {
       )}
 
       <form onSubmit={handlePayment} className="space-y-4">
+        {/* Purpose */}
         <div>
           <label className="block mb-1 font-medium">Payment Purpose</label>
           <select
@@ -90,6 +111,7 @@ const PaymentsSection: React.FC = () => {
           </select>
         </div>
 
+        {/* Amount for donation/event/other */}
         {(purpose === "donation" || purpose === "event" || purpose === "other") && (
           <div>
             <label className="block mb-1 font-medium">Amount (ZAR)</label>
@@ -105,6 +127,7 @@ const PaymentsSection: React.FC = () => {
           </div>
         )}
 
+        {/* Item name */}
         <div>
           <label className="block mb-1 font-medium">Item Name (optional)</label>
           <input
@@ -116,13 +139,24 @@ const PaymentsSection: React.FC = () => {
           />
         </div>
 
-        <button
-          type="submit"
-          disabled={loading}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded"
-        >
-          {loading ? "Redirecting..." : "Pay Now"}
-        </button>
+        {/* Buttons */}
+        <div className="flex gap-3">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => navigate("/parent-dashboard")}
+            disabled={loading}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            disabled={loading}
+            className="bg-blue-600 hover:bg-blue-700 text-white"
+          >
+            {loading ? "Redirecting..." : "Pay Now"}
+          </Button>
+        </div>
       </form>
     </div>
   );
