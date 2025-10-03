@@ -6,25 +6,26 @@ import {
   doc,
   setDoc,
   serverTimestamp,
+  updateDoc,
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useNavigate } from "react-router-dom";
-import { v4 as uuidv4 } from "uuid";
+import { useAuth } from "@/components/auth/AuthProvider";
 
 const ParentRegistration: React.FC = () => {
   const navigate = useNavigate();
+  const { currentUser } = useAuth(); // 🔑 get logged-in parent
 
   const [parentName, setParentName] = useState("");
-  const [parentEmail, setParentEmail] = useState("");
   const [learnerName, setLearnerName] = useState("");
   const [learnerGrade, setLearnerGrade] = useState("");
   const [documents, setDocuments] = useState<FileList | null>(null);
   const [declarationAccepted, setDeclarationAccepted] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [successRegId, setSuccessRegId] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setDocuments(e.target.files);
@@ -32,50 +33,51 @@ const ParentRegistration: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!declarationAccepted) return;
+    if (!declarationAccepted || !currentUser) return;
 
     setLoading(true);
     try {
-      // generate a unique ID for this registration
-      const regId = uuidv4();
+      const parentRef = doc(db, "parents", currentUser.uid);
 
+      // basic learner data
       const [firstName, ...rest] = learnerName.trim().split(" ");
       const lastName = rest.join(" ") || "-";
-
-      const regRef = doc(db, "registrations", regId);
-
-      await setDoc(regRef, {
-        parentData: {
-          name: parentName || "Unknown",
-          email: parentEmail || "-",
-        },
-        learnerData: {
-          firstName: firstName || "Unknown",
-          lastName,
-          grade: learnerGrade || "-",
-        },
-        complianceDocs: [],
-        status: "pending_review",
-        principalReviewed: false,
-        createdAt: serverTimestamp(),
-      });
 
       // Upload documents if any
       const docUrls: string[] = [];
       if (documents) {
         for (const file of Array.from(documents)) {
-          const storageRef = ref(storage, `registrations/${regId}/documents/${file.name}`);
+          const storageRef = ref(
+            storage,
+            `parents/${currentUser.uid}/documents/${file.name}`
+          );
           await uploadBytes(storageRef, file);
           const url = await getDownloadURL(storageRef);
           docUrls.push(url);
         }
       }
 
-      if (docUrls.length > 0) {
-        await setDoc(regRef, { complianceDocs: docUrls }, { merge: true });
-      }
+      // update parent profile with registration info
+      await setDoc(
+        parentRef,
+        {
+          uid: currentUser.uid,
+          email: currentUser.email,
+          parentName: parentName || "Unknown",
+          learnerData: {
+            firstName: firstName || "Unknown",
+            lastName,
+            grade: learnerGrade || "-",
+          },
+          complianceDocs: docUrls,
+          applicationStatus: "submitted",
+          principalReviewed: false,
+          createdAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
 
-      setSuccessRegId(regId);
+      setSuccess(true);
     } catch (err) {
       console.error("Error saving registration:", err);
       alert("Something went wrong. Please try again.");
@@ -88,24 +90,20 @@ const ParentRegistration: React.FC = () => {
     <div className="max-w-2xl mx-auto p-6 space-y-6 bg-white border rounded-lg shadow">
       <h2 className="text-2xl font-bold">Parent & Learner Registration</h2>
 
-      {!successRegId ? (
+      {!success ? (
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Parent Info */}
           <div className="border rounded-lg p-6 bg-gray-50">
             <h3 className="text-lg font-semibold mb-3">Parent Information</h3>
-            <Label>Name</Label>
+            <p className="text-sm text-gray-600 mb-2">
+              Logged in as: <b>{currentUser?.email}</b>
+            </p>
+            <Label>Full Name</Label>
             <Input
               type="text"
               required
               value={parentName}
               onChange={(e) => setParentName(e.target.value)}
-            />
-            <Label className="mt-3">Email</Label>
-            <Input
-              type="email"
-              required
-              value={parentEmail}
-              onChange={(e) => setParentEmail(e.target.value)}
             />
           </div>
 
@@ -144,16 +142,17 @@ const ParentRegistration: React.FC = () => {
                 onChange={(e) => setDeclarationAccepted(e.target.checked)}
                 className="w-4 h-4"
               />
-              I confirm all information is valid and I accept the school’s requirements.
+              I confirm all information is valid and I accept the school’s
+              requirements.
             </label>
           </div>
 
-          {/* Submit / Cancel */}
+          {/* Submit */}
           <div className="flex gap-3">
             <Button
               type="button"
               variant="outline"
-              onClick={() => navigate("/")} // return to main page
+              onClick={() => navigate("/")}
               disabled={loading}
             >
               Cancel
@@ -171,11 +170,11 @@ const ParentRegistration: React.FC = () => {
         <div className="p-6 bg-green-50 border rounded-lg text-center">
           <h3 className="text-lg font-semibold">✅ Application Submitted</h3>
           <p className="mt-2 text-sm text-gray-700">
-            Application ID: <b>{successRegId}</b> <br />
-            The principal will review and notify you.
+            Thank you, your application has been submitted. <br />
+            You will be notified once it is reviewed.
           </p>
-          <Button onClick={() => navigate("/")} className="mt-4">
-            Back to Main Page
+          <Button onClick={() => navigate("/parent-dashboard")} className="mt-4">
+            Go to Parent Dashboard
           </Button>
         </div>
       )}

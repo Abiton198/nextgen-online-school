@@ -10,21 +10,22 @@ import StatusSection from "./sections/StatusSection";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { auth, db } from "@/lib/firebaseConfig";
 import { signOut } from "firebase/auth";
-import { doc, getDoc, collection, query, where, getDocs } from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 import { useNavigate } from "react-router-dom";
-import { LogOut } from "lucide-react"; // 🔹 icons
+import { LogOut } from "lucide-react";
 
 const sections = ["Registration", "Payments", "Settings", "Communications", "Status"];
 
 export default function ParentDashboard() {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState("Registration"); // default tab
+  const [activeTab, setActiveTab] = useState("Registration");
   const [parentName, setParentName] = useState("");
   const [title, setTitle] = useState("Mr/Mrs");
-  const [children, setChildren] = useState<{ firstName?: string; grade?: string }[]>([]);
+  const [learner, setLearner] = useState<{ firstName?: string; grade?: string } | null>(null);
+  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
-  // 🔎 Fetch parent & children info
+  // 🔎 Fetch parent info
   useEffect(() => {
     if (!user?.uid) return;
 
@@ -33,35 +34,35 @@ export default function ParentDashboard() {
         const parentDoc = await getDoc(doc(db, "parents", user.uid));
         if (parentDoc.exists()) {
           const data = parentDoc.data();
-          setParentName(data.firstName || "");
+
+          // If registration not complete → force them back
+          if (data.applicationStatus !== "submitted") {
+            navigate("/register");
+            return;
+          }
+
+          setParentName(data.parentName || "");
           setTitle(data.title || "Mr/Mrs");
+          setLearner(data.learnerData || null);
+        } else {
+          // If no parent record exists at all → force register
+          navigate("/register");
         }
       } catch (err) {
         console.error("Error fetching parent:", err);
-      }
-    };
-
-    const fetchChildren = async () => {
-      try {
-        const q = query(collection(db, "registrations"), where("parentId", "==", user.uid));
-        const snap = await getDocs(q);
-        const kids = snap.docs.map((d) => d.data().learnerData || {});
-        setChildren(kids);
-      } catch (err) {
-        console.error("Error fetching children:", err);
+      } finally {
+        setLoading(false);
       }
     };
 
     fetchParent();
-    fetchChildren();
-  }, [user]);
+  }, [user, navigate]);
 
   const handleLogout = async () => {
     await signOut(auth);
     navigate("/signin");
   };
 
-  // 🔹 Tab switcher
   const renderSection = () => {
     switch (activeTab) {
       case "Registration":
@@ -79,6 +80,8 @@ export default function ParentDashboard() {
     }
   };
 
+  if (loading) return <p className="p-6">Loading dashboard...</p>;
+
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
@@ -87,13 +90,11 @@ export default function ParentDashboard() {
           <h1 className="text-2xl font-bold">
             Welcome {title} {parentName}
           </h1>
-          {children.length > 0 && (
+          {learner && (
             <div className="mt-2 text-gray-700">
-              {children.map((c, i) => (
-                <p key={i}>
-                  Child: {c.firstName || "Unknown"} – Grade {c.grade || "-"}
-                </p>
-              ))}
+              <p>
+                Child: {learner.firstName || "Unknown"} – Grade {learner.grade || "-"}
+              </p>
             </div>
           )}
         </div>

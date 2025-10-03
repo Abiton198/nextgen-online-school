@@ -6,8 +6,10 @@ import { GraduationCap } from "lucide-react";
 import { FcGoogle } from "react-icons/fc";
 
 import { useAuth } from "@/components/auth/AuthProvider";
+import { db } from "@/firebase";
+import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 
-// UI components from shadcn/ui
+// UI components
 import {
   Card,
   CardContent,
@@ -21,7 +23,7 @@ import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
 const LoginForm: React.FC = () => {
-  const { login, loginWithGoogle, resetPassword } = useAuth();
+  const { login, loginWithGoogle, resetPassword, register } = useAuth();
   const navigate = useNavigate();
 
   const [role, setRole] = useState<
@@ -32,7 +34,26 @@ const LoginForm: React.FC = () => {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  // ---------------- Handle Login ----------------
+  // --- Ensure parent profile exists ---
+  const ensureParentDoc = async (uid: string, email: string) => {
+    const parentRef = doc(db, "parents", uid);
+    const snap = await getDoc(parentRef);
+
+    if (!snap.exists()) {
+      await setDoc(parentRef, {
+        uid,
+        email,
+        firstName: "",
+        lastName: "",
+        title: "",
+        createdAt: serverTimestamp(),
+        children: [],
+        applicationStatus: "pending_registration", // track onboarding
+      });
+    }
+  };
+
+  // --- Login existing user ---
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -40,12 +61,14 @@ const LoginForm: React.FC = () => {
 
     try {
       const user = await login(email, password);
-      console.log("Logged in:", user.uid);
+      if (!user) throw new Error("Login failed");
 
-      // Navigate by role
+      if (role === "parent") {
+        // If parent already has doc, go to dashboard
+        navigate("/parent-dashboard");
+      }
       if (role === "student") navigate("/student-dashboard");
       if (role === "teacher") navigate("/teacher-dashboard");
-      if (role === "parent") navigate("/parent-dashboard");
       if (role === "principal") navigate("/principal-dashboard");
     } catch (err: any) {
       setError(err.message);
@@ -54,16 +77,21 @@ const LoginForm: React.FC = () => {
     }
   };
 
-  // ---------------- Google Login ----------------
-  const handleGoogleSignIn = async () => {
+  // --- Signup new parent ---
+  const handleSignup = async (e: React.FormEvent) => {
+    e.preventDefault();
     setError("");
     setIsLoading(true);
-    try {
-      const loggedUser = await loginWithGoogle();
-      if (!loggedUser) throw new Error("Google login failed");
 
-      if (role === "teacher") navigate("/teacher-dashboard");
-      if (role === "parent") navigate("/parent-dashboard");
+    try {
+      const user = await register(email, password);
+      if (!user) throw new Error("Signup failed");
+
+      if (role === "parent") {
+        await ensureParentDoc(user.uid, user.email);
+        // Redirect parent immediately to registration flow
+        navigate("/register");
+      }
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -71,7 +99,27 @@ const LoginForm: React.FC = () => {
     }
   };
 
-  // ---------------- Reset Password ----------------
+  // --- Google Sign-In ---
+  const handleGoogleSignIn = async () => {
+    setError("");
+    setIsLoading(true);
+    try {
+      const loggedUser = await loginWithGoogle();
+      if (!loggedUser) throw new Error("Google login failed");
+
+      if (role === "parent") {
+        await ensureParentDoc(loggedUser.uid, loggedUser.email);
+        navigate("/register"); // redirect to application process
+      }
+      if (role === "teacher") navigate("/teacher-dashboard");
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // --- Reset Password ---
   const handleResetPassword = async () => {
     if (!email) return setError("Enter your email first.");
     try {
@@ -87,8 +135,8 @@ const LoginForm: React.FC = () => {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <GraduationCap className="w-10 h-10 text-blue-600 mx-auto" />
-          <CardTitle>Sign In</CardTitle>
-          <CardDescription>Access your dashboard</CardDescription>
+          <CardTitle>Sign In / Sign Up</CardTitle>
+          <CardDescription>Access your dashboard or start your application</CardDescription>
         </CardHeader>
 
         <CardContent>
@@ -136,14 +184,26 @@ const LoginForm: React.FC = () => {
               />
             </div>
 
-            {/* Submit */}
+            {/* Sign In */}
             <Button
               type="submit"
               disabled={isLoading}
               className="w-full bg-blue-600 hover:bg-blue-700"
             >
-              {isLoading ? "Signing in..." : "Sign In"}
+              {isLoading ? "Processing..." : "Sign In"}
             </Button>
+
+            {/* Sign Up (for parent only) */}
+            {role === "parent" && (
+              <Button
+                type="button"
+                onClick={handleSignup}
+                disabled={isLoading}
+                className="w-full bg-green-600 hover:bg-green-700 mt-2"
+              >
+                {isLoading ? "Creating..." : "Sign Up as Parent"}
+              </Button>
+            )}
 
             {/* Reset Password */}
             <button
@@ -154,7 +214,7 @@ const LoginForm: React.FC = () => {
               Forgot password?
             </button>
 
-            {/* Google Sign-In (only for parent/teacher) */}
+            {/* Google Sign-In (parent or teacher) */}
             {(role === "parent" || role === "teacher") && (
               <Button
                 type="button"
