@@ -6,7 +6,7 @@ import { GraduationCap } from "lucide-react";
 import { FcGoogle } from "react-icons/fc";
 
 import { useAuth } from "@/components/auth/AuthProvider";
-import { db } from "@/firebase";
+import { db } from "@/firebaseConfig";
 import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 
 // UI components
