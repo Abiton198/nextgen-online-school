@@ -1,235 +1,144 @@
-"use client";
-
-import React, { useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { GraduationCap } from "lucide-react";
-import { FcGoogle } from "react-icons/fc";
-
-import { useAuth } from "@/components/auth/AuthProvider";
-import { db } from "@/lib/firebaseConfig";
+import { auth, db } from "@/lib/firebaseConfig"; // adjust path
+import {
+  signInWithEmailAndPassword,
+  GoogleAuthProvider,
+  signInWithPopup,
+} from "firebase/auth";
 import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 
-// UI components
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-
-const LoginForm: React.FC = () => {
-  const { login, loginWithGoogle, resetPassword, register } = useAuth();
-  const navigate = useNavigate();
-
-  const [role, setRole] = useState<
-    "student" | "teacher" | "parent" | "principal"
-  >("parent");
+export default function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  const [role, setRole] = useState<"student" | "teacher" | "parent" | "principal" | null>(null);
+  const [teacherAction, setTeacherAction] = useState<"none" | "apply" | "signin">("none");
 
-  // --- Ensure parent profile exists ---
-  const ensureParentDoc = async (uid: string, email: string) => {
-    const parentRef = doc(db, "parents", uid);
-    const snap = await getDoc(parentRef);
+  const navigate = useNavigate();
 
-    if (!snap.exists()) {
-      await setDoc(parentRef, {
-        uid,
-        email,
-        firstName: "",
-        lastName: "",
-        title: "",
-        createdAt: serverTimestamp(),
-        children: [],
-        applicationStatus: "pending_registration", // track onboarding
-      });
+  const handleLogin = async () => {
+    try {
+      const userCred = await signInWithEmailAndPassword(auth, email, password);
+
+      if (role === "teacher") navigate("/teacher-dashboard");
+      else if (role === "parent") navigate("/parent-dashboard");
+      else if (role === "student") navigate("/student-dashboard");
+      else if (role === "principal") navigate("/principal-dashboard");
+    } catch (err) {
+      console.error(err);
+      alert("Login failed");
     }
   };
 
-  // --- Login existing user ---
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-    setIsLoading(true);
-
+  const handleGoogleLogin = async () => {
     try {
-      const user = await login(email, password);
-      if (!user) throw new Error("Login failed");
+      const provider = new GoogleAuthProvider();
+      const result = await signInWithPopup(auth, provider);
+      const user = result.user;
 
-      if (role === "parent") {
-        // If parent already has doc, go to dashboard
+      if (role === "teacher") {
+        // Ensure teacher profile exists in Firestore
+        const teacherRef = doc(db, "teachers", user.uid);
+        const teacherSnap = await getDoc(teacherRef);
+
+        if (!teacherSnap.exists()) {
+          await setDoc(teacherRef, {
+            uid: user.uid,
+            name: user.displayName || "",
+            email: user.email || "",
+            photoURL: user.photoURL || "",
+            createdAt: serverTimestamp(),
+            status: "pending_review", // principal must approve
+          });
+          console.log("New teacher record created in Firestore");
+        }
+        navigate("/teacher-dashboard");
+      } else if (role === "parent") {
+        // Similar logic: ensure parent doc exists if needed
         navigate("/parent-dashboard");
       }
-      if (role === "student") navigate("/student-dashboard");
-      if (role === "teacher") navigate("/teacher-dashboard");
-      if (role === "principal") navigate("/principal-dashboard");
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // --- Signup new parent ---
-  const handleSignup = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-    setIsLoading(true);
-
-    try {
-      const user = await register(email, password);
-      if (!user) throw new Error("Signup failed");
-
-      if (role === "parent") {
-        await ensureParentDoc(user.uid, user.email);
-        // Redirect parent immediately to registration flow
-        navigate("/register");
-      }
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // --- Google Sign-In ---
-  const handleGoogleSignIn = async () => {
-    setError("");
-    setIsLoading(true);
-    try {
-      const loggedUser = await loginWithGoogle();
-      if (!loggedUser) throw new Error("Google login failed");
-
-      if (role === "parent") {
-        await ensureParentDoc(loggedUser.uid, loggedUser.email);
-        navigate("/register"); // redirect to application process
-      }
-      if (role === "teacher") navigate("/teacher-dashboard");
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // --- Reset Password ---
-  const handleResetPassword = async () => {
-    if (!email) return setError("Enter your email first.");
-    try {
-      await resetPassword(email);
-      alert("Password reset email sent.");
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      console.error("Google login error:", err);
+      alert("Google login failed");
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <GraduationCap className="w-10 h-10 text-blue-600 mx-auto" />
-          <CardTitle>Sign In / Sign Up</CardTitle>
-          <CardDescription>Access your dashboard or start your application</CardDescription>
-        </CardHeader>
+    <div className="max-w-md mx-auto p-6 border rounded bg-white shadow">
+      <h2 className="text-xl font-bold mb-4">Login</h2>
 
-        <CardContent>
-          {error && (
-            <Alert variant="destructive" className="mb-4">
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
+      {/* Role selection */}
+      <div className="mb-4 space-x-2">
+        {["student", "teacher", "parent", "principal"].map((r) => (
+          <button
+            key={r}
+            onClick={() => {
+              setRole(r as any);
+              setTeacherAction("none");
+            }}
+            className={`px-3 py-1 rounded ${
+              role === r ? "bg-blue-600 text-white" : "bg-gray-200"
+            }`}
+          >
+            {r}
+          </button>
+        ))}
+      </div>
 
-          <form onSubmit={handleLogin} className="space-y-4">
-            {/* Role Selection */}
-            <div>
-              <Label>Role</Label>
-              <select
-                value={role}
-                onChange={(e) => setRole(e.target.value as any)}
-                className="w-full border rounded-md p-2"
-              >
-                <option value="student">Student</option>
-                <option value="teacher">Teacher</option>
-                <option value="parent">Parent</option>
-                <option value="principal">Principal</option>
-              </select>
-            </div>
-
-            {/* Email */}
-            <div>
-              <Label>Email</Label>
-              <Input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
-            </div>
-
-            {/* Password */}
-            <div>
-              <Label>Password</Label>
-              <Input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
-            </div>
-
-            {/* Sign In */}
-            <Button
-              type="submit"
-              disabled={isLoading}
-              className="w-full bg-blue-600 hover:bg-blue-700"
-            >
-              {isLoading ? "Processing..." : "Sign In"}
-            </Button>
-
-            {/* Sign Up (for parent only) */}
-            {role === "parent" && (
-              <Button
-                type="button"
-                onClick={handleSignup}
-                disabled={isLoading}
-                className="w-full bg-green-600 hover:bg-green-700 mt-2"
-              >
-                {isLoading ? "Creating..." : "Sign Up as Parent"}
-              </Button>
-            )}
-
-            {/* Reset Password */}
+      {/* Special case for Teacher */}
+      {role === "teacher" && teacherAction === "none" && (
+        <div className="mb-4 border p-3 rounded bg-gray-50">
+          <p className="mb-2 font-medium">Are you a new teacher or returning?</p>
+          <div className="flex gap-2">
             <button
-              type="button"
-              onClick={handleResetPassword}
-              className="text-sm text-blue-600 hover:underline mt-2"
+              onClick={() => navigate("/teacher-application")}
+              className="flex-1 px-3 py-2 bg-green-600 text-white rounded"
             >
-              Forgot password?
+              📝 Apply
             </button>
+            <button
+              onClick={() => setTeacherAction("signin")}
+              className="flex-1 px-3 py-2 bg-blue-600 text-white rounded"
+            >
+              🔑 Sign in
+            </button>
+          </div>
+        </div>
+      )}
 
-            {/* Google Sign-In (parent or teacher) */}
-            {(role === "parent" || role === "teacher") && (
-              <Button
-                type="button"
-                onClick={handleGoogleSignIn}
-                disabled={isLoading}
-                className="w-full flex items-center justify-center gap-2 mt-2 border border-gray-300 hover:bg-gray-100"
-              >
-                <FcGoogle className="w-5 h-5" /> Sign in with Google
-              </Button>
-            )}
-          </form>
-        </CardContent>
-      </Card>
+      {/* Login form (shown for teacher sign-in + all other roles) */}
+      {(role && (role !== "teacher" || teacherAction === "signin")) && (
+        <div className="space-y-3">
+          <input
+            type="email"
+            placeholder="Email"
+            className="w-full border p-2 rounded"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+          <input
+            type="password"
+            placeholder="Password"
+            className="w-full border p-2 rounded"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          <button
+            onClick={handleLogin}
+            className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700"
+          >
+            Login
+          </button>
+
+          {/* Google Sign-In */}
+          <button
+            onClick={handleGoogleLogin}
+            className="w-full bg-red-500 text-white py-2 rounded hover:bg-red-600"
+          >
+            Sign in with Google
+          </button>
+        </div>
+      )}
     </div>
   );
-};
-
-export default LoginForm;
+}
