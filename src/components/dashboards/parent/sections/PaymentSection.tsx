@@ -1,12 +1,17 @@
+"use client";
+
 import React, { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
+import { useAuth } from "@/components/auth/AuthProvider";
 
-interface PaymentsSectionProps {
-  parent: any;   // Replace `any` with your parent type (e.g., { id: string; email: string; ... })
-  regId: string;
-}
+const PaymentsSection: React.FC = () => {
+  const { user } = useAuth();
+  const parent = user;
 
-const PaymentsSection: React.FC<PaymentsSectionProps> = ({ parent, regId }) => {
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const regId = searchParams.get("regId");
+
   const [purpose, setPurpose] = useState("registration");
   const [customAmount, setCustomAmount] = useState("");
   const [itemName, setItemName] = useState("");
@@ -16,13 +21,9 @@ const PaymentsSection: React.FC<PaymentsSectionProps> = ({ parent, regId }) => {
     message: "",
   });
 
-  const location = useLocation();
-
-  // 🔎 Read query params (success/cancel status)
+  // Read ?status=success|cancel from redirect
   useEffect(() => {
-    const searchParams = new URLSearchParams(location.search);
     const status = searchParams.get("status");
-
     if (status === "success") {
       setAlert({ type: "success", message: "✅ Payment completed successfully." });
     } else if (status === "cancel") {
@@ -30,7 +31,6 @@ const PaymentsSection: React.FC<PaymentsSectionProps> = ({ parent, regId }) => {
     }
   }, [location.search]);
 
-  // 🚀 Start PayFast payment
   async function handlePayment(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
@@ -52,7 +52,7 @@ const PaymentsSection: React.FC<PaymentsSectionProps> = ({ parent, regId }) => {
       if (!res.ok) throw new Error("Failed to initiate payment");
 
       const { redirectUrl } = await res.json();
-      window.location.href = redirectUrl; // redirect to PayFast
+      window.location.href = redirectUrl;
     } catch (err: any) {
       setAlert({ type: "error", message: `⚠️ ${err.message}` });
     } finally {
@@ -64,7 +64,6 @@ const PaymentsSection: React.FC<PaymentsSectionProps> = ({ parent, regId }) => {
     <div className="p-6 border rounded-lg shadow bg-white">
       <h2 className="text-xl font-semibold mb-4">Payments</h2>
 
-      {/* 🔔 Inline Alert */}
       {alert.type && (
         <div
           className={`p-3 mb-4 rounded ${
@@ -76,7 +75,6 @@ const PaymentsSection: React.FC<PaymentsSectionProps> = ({ parent, regId }) => {
       )}
 
       <form onSubmit={handlePayment} className="space-y-4">
-        {/* Purpose */}
         <div>
           <label className="block mb-1 font-medium">Payment Purpose</label>
           <select
@@ -92,7 +90,6 @@ const PaymentsSection: React.FC<PaymentsSectionProps> = ({ parent, regId }) => {
           </select>
         </div>
 
-        {/* Custom Amount */}
         {(purpose === "donation" || purpose === "event" || purpose === "other") && (
           <div>
             <label className="block mb-1 font-medium">Amount (ZAR)</label>
@@ -108,7 +105,6 @@ const PaymentsSection: React.FC<PaymentsSectionProps> = ({ parent, regId }) => {
           </div>
         )}
 
-        {/* Item Name */}
         <div>
           <label className="block mb-1 font-medium">Item Name (optional)</label>
           <input

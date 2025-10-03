@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { db } from "@/lib/firebaseConfig";
 import { collection, query, where, getDocs } from "firebase/firestore";
 import { useAuth } from "@/components/auth/AuthProvider";
-import ParentRegistration from "../ParentRegistration";
+import ParentRegistration from "@/components/auth/ParentRegistration";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, X } from "lucide-react";
 

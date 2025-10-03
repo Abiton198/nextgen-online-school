@@ -15,46 +15,32 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-interface ParentRegistrationProps {
-  parentId: string;
-  onBack: () => void;
-}
-
-const ParentRegistration: React.FC<ParentRegistrationProps> = ({
-  parentId,
-  onBack,
-}) => {
+const ParentRegistration: React.FC = () => {
   const { user } = useAuth();
+  const parentId = user?.uid;
 
-  // 🔹 Form states
   const [parentName, setParentName] = useState("");
   const [parentEmail, setParentEmail] = useState(user?.email || "");
   const [learnerName, setLearnerName] = useState("");
   const [learnerGrade, setLearnerGrade] = useState("");
   const [documents, setDocuments] = useState<FileList | null>(null);
   const [declarationAccepted, setDeclarationAccepted] = useState(false);
-
   const [loading, setLoading] = useState(false);
   const [successRegId, setSuccessRegId] = useState<string | null>(null);
 
-  // 📂 File upload handler
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setDocuments(e.target.files);
   };
 
-  // 📝 Submit handler
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!parentId || !declarationAccepted) return;
 
     setLoading(true);
-
     try {
-      // Split learner full name
       const [firstName, ...rest] = learnerName.trim().split(" ");
       const lastName = rest.join(" ") || "-";
 
-      // Step 1: Create registration doc
       const docRef = await addDoc(collection(db, "registrations"), {
         parentId,
         parentData: {
@@ -67,12 +53,11 @@ const ParentRegistration: React.FC<ParentRegistrationProps> = ({
           grade: learnerGrade || "-",
         },
         complianceDocs: [],
-        status: "pending_review", // Principal must approve
+        status: "pending_review",
         principalReviewed: false,
         createdAt: serverTimestamp(),
       });
 
-      // Step 2: Upload compliance docs (if any)
       const docUrls: string[] = [];
       if (documents) {
         for (const file of Array.from(documents)) {
@@ -86,7 +71,6 @@ const ParentRegistration: React.FC<ParentRegistrationProps> = ({
         }
       }
 
-      // Step 3: Update registration doc with doc URLs
       if (docUrls.length > 0) {
         await updateDoc(doc(db, "registrations", docRef.id), {
           complianceDocs: docUrls,
@@ -149,13 +133,6 @@ const ParentRegistration: React.FC<ParentRegistrationProps> = ({
           {/* Compliance Documents */}
           <div className="border rounded-lg p-6 bg-blue-50">
             <h3 className="text-lg font-semibold mb-2">Required Documents</h3>
-            <ul className="list-disc list-inside text-sm text-gray-700 mb-3">
-              <li>Parent/Guardian ID</li>
-              <li>Learner’s Birth Certificate</li>
-              <li>Proof of Address</li>
-              <li>Previous Report (if applicable)</li>
-              <li>Medical Information</li>
-            </ul>
             <Input type="file" multiple onChange={handleFileChange} />
           </div>
 
@@ -169,14 +146,19 @@ const ParentRegistration: React.FC<ParentRegistrationProps> = ({
                 onChange={(e) => setDeclarationAccepted(e.target.checked)}
                 className="w-4 h-4"
               />
-              I confirm that all provided information is valid, and I accept the
-              school’s requirements and fee obligations.
+              I confirm all information is valid and I accept the school’s
+              requirements.
             </label>
           </div>
 
           {/* Submit */}
           <div className="flex gap-3">
-            <Button type="button" variant="outline" onClick={onBack} disabled={loading}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => window.history.back()}
+              disabled={loading}
+            >
               Cancel
             </Button>
             <Button
@@ -192,11 +174,10 @@ const ParentRegistration: React.FC<ParentRegistrationProps> = ({
         <div className="p-6 bg-green-50 border rounded-lg text-center">
           <h3 className="text-lg font-semibold">✅ Application Submitted</h3>
           <p className="mt-2 text-sm text-gray-700">
-            Your application ID is: <b>{successRegId}</b> <br />
-            The principal will review your application and notify you once your
-            child is enrolled.
+            Application ID: <b>{successRegId}</b> <br />
+            The principal will review and notify you.
           </p>
-          <Button onClick={onBack} className="mt-4">
+          <Button onClick={() => window.history.back()} className="mt-4">
             Back to Dashboard
           </Button>
         </div>
