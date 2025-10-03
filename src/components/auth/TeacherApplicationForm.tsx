@@ -9,7 +9,11 @@ import {
   updateDoc,
   doc,
 } from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import {
+  ref,
+  uploadBytesResumable,
+  getDownloadURL,
+} from "firebase/storage";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -42,16 +46,22 @@ export default function TeacherApplicationForm() {
     ref2Contact: "",
   });
 
-  const [documents, setDocuments] = useState<FileList | null>(null);
+  const [documents, setDocuments] = useState<{
+    idDoc?: FileList | null;
+    qualification?: FileList | null;
+    cv?: FileList | null;
+    ceta?: FileList | null;
+    proofOfAddress?: FileList | null;
+    policeClearance?: FileList | null;
+  }>({});
+
+  const [progress, setProgress] = useState<Record<string, number>>({});
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [successId, setSuccessId] = useState<string | null>(null);
 
   const handleChange = (field: string, value: string) =>
     setForm((prev) => ({ ...prev, [field]: value }));
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) =>
-    setDocuments(e.target.files);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,6 +71,16 @@ export default function TeacherApplicationForm() {
     try {
       if (!user) throw new Error("You must be logged in to apply.");
 
+      // ✅ Enforce required docs
+      if (
+        !documents.idDoc ||
+        !documents.qualification ||
+        !documents.cv ||
+        !documents.ceta
+      ) {
+        throw new Error("All required documents must be uploaded before submitting.");
+      }
+
       // Step 1: Save Firestore doc
       const docRef = await addDoc(collection(db, "teacherApplications"), {
         uid: user.uid,
@@ -69,29 +89,50 @@ export default function TeacherApplicationForm() {
           { name: form.ref1Name, contact: form.ref1Contact },
           { name: form.ref2Name, contact: form.ref2Contact },
         ],
-        complianceDocs: [],
+        complianceDocs: {},
         status: "pending_review",
         principalReviewed: false,
-        classActivated: false, // 🚀 access controlled by principal approval
+        classActivated: false,
         createdAt: serverTimestamp(),
       });
 
-      // Step 2: Upload documents to Storage
-      const docUrls: string[] = [];
-      if (documents) {
-        for (const file of Array.from(documents)) {
-          const storageRef = ref(
-            storage,
-            `teacherApplications/${user.uid}/${docRef.id}/documents/${file.name}`
-          );
-          await uploadBytes(storageRef, file);
-          const url = await getDownloadURL(storageRef);
-          docUrls.push(url);
+      // Step 2: Upload documents to Storage with progress tracking
+      const docUrls: Record<string, string[]> = {};
+
+      for (const [key, fileList] of Object.entries(documents)) {
+        if (fileList) {
+          docUrls[key] = [];
+
+          for (const file of Array.from(fileList)) {
+            const storageRef = ref(
+              storage,
+              `teacherApplications/${user.uid}/${docRef.id}/documents/${key}/${file.name}`
+            );
+
+            const uploadTask = uploadBytesResumable(storageRef, file);
+
+            await new Promise<void>((resolve, reject) => {
+              uploadTask.on(
+                "state_changed",
+                (snapshot) => {
+                  const percent =
+                    (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                  setProgress((prev) => ({ ...prev, [key]: percent }));
+                },
+                (err) => reject(err),
+                async () => {
+                  const url = await getDownloadURL(uploadTask.snapshot.ref);
+                  docUrls[key].push(url);
+                  resolve();
+                }
+              );
+            });
+          }
         }
       }
 
       // Step 3: Update doc with file URLs
-      if (docUrls.length > 0) {
+      if (Object.keys(docUrls).length > 0) {
         await updateDoc(doc(db, "teacherApplications", docRef.id), {
           complianceDocs: docUrls,
         });
@@ -218,7 +259,9 @@ export default function TeacherApplicationForm() {
                   <option value="Mathematics">Mathematics</option>
                   <option value="Physical Sciences">Physical Sciences</option>
                   <option value="Life Sciences">Life Sciences</option>
-                  <option value="Information Technology">Information Technology</option>
+                  <option value="Information Technology">
+                    Information Technology
+                  </option>
                   <option value="Engineering Graphics & Design">
                     Engineering Graphics & Design
                   </option>
@@ -278,15 +321,56 @@ export default function TeacherApplicationForm() {
               {/* Compliance Docs */}
               <div className="border rounded-lg p-4 bg-blue-50">
                 <h3 className="text-lg font-semibold mb-2">Required Documents</h3>
-                <ul className="list-disc list-inside text-sm text-gray-700 mb-2">
-                  <li>Copy of ID / Passport</li>
-                  <li>Teaching Qualification Certificates</li>
-                  {/* <li>Proof of Address</li> */}
-                  {/* <li>Police Clearance or Background Check</li> */}
-                  <li>CV (Curriculum Vitae)</li>
-                  <li>CETA Certification</li>
-                </ul>
-                <Input type="file" multiple accept=".pdf,image/*" onChange={handleFileChange} />
+
+                <FileInput
+                  label="Copy of ID / Passport *"
+                  files={documents.idDoc}
+                  onChange={(files) => setDocuments({ ...documents, idDoc: files })}
+                  progress={progress.idDoc}
+                />
+
+                <FileInput
+                  label="Teaching Qualification Certificates *"
+                  files={documents.qualification}
+                  onChange={(files) =>
+                    setDocuments({ ...documents, qualification: files })
+                  }
+                  progress={progress.qualification}
+                />
+
+                <FileInput
+                  label="Curriculum Vitae (CV) *"
+                  files={documents.cv}
+                  onChange={(files) => setDocuments({ ...documents, cv: files })}
+                  progress={progress.cv}
+                />
+
+                <FileInput
+                  label="CETA Certification *"
+                  files={documents.ceta}
+                  onChange={(files) => setDocuments({ ...documents, ceta: files })}
+                  progress={progress.ceta}
+                />
+
+                <h3 className="text-lg font-semibold mt-4 mb-2">Optional Documents</h3>
+
+                <FileInput
+                  label="Proof of Address"
+                  files={documents.proofOfAddress}
+                  onChange={(files) =>
+                    setDocuments({ ...documents, proofOfAddress: files })
+                  }
+                  progress={progress.proofOfAddress}
+                />
+
+                <FileInput
+                  label="Police Clearance / Background Check"
+                  files={documents.policeClearance}
+                  onChange={(files) =>
+                    setDocuments({ ...documents, policeClearance: files })
+                  }
+                  progress={progress.policeClearance}
+                />
               </div>
 
               <Button
@@ -302,12 +386,48 @@ export default function TeacherApplicationForm() {
               <h3 className="text-lg font-semibold">Application Submitted!</h3>
               <p className="mt-2 text-sm text-gray-700">
                 Your application ID is: <strong>{successId}</strong>. <br />
-                The principal will review your application. Once approved, your class access will be activated in the dashboard.
+                The principal will review your application. Once approved, your
+                class access will be activated in the dashboard.
               </p>
             </div>
           )}
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+/** 🔹 Reusable file input with preview + progress */
+function FileInput({
+  label,
+  files,
+  onChange,
+  progress,
+}: {
+  label: string;
+  files?: FileList | null;
+  onChange: (files: FileList | null) => void;
+  progress?: number;
+}) {
+  return (
+    <div className="mb-3">
+      <Label>{label}</Label>
+      <Input
+        type="file"
+        accept=".pdf,image/*"
+        onChange={(e) => onChange(e.target.files)}
+      />
+      {files && (
+        <p className="text-sm text-gray-600 mt-1">
+          Selected: {Array.from(files).map((f) => f.name).join(", ")}
+        </p>
+      )}
+      {progress !== undefined && progress > 0 && progress < 100 && (
+        <p className="text-xs text-blue-600 mt-1">Uploading... {progress.toFixed(0)}%</p>
+      )}
+      {progress === 100 && (
+        <p className="text-xs text-green-600 mt-1">Upload complete ✅</p>
+      )}
     </div>
   );
 }

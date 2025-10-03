@@ -1,12 +1,15 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { auth, db } from "@/lib/firebaseConfig"; // adjust path
+import { auth, db } from "@/lib/firebaseConfig"; // adjust path if needed
 import {
   signInWithEmailAndPassword,
   GoogleAuthProvider,
   signInWithPopup,
 } from "firebase/auth";
 import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
+
+// ✅ shadcn/ui components
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 
 export default function LoginForm() {
   const [email, setEmail] = useState("");
@@ -125,11 +128,11 @@ export default function LoginForm() {
 
       {/* Role selection */}
       <div className="mb-4 space-x-2">
-        {["student", "teacher", "parent", "principal"].map((r) => (
+        {(["student", "teacher", "parent", "principal"] as const).map((r) => (
           <button
             key={r}
             onClick={() => {
-              setRole(r as any);
+              setRole(r);
               setTeacherAction("none");
             }}
             className={`px-3 py-1 rounded ${
@@ -164,35 +167,70 @@ export default function LoginForm() {
 
       {/* Login form (for parent + student + principal + teacher sign-in) */}
       {(role && (role !== "teacher" || teacherAction === "signin")) && (
-        <div className="space-y-3">
-          <input
-            type="email"
-            placeholder="Email"
-            className="w-full border p-2 rounded"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-          <input
-            type="password"
-            placeholder="Password"
-            className="w-full border p-2 rounded"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-          <button
-            onClick={handleLogin}
-            className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700"
-          >
-            Login
-          </button>
+        <Card className="p-6 shadow-lg border rounded-2xl bg-white">
+          <CardHeader>
+            <CardTitle className="text-xl font-semibold text-center text-blue-700">
+              Sign in to Your Account
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Email */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Email
+              </label>
+              <input
+                type="email"
+                placeholder="Enter your email"
+                className="w-full border border-gray-300 p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </div>
 
-          <button
-            onClick={handleGoogleLogin}
-            className="w-full bg-red-500 text-white py-2 rounded hover:bg-red-600"
-          >
-            Sign in with Google
-          </button>
-        </div>
+            {/* Password */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Password
+              </label>
+              <input
+                type="password"
+                placeholder="Enter your password"
+                className="w-full border border-gray-300 p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </div>
+
+            {/* Login Button */}
+            <button
+              onClick={handleLogin}
+              className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition"
+            >
+              Login
+            </button>
+
+            {/* Divider */}
+            <div className="flex items-center gap-2 my-2">
+              <div className="flex-1 h-px bg-gray-300"></div>
+              <span className="text-sm text-gray-500">or</span>
+              <div className="flex-1 h-px bg-gray-300"></div>
+            </div>
+
+            {/* Google Login */}
+            <button
+              onClick={handleGoogleLogin}
+              className="w-full bg-red-500 text-white py-3 rounded-lg font-medium hover:bg-red-600 transition flex items-center justify-center gap-2"
+            >
+              <img
+                src="https://www.svgrepo.com/show/355037/google.svg"
+                alt="Google"
+                className="w-5 h-5"
+              />
+              Sign in with Google
+            </button>
+          </CardContent>
+        </Card>
       )}
     </div>
   );
