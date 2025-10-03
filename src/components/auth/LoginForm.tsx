@@ -16,28 +16,13 @@ export default function LoginForm() {
 
   const navigate = useNavigate();
 
+  // 🔑 Email/password login
   const handleLogin = async () => {
     try {
       const userCred = await signInWithEmailAndPassword(auth, email, password);
-
-      if (role === "teacher") navigate("/teacher-dashboard");
-      else if (role === "parent") navigate("/parent-dashboard");
-      else if (role === "student") navigate("/student-dashboard");
-      else if (role === "principal") navigate("/principal-dashboard");
-    } catch (err) {
-      console.error(err);
-      alert("Login failed");
-    }
-  };
-
-  const handleGoogleLogin = async () => {
-    try {
-      const provider = new GoogleAuthProvider();
-      const result = await signInWithPopup(auth, provider);
-      const user = result.user;
+      const user = userCred.user;
 
       if (role === "teacher") {
-        // Ensure teacher profile exists in Firestore
         const teacherRef = doc(db, "teachers", user.uid);
         const teacherSnap = await getDoc(teacherRef);
 
@@ -50,12 +35,83 @@ export default function LoginForm() {
             createdAt: serverTimestamp(),
             status: "pending_review", // principal must approve
           });
-          console.log("New teacher record created in Firestore");
+          navigate("/teacher-application");
+        } else {
+          navigate("/teacher-dashboard");
         }
-        navigate("/teacher-dashboard");
       } else if (role === "parent") {
-        // Similar logic: ensure parent doc exists if needed
-        navigate("/parent-dashboard");
+        const parentRef = doc(db, "parents", user.uid);
+        const parentSnap = await getDoc(parentRef);
+
+        if (!parentSnap.exists()) {
+          await setDoc(parentRef, {
+            uid: user.uid,
+            name: user.displayName || "",
+            email: user.email || "",
+            photoURL: user.photoURL || "",
+            createdAt: serverTimestamp(),
+            status: "pending_registration", // must complete child registration
+          });
+          navigate("/register");
+        } else {
+          navigate("/parent-dashboard");
+        }
+      } else if (role === "student") {
+        navigate("/student-dashboard");
+      } else if (role === "principal") {
+        navigate("/principal-dashboard");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Login failed");
+    }
+  };
+
+  // 🔑 Google login
+  const handleGoogleLogin = async () => {
+    try {
+      const provider = new GoogleAuthProvider();
+      const result = await signInWithPopup(auth, provider);
+      const user = result.user;
+
+      if (role === "teacher") {
+        const teacherRef = doc(db, "teachers", user.uid);
+        const teacherSnap = await getDoc(teacherRef);
+
+        if (!teacherSnap.exists()) {
+          await setDoc(teacherRef, {
+            uid: user.uid,
+            name: user.displayName || "",
+            email: user.email || "",
+            photoURL: user.photoURL || "",
+            createdAt: serverTimestamp(),
+            status: "pending_review",
+          });
+          navigate("/teacher-application");
+        } else {
+          navigate("/teacher-dashboard");
+        }
+      } else if (role === "parent") {
+        const parentRef = doc(db, "parents", user.uid);
+        const parentSnap = await getDoc(parentRef);
+
+        if (!parentSnap.exists()) {
+          await setDoc(parentRef, {
+            uid: user.uid,
+            name: user.displayName || "",
+            email: user.email || "",
+            photoURL: user.photoURL || "",
+            createdAt: serverTimestamp(),
+            status: "pending_registration",
+          });
+          navigate("/register");
+        } else {
+          navigate("/parent-dashboard");
+        }
+      } else if (role === "student") {
+        navigate("/student-dashboard");
+      } else if (role === "principal") {
+        navigate("/principal-dashboard");
       }
     } catch (err) {
       console.error("Google login error:", err);
@@ -106,7 +162,7 @@ export default function LoginForm() {
         </div>
       )}
 
-      {/* Login form (shown for teacher sign-in + all other roles) */}
+      {/* Login form (for parent + student + principal + teacher sign-in) */}
       {(role && (role !== "teacher" || teacherAction === "signin")) && (
         <div className="space-y-3">
           <input
@@ -130,7 +186,6 @@ export default function LoginForm() {
             Login
           </button>
 
-          {/* Google Sign-In */}
           <button
             onClick={handleGoogleLogin}
             className="w-full bg-red-500 text-white py-2 rounded hover:bg-red-600"
