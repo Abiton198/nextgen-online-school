@@ -14,18 +14,22 @@ import { doc, getDoc } from "firebase/firestore";
 import { useNavigate } from "react-router-dom";
 import { LogOut } from "lucide-react";
 
+// 🗂 Available dashboard sections
 const sections = ["Registration", "Payments", "Settings", "Communications", "Status"];
 
 export default function ParentDashboard() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState("Registration");
+
+  // 🔑 Parent profile state
   const [parentName, setParentName] = useState("");
   const [title, setTitle] = useState("Mr/Mrs");
   const [learner, setLearner] = useState<{ firstName?: string; grade?: string } | null>(null);
+
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
-  // 🔎 Fetch parent info
+  // 🔎 Fetch parent profile on mount
   useEffect(() => {
     if (!user?.uid) return;
 
@@ -35,17 +39,18 @@ export default function ParentDashboard() {
         if (parentDoc.exists()) {
           const data = parentDoc.data();
 
-          // If registration not complete → force them back
+          // ⛔ If not submitted → force registration page
           if (data.applicationStatus !== "submitted") {
             navigate("/register");
             return;
           }
 
+          // ✅ Set state from Firestore
           setParentName(data.parentName || "");
           setTitle(data.title || "Mr/Mrs");
           setLearner(data.learnerData || null);
         } else {
-          // If no parent record exists at all → force register
+          // ⛔ If no record at all → force registration
           navigate("/register");
         }
       } catch (err) {
@@ -58,11 +63,13 @@ export default function ParentDashboard() {
     fetchParent();
   }, [user, navigate]);
 
+  // 🔒 Logout
   const handleLogout = async () => {
     await signOut(auth);
     navigate("/signin");
   };
 
+  // 📌 Render section content dynamically
   const renderSection = () => {
     switch (activeTab) {
       case "Registration":
@@ -84,7 +91,7 @@ export default function ParentDashboard() {
 
   return (
     <div className="p-6 space-y-6">
-      {/* Header */}
+      {/* 🔝 Dashboard Header */}
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl font-bold">
@@ -106,7 +113,7 @@ export default function ParentDashboard() {
         </button>
       </div>
 
-      {/* Tabs */}
+      {/* 🗂 Tabs */}
       <div className="flex space-x-4 border-b pb-2">
         {sections.map((s) => (
           <button
@@ -123,7 +130,7 @@ export default function ParentDashboard() {
         ))}
       </div>
 
-      {/* Content */}
+      {/* 📌 Section Content */}
       <Card className="border mt-4">
         <CardHeader>
           <CardTitle>{activeTab} Section</CardTitle>
