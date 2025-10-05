@@ -36,6 +36,7 @@ interface Teacher {
   status: string;
   principalReviewed?: boolean;
   classActivated?: boolean;
+  [key: string]: any;
 }
 
 interface Parent {
@@ -60,13 +61,33 @@ const PrincipalDashboard: React.FC = () => {
   const [payments, setPayments] = useState<Record<string, Payment[]>>({});
   const [searchTerm, setSearchTerm] = useState("");
   const [filter, setFilter] = useState<"all" | "failed" | "latest">("all");
-
   const [time, setTime] = useState(new Date());
+
   const principalName = auth.currentUser?.displayName || "Principal";
   const schoolName = "Springfield Online School";
-
   const { logout } = useAuth();
   const navigate = useNavigate();
+
+  // ✅ NEW — Generic modal state
+  const [selectedItem, setSelectedItem] = useState<any>(null);
+  const [selectedType, setSelectedType] = useState<
+    "teacherApplications" | "registrations" | "parents" | null
+  >(null);
+  const [showModal, setShowModal] = useState(false);
+
+  const openModal = (
+    item: any,
+    type: "teacherApplications" | "registrations" | "parents"
+  ) => {
+    setSelectedItem(item);
+    setSelectedType(type);
+    setShowModal(true);
+  };
+  const closeModal = () => {
+    setSelectedItem(null);
+    setSelectedType(null);
+    setShowModal(false);
+  };
 
   // ⏰ Live clock
   useEffect(() => {
@@ -74,13 +95,13 @@ const PrincipalDashboard: React.FC = () => {
     return () => clearInterval(timer);
   }, []);
 
-  // 🔄 Live Firestore listeners
+  // 🔄 Firestore listeners
   useEffect(() => {
     const unsubRegistrations = onSnapshot(collection(db, "registrations"), async (snap) => {
       const regs = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Registration) }));
       setStudents(regs);
 
-      // Build parents list dynamically
+      // Parents list dynamically
       const parentMap: Record<string, Parent> = {};
       regs.forEach((reg) => {
         if (reg.parentData?.email) {
@@ -102,7 +123,7 @@ const PrincipalDashboard: React.FC = () => {
       });
       setParents(Object.values(parentMap));
 
-      // Fetch payment histories for each student
+      // Payment history
       for (const reg of regs) {
         const payRef = collection(db, "registrations", reg.id, "payments");
         const q = query(payRef, orderBy("processedAt", "desc"));
@@ -122,7 +143,7 @@ const PrincipalDashboard: React.FC = () => {
     };
   }, []);
 
-  // ---------------- Actions ----------------
+  // ---------------- Firestore actions ----------------
   const updateStatus = async (
     col: "registrations" | "teacherApplications",
     id: string,
@@ -174,10 +195,9 @@ const PrincipalDashboard: React.FC = () => {
     payments[s.id]?.some((p) => p.paymentStatus !== "COMPLETE")
   ).length;
 
-  // ---------------- Logout ----------------
   const handleLogout = async () => {
     await logout();
-    navigate("/"); // back to login
+    navigate("/");
   };
 
   // ---------------- Render ----------------
@@ -230,7 +250,7 @@ const PrincipalDashboard: React.FC = () => {
                   <p className="text-xs text-gray-400">Status: {u.status}</p>
                 </div>
 
-                {/* 💳 Payment history */}
+                {/* Payment history (students only) */}
                 {"learnerData" in u && payments[u.id] && (
                   <div className="bg-white border rounded p-2 text-xs">
                     <p className="font-semibold mb-1">Payment History:</p>
@@ -259,29 +279,54 @@ const PrincipalDashboard: React.FC = () => {
                   </div>
                 )}
 
-                {/* Action buttons */}
+                {/* Actions */}
                 {u.status === "pending_review" ? (
                   <div className="flex gap-2">
-                    <Button size="sm" onClick={() => approve(col, u.id)} className="bg-green-600 hover:bg-green-700">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => openModal(u, col)}
+                    >
+                      Review Details
+                    </Button>
+                    <Button
+                      size="sm"
+                      className="bg-green-600 hover:bg-green-700"
+                      onClick={() => approve(col, u.id)}
+                    >
                       Approve
                     </Button>
-                    <Button size="sm" variant="destructive" onClick={() => reject(col, u.id)}>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => reject(col, u.id)}
+                    >
                       Reject
                     </Button>
                   </div>
                 ) : u.status === "suspended" ? (
-                  <Button size="sm" onClick={() => reinstate(col, u.id)} className="bg-green-600 hover:bg-green-700">
+                  <Button
+                    size="sm"
+                    onClick={() => reinstate(col, u.id)}
+                    className="bg-green-600 hover:bg-green-700"
+                  >
                     Reinstate
                   </Button>
                 ) : (
                   <div className="flex gap-2">
-                    <Button size="sm" className="bg-yellow-500 hover:bg-yellow-600" onClick={() => suspend(col, u.id)}>
+                    <Button
+                      size="sm"
+                      className="bg-yellow-500 hover:bg-yellow-600"
+                      onClick={() => suspend(col, u.id)}
+                    >
                       Suspend
                     </Button>
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => freezeClass(col, u.id, u.classActivated === false)}
+                      onClick={() =>
+                        freezeClass(col, u.id, u.classActivated === false)
+                      }
                     >
                       {u.classActivated === false ? "Unfreeze Class" : "Freeze Class"}
                     </Button>
@@ -314,14 +359,14 @@ const PrincipalDashboard: React.FC = () => {
               <li key={p.id} className="p-3 border rounded bg-gray-50">
                 <p className="font-medium">{p.name}</p>
                 <p className="text-xs text-gray-500">{p.email}</p>
-                <p className="text-xs text-gray-400">Children:</p>
-                <ul className="ml-4 list-disc text-xs text-gray-600">
-                  {p.children.map((c, i) => (
-                    <li key={i}>
-                      {c.name} – Grade {c.grade} ({c.status})
-                    </li>
-                  ))}
-                </ul>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => openModal(p, "parents")}
+                  className="mt-2"
+                >
+                  Review Details
+                </Button>
               </li>
             ))}
           </ul>
@@ -333,7 +378,7 @@ const PrincipalDashboard: React.FC = () => {
   // ---------------- Layout ----------------
   return (
     <div className="min-h-screen bg-gray-50 p-6 space-y-6">
-      {/* Welcome + Logout */}
+      {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <h1 className="text-2xl font-bold">Welcome, {principalName} 👋</h1>
         <div className="flex items-center gap-4">
@@ -346,7 +391,7 @@ const PrincipalDashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* Search + Filter + Counter */}
+      {/* Search + Filter */}
       <div className="flex flex-col md:flex-row gap-4 items-center">
         <Input
           type="text"
@@ -375,6 +420,63 @@ const PrincipalDashboard: React.FC = () => {
         {renderCard("Teachers", teachers, "teacherApplications")}
         {renderParents()}
       </div>
+
+      {/* ✅ Universal Review Modal */}
+      {showModal && selectedItem && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 relative">
+            <button
+              className="absolute top-3 right-3 text-gray-500 hover:text-black"
+              onClick={closeModal}
+            >
+              ✕
+            </button>
+            <h2 className="text-xl font-bold mb-4">
+              Review {selectedType === "teacherApplications"
+                ? "Teacher Application"
+                : selectedType === "registrations"
+                ? "Student Registration"
+                : "Parent Record"}
+            </h2>
+
+            {/* Display all object fields */}
+            <div className="space-y-3 text-sm">
+              {Object.entries(selectedItem).map(([key, value]) => (
+                <p key={key}>
+                  <strong>{key}:</strong>{" "}
+                  {typeof value === "object"
+                    ? JSON.stringify(value, null, 2)
+                    : String(value)}
+                </p>
+              ))}
+            </div>
+
+            {/* Approve/Reject buttons only for Teachers and Students */}
+            {selectedType !== "parents" && (
+              <div className="mt-6 flex justify-end gap-3">
+                <Button
+                  className="bg-green-600 hover:bg-green-700"
+                  onClick={() => {
+                    approve(selectedType as any, selectedItem.id);
+                    closeModal();
+                  }}
+                >
+                  Approve
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => {
+                    reject(selectedType as any, selectedItem.id);
+                    closeModal();
+                  }}
+                >
+                  Reject
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
