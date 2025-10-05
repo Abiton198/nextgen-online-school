@@ -12,12 +12,8 @@ import {
   orderBy,
   getDocs,
 } from "firebase/firestore";
-import {
-  getStorage,
-  ref,
-  listAll,
-  getDownloadURL,
-} from "firebase/storage";
+import { getStorage, ref, listAll, getDownloadURL } from "firebase/storage";
+
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,10 +31,16 @@ interface Registration {
 }
 
 interface Teacher {
-  id: string;
+  id: string; // applicationId
+  uid?: string; // teacher’s Firebase Auth UID
   firstName?: string;
   lastName?: string;
   email?: string;
+  gender?: string;
+  country?: string;
+  contact?: string;
+  qualification?: string;
+  references?: { name: string; contact: string }[];
   status: string;
   principalReviewed?: boolean;
   classActivated?: boolean;
@@ -61,6 +63,7 @@ interface Payment {
 
 /* ---------------- Main Component ---------------- */
 const PrincipalDashboard: React.FC = () => {
+  /* ---------------- State ---------------- */
   const [students, setStudents] = useState<Registration[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [parents, setParents] = useState<Parent[]>([]);
@@ -80,7 +83,11 @@ const PrincipalDashboard: React.FC = () => {
     "teacherApplications" | "registrations" | "parents" | null
   >(null);
   const [showModal, setShowModal] = useState(false);
-  const [documents, setDocuments] = useState<Record<string, { name: string; url: string }[]>>({});
+  const [documents, setDocuments] = useState<
+    Record<string, { name: string; url: string }[]>
+  >({});
+  const [activeTab, setActiveTab] = useState<"Details" | "Documents">("Details");
+
 
   /* ---------------- Utilities ---------------- */
   const openModal = async (
@@ -91,8 +98,11 @@ const PrincipalDashboard: React.FC = () => {
     setSelectedType(type);
     setShowModal(true);
 
-    // Load documents only for teacher/student
-    if (type !== "parents") {
+    // Load documents if teacher or student
+    if (type === "teacherApplications") {
+      const docs = await fetchDocuments(type, item.id, item.uid);
+      setDocuments(docs);
+    } else if (type === "registrations") {
       const docs = await fetchDocuments(type, item.id);
       setDocuments(docs);
     } else {
@@ -115,11 +125,12 @@ const PrincipalDashboard: React.FC = () => {
 
   /* ---------------- Firestore Listeners ---------------- */
   useEffect(() => {
+    // Students
     const unsubRegistrations = onSnapshot(collection(db, "registrations"), async (snap) => {
       const regs = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Registration) }));
       setStudents(regs);
 
-      // Build parent list dynamically
+      // Parents aggregation
       const parentMap: Record<string, Parent> = {};
       regs.forEach((reg) => {
         if (reg.parentData?.email) {
@@ -151,6 +162,7 @@ const PrincipalDashboard: React.FC = () => {
       }
     });
 
+    // Teachers
     const unsubTeachers = onSnapshot(collection(db, "teacherApplications"), (snap) => {
       setTeachers(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Teacher) })));
     });
@@ -194,19 +206,18 @@ const PrincipalDashboard: React.FC = () => {
   const freezeClass = (col: "registrations" | "teacherApplications", id: string, frozen: boolean) =>
     updateStatus(col, id, { classActivated: !frozen });
 
-  /* ---------------- Fetch Documents from Firebase Storage ---------------- */
+  /* ---------------- Fetch Documents ---------------- */
   const fetchDocuments = async (
     col: "registrations" | "teacherApplications",
-    id: string
+    id: string,
+    uid?: string
   ): Promise<Record<string, { name: string; url: string }[]>> => {
     const storage = getStorage();
 
-    // Recursive function to fetch all files grouped by folder
     const getAllFiles = async (folderRef: any): Promise<Record<string, { name: string; url: string }[]>> => {
       const result = await listAll(folderRef);
       const grouped: Record<string, { name: string; url: string }[]> = {};
 
-      // Add direct files
       if (result.items.length > 0) {
         const folderName = folderRef.name || "root";
         grouped[folderName] = await Promise.all(
@@ -217,7 +228,6 @@ const PrincipalDashboard: React.FC = () => {
         );
       }
 
-      // Process subfolders recursively
       for (const subRef of result.prefixes) {
         const subFiles = await getAllFiles(subRef);
         Object.entries(subFiles).forEach(([folder, files]) => {
@@ -229,7 +239,13 @@ const PrincipalDashboard: React.FC = () => {
     };
 
     try {
-      const rootRef = ref(storage, `${col}/${id}`);
+      let rootRef;
+      if (col === "teacherApplications" && uid) {
+        rootRef = ref(storage, `teacherApplications/${uid}/${id}/documents`);
+      } else {
+        rootRef = ref(storage, `${col}/${id}/documents`);
+      }
+
       const allFiles = await getAllFiles(rootRef);
       return allFiles;
     } catch (err) {
@@ -388,92 +404,143 @@ const PrincipalDashboard: React.FC = () => {
         {renderCard("Teachers", teachers, "teacherApplications")}
       </div>
 
-      {/* ✅ Review Modal with Inline Previews */}
-      {showModal && selectedItem && (
-        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-lg w-full max-w-3xl max-h-[90vh] overflow-y-auto p-6 relative">
-            <button
-              className="absolute top-3 right-3 text-gray-500 hover:text-black"
-              onClick={closeModal}
-            >
-              ✕
-            </button>
+      {/* ✅ Review Modal */}
+     {/* ✅ Review Modal with Tabs */}
+{showModal && selectedItem && (
+  <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+    <div className="bg-white rounded-xl shadow-lg w-full max-w-3xl max-h-[90vh] overflow-y-auto p-6 relative">
+      <button
+        className="absolute top-3 right-3 text-gray-500 hover:text-black"
+        onClick={closeModal}
+      >
+        ✕
+      </button>
 
-            <h2 className="text-xl font-bold mb-4">
-              Review {selectedType === "teacherApplications" ? "Teacher Application" : "Student Registration"}
-            </h2>
+      <h2 className="text-xl font-bold mb-4">
+        Review {selectedType === "teacherApplications" ? "Teacher Application" : "Student Registration"}
+      </h2>
 
-            {/* Document Section */}
-            <div className="space-y-4">
-              {Object.keys(documents).length > 0 ? (
-                Object.entries(documents).map(([folder, files]) => (
-                  <div key={folder} className="border rounded-lg p-3 bg-gray-50">
-                    <h4 className="font-medium text-blue-700 capitalize mb-2">
-                      📁 {folder}
-                    </h4>
-                    {files.map((file) => (
-                      <div key={file.name} className="mb-3">
-                        <p className="text-sm font-semibold">{file.name}</p>
+      {/* --- Tabs --- */}
+      <div className="flex border-b mb-4">
+        {["Details", "Documents"].map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition ${
+              activeTab === tab
+                ? "border-blue-600 text-blue-600"
+                : "border-transparent text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            {tab}
+          </button>
+        ))}
+      </div>
 
-                        {/* Inline Preview */}
-                        {file.name.match(/\.(jpg|jpeg|png)$/i) && (
-                          <img
-                            src={file.url}
-                            alt={file.name}
-                            className="mt-2 rounded-lg border max-h-64 object-contain"
-                          />
-                        )}
-                        {file.name.match(/\.pdf$/i) && (
-                          <iframe
-                            src={file.url}
-                            className="w-full h-64 mt-2 border rounded"
-                            title={file.name}
-                          ></iframe>
-                        )}
+      {/* --- Tab Content --- */}
+      {activeTab === "Details" && selectedType === "teacherApplications" && (
+        <>
+          <div className="border rounded-lg p-4 bg-gray-50 mb-6">
+            <h3 className="text-lg font-semibold mb-3">👩‍🏫 Personal Information</h3>
+            <p><span className="font-medium">Name:</span> {selectedItem.firstName} {selectedItem.lastName}</p>
+            <p><span className="font-medium">Email:</span> {selectedItem.email}</p>
+            <p><span className="font-medium">Status:</span> {selectedItem.status}</p>
+            {selectedItem.gender && <p><span className="font-medium">Gender:</span> {selectedItem.gender}</p>}
+            {selectedItem.country && <p><span className="font-medium">Country:</span> {selectedItem.country}</p>}
+            {selectedItem.contact && <p><span className="font-medium">Contact:</span> {selectedItem.contact}</p>}
+          </div>
 
-                        <a
-                          href={file.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-blue-600 underline text-sm mt-1 inline-block"
-                        >
-                          View / Download
-                        </a>
-                      </div>
-                    ))}
-                  </div>
-                ))
-              ) : (
-                <p className="text-sm text-gray-500">No documents uploaded yet.</p>
-              )}
-            </div>
-
-            {/* Approve/Reject Buttons */}
-            {selectedType !== "parents" && (
-              <div className="mt-6 flex justify-end gap-3">
-                <Button
-                  className="bg-green-600 hover:bg-green-700"
-                  onClick={() => {
-                    approve(selectedType as any, selectedItem.id);
-                    closeModal();
-                  }}
-                >
-                  Approve
-                </Button>
-                <Button
-                  variant="destructive"
-                  onClick={() => {
-                    reject(selectedType as any, selectedItem.id);
-                    closeModal();
-                  }}
-                >
-                  Reject
-                </Button>
-              </div>
+          <div className="border rounded-lg p-4 bg-gray-50 mb-6">
+            <h3 className="text-lg font-semibold mb-3">🎓 Qualifications</h3>
+            {selectedItem.qualification ? (
+              <p>{selectedItem.qualification}</p>
+            ) : (
+              <p className="text-sm text-gray-500">No qualifications provided</p>
             )}
           </div>
+
+          {selectedItem.references && (
+            <div className="border rounded-lg p-4 bg-gray-50 mb-6">
+              <h3 className="text-lg font-semibold mb-3">📌 References</h3>
+              {selectedItem.references.map((ref: any, i: number) => (
+                <div key={i} className="mb-2">
+                  <p><span className="font-medium">Name:</span> {ref.name}</p>
+                  <p><span className="font-medium">Contact:</span> {ref.contact}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {activeTab === "Documents" && (
+        <div className="border rounded-lg p-4 bg-gray-50">
+          <h3 className="text-lg font-semibold mb-3">📂 Documents</h3>
+          {Object.keys(documents).length > 0 ? (
+            Object.entries(documents).map(([folder, files]) => (
+              <div key={folder} className="mb-4">
+                <h4 className="font-medium text-blue-700 mb-2">{folder}</h4>
+                {files.map((file) => (
+                  <div key={file.name} className="mb-3">
+                    <p className="text-sm font-semibold">{file.name}</p>
+                    {file.name.match(/\.(jpg|jpeg|png)$/i) && (
+                      <img
+                        src={file.url}
+                        alt={file.name}
+                        className="mt-2 rounded border max-h-64 object-contain"
+                      />
+                    )}
+                    {file.name.match(/\.pdf$/i) && (
+                      <iframe
+                        src={file.url}
+                        className="w-full h-64 mt-2 border rounded"
+                        title={file.name}
+                      ></iframe>
+                    )}
+                    <a
+                      href={file.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 underline text-sm mt-1 inline-block"
+                    >
+                      View / Download
+                    </a>
+                  </div>
+                ))}
+              </div>
+            ))
+          ) : (
+            <p className="text-sm text-gray-500">No documents uploaded yet.</p>
+          )}
         </div>
       )}
+
+      {/* Approve/Reject Buttons */}
+      {selectedType !== "parents" && (
+        <div className="mt-6 flex justify-end gap-3">
+          <Button
+            className="bg-green-600 hover:bg-green-700"
+            onClick={() => {
+              approve(selectedType as any, selectedItem.id);
+              closeModal();
+            }}
+          >
+            Approve
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={() => {
+              reject(selectedType as any, selectedItem.id);
+              closeModal();
+            }}
+          >
+            Reject
+          </Button>
+        </div>
+      )}
+    </div>
+  </div>
+)}
     </div>
   );
 };
