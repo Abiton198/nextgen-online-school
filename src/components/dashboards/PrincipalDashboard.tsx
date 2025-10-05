@@ -523,46 +523,65 @@ const PrincipalDashboard: React.FC = () => {
 
             {/* Documents */}
             {activeTab === "Documents" && (
-              <div className="border rounded-lg p-4 bg-gray-50">
-                <h3 className="text-lg font-semibold mb-3">📂 Documents</h3>
-                {Object.keys(documents).length > 0 ? (
-                  Object.entries(documents).map(([folder, files]) => (
-                    <div key={folder} className="mb-4">
-                      <h4 className="font-medium text-blue-700 mb-2">{folder}</h4>
-                      {files.map((file) => (
-                        <div key={file.name} className="mb-3">
-                          <p className="text-sm font-semibold">{file.name}</p>
-                          {file.name.match(/\.(jpg|jpeg|png)$/i) && (
-                            <img
-                              src={file.url}
-                              alt={file.name}
-                              className="mt-2 rounded border max-h-64 object-contain"
-                            />
-                          )}
-                          {file.name.match(/\.pdf$/i) && (
-                            <iframe
-                              src={file.url}
-                              className="w-full h-64 mt-2 border rounded"
-                              title={file.name}
-                            ></iframe>
-                          )}
-                          <a
-                            href={file.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-600 underline text-sm mt-1 inline-block"
-                          >
-                            View / Download
-                          </a>
-                        </div>
-                      ))}
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-sm text-gray-500">No documents uploaded yet.</p>
-                )}
-              </div>
-            )}
+  <div className="border rounded-lg p-4 bg-gray-50">
+    <h3 className="text-lg font-semibold mb-3">📂 Documents</h3>
+    {Object.keys(documents).length > 0 ? (
+      Object.entries(documents).map(([folder, files]) => (
+        <div key={folder} className="mb-6">
+          <h4 className="font-medium text-blue-700 mb-2">{folder}</h4>
+          {files.map((file) => (
+            <div key={file.name} className="mb-4">
+              <p className="text-sm font-semibold">{file.name}</p>
+
+              {/* ✅ Image Preview */}
+              {file.name.match(/\.(jpg|jpeg|png|gif|webp)$/i) && (
+                <img
+                  src={file.url}
+                  alt={file.name}
+                  className="mt-2 rounded border max-h-96 object-contain"
+                />
+              )}
+
+              {/* ✅ PDF Preview */}
+              {file.name.match(/\.pdf$/i) && (
+                <iframe
+                  src={file.url}
+                  className="w-full h-[600px] mt-2 border rounded"
+                  title={file.name}
+                ></iframe>
+              )}
+
+              {/* ✅ Word / Excel / PPT Preview via Google Docs Viewer */}
+              {file.name.match(/\.(docx?|xlsx?|pptx?)$/i) && (
+                <iframe
+                  src={`https://docs.google.com/gview?url=${encodeURIComponent(
+                    file.url
+                  )}&embedded=true`}
+                  className="w-full h-[600px] mt-2 border rounded"
+                  title={file.name}
+                ></iframe>
+              )}
+
+              {/* Fallback: show link if unsupported */}
+              {!file.name.match(/\.(jpg|jpeg|png|gif|webp|pdf|docx?|xlsx?|pptx?)$/i) && (
+                <a
+                  href={file.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 underline text-sm mt-2 inline-block"
+                >
+                  View / Download
+                </a>
+              )}
+            </div>
+          ))}
+        </div>
+      ))
+    ) : (
+      <p className="text-sm text-gray-500">No documents uploaded yet.</p>
+    )}
+  </div>
+)}
 
             {/* Approve / Reject */}
             {selectedType !== "parents" && (
