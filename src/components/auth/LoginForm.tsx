@@ -1,3 +1,5 @@
+"use client";
+
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { auth, db } from "@/lib/firebaseConfig";
@@ -16,14 +18,12 @@ export default function LoginForm() {
   const [role, setRole] = useState<
     "student" | "teacher" | "parent" | "principal" | null
   >(null);
-  const [teacherAction, setTeacherAction] = useState<"none" | "apply" | "signin">(
-    "none"
-  );
+  const [teacherAction, setTeacherAction] = useState<"none" | "apply" | "signin">("none");
   const [isParentSignup, setIsParentSignup] = useState(false);
 
   const navigate = useNavigate();
 
-  // ✅ Handle Login or Signup
+  /* -------------------- Handle Login/Signup -------------------- */
   const handleLoginOrSignup = async () => {
     if (!role) {
       alert("Please select your role first.");
@@ -33,7 +33,7 @@ export default function LoginForm() {
     try {
       let userCred;
 
-      // 🟢 Parent signup
+      // 🟢 Parent signup flow
       if (role === "parent" && isParentSignup) {
         userCred = await createUserWithEmailAndPassword(auth, email, password);
         const user = userCred.user;
@@ -46,52 +46,65 @@ export default function LoginForm() {
           status: "pending_registration",
         });
 
-        alert("Signup successful! Redirecting to dashboard...");
+        alert("Signup successful! Redirecting to parent dashboard...");
         navigate("/parent-dashboard");
         return;
       }
 
-      // 🟢 Regular login
+      // 🟢 Normal login
       userCred = await signInWithEmailAndPassword(auth, email, password);
       const user = userCred.user;
 
-      // 🔒 Secure principal check
       if (role === "principal") {
+        // 🔒 Verify principal exists
         const principalRef = doc(db, "principals", user.uid);
         const principalSnap = await getDoc(principalRef);
-
         if (!principalSnap.exists()) {
           alert("Access denied. You are not authorized as a principal.");
           return;
         }
-
         navigate("/principal-dashboard");
         return;
       }
 
-      // ✅ Normal routing
-      switch (role) {
-        case "teacher":
+      if (role === "teacher") {
+        // 🔒 Verify teacher status
+        const teacherRef = doc(db, "teachers", user.uid);
+        const teacherSnap = await getDoc(teacherRef);
+
+        if (!teacherSnap.exists()) {
+          alert("No teacher profile found. Please apply first.");
+          navigate("/teacher-application");
+          return;
+        }
+
+        const teacherData = teacherSnap.data();
+        if (teacherData?.status === "approved") {
           navigate("/teacher-dashboard");
-          break;
-        case "parent":
-          navigate("/parent-dashboard");
-          break;
-        case "student":
-          navigate("/student-dashboard");
-          break;
+        } else {
+          alert("Your application is still under review.");
+          navigate("/teacher-application");
+        }
+        return;
+      }
+
+      // Students & Parents
+      if (role === "student") {
+        navigate("/student-dashboard");
+      } else if (role === "parent") {
+        navigate("/parent-dashboard");
       }
     } catch (err: any) {
-      console.error(err);
+      console.error("Login error:", err);
       alert(
         isParentSignup
-          ? "Signup failed. Please check your details and try again."
-          : "Login failed. Check your email or password."
+          ? "Signup failed. Please try again."
+          : "Login failed. Please check your email or password."
       );
     }
   };
 
-  // ✅ Google login
+  /* -------------------- Google Login -------------------- */
   const handleGoogleLogin = async () => {
     if (!role) {
       alert("Please select your role before using Google login.");
@@ -108,6 +121,7 @@ export default function LoginForm() {
         const teacherSnap = await getDoc(teacherRef);
 
         if (!teacherSnap.exists()) {
+          // Create pending teacher profile
           await setDoc(teacherRef, {
             uid: user.uid,
             name: user.displayName || "",
@@ -116,10 +130,22 @@ export default function LoginForm() {
             createdAt: serverTimestamp(),
             status: "pending_review",
           });
+          alert("Application submitted. Please wait for approval.");
+          navigate("/teacher-application");
+          return;
         }
 
-        navigate("/teacher-dashboard");
-      } else if (role === "parent") {
+        const teacherData = teacherSnap.data();
+        if (teacherData?.status === "approved") {
+          navigate("/teacher-dashboard");
+        } else {
+          alert("Your application is still under review.");
+          navigate("/teacher-application");
+        }
+        return;
+      }
+
+      if (role === "parent") {
         const parentRef = doc(db, "parents", user.uid);
         const parentSnap = await getDoc(parentRef);
 
@@ -133,20 +159,22 @@ export default function LoginForm() {
             status: "pending_registration",
           });
         }
-
         navigate("/parent-dashboard");
-      } else if (role === "student") {
+        return;
+      }
+
+      if (role === "student") {
         navigate("/student-dashboard");
-      } else if (role === "principal") {
-        // 🔒 Verify principal authorization before allowing access
+        return;
+      }
+
+      if (role === "principal") {
         const principalRef = doc(db, "principals", user.uid);
         const principalSnap = await getDoc(principalRef);
-
         if (!principalSnap.exists()) {
           alert("Access denied. You are not authorized as a principal.");
           return;
         }
-
         navigate("/principal-dashboard");
       }
     } catch (err) {
@@ -155,14 +183,12 @@ export default function LoginForm() {
     }
   };
 
-  // ✅ Close login modal or page
-  const handleClose = () => {
-    navigate("/"); // Redirect to your home or landing route
-  };
+  const handleClose = () => navigate("/");
 
+  /* -------------------- UI -------------------- */
   return (
     <div className="max-w-md mx-auto p-6 border rounded bg-white shadow relative">
-      {/* 🔴 Close Button */}
+      {/* 🔴 Close */}
       <button
         onClick={handleClose}
         className="absolute top-2 right-2 text-gray-600 hover:text-red-500 text-xl font-bold"
@@ -225,11 +251,9 @@ export default function LoginForm() {
           </CardHeader>
 
           <CardContent className="space-y-4">
-            {/* Email Field */}
+            {/* Email */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Email
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
               <input
                 type="email"
                 placeholder="Enter your email"
@@ -239,11 +263,9 @@ export default function LoginForm() {
               />
             </div>
 
-            {/* Password Field */}
+            {/* Password */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Password
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
               <input
                 type="password"
                 placeholder="Enter your password"
@@ -253,7 +275,7 @@ export default function LoginForm() {
               />
             </div>
 
-            {/* Login / Signup Button */}
+            {/* Login/Signup Btn */}
             <button
               onClick={handleLoginOrSignup}
               className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition"
@@ -261,7 +283,7 @@ export default function LoginForm() {
               {role === "parent" && isParentSignup ? "Signup" : "Login"}
             </button>
 
-            {/* 👨‍👩‍👧 Parent Signup / Login Toggle */}
+            {/* 👨‍👩‍👧 Parent toggle */}
             {role === "parent" && (
               <p className="text-center text-sm text-gray-600">
                 {isParentSignup ? (
