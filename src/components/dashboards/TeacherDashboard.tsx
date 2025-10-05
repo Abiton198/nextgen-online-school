@@ -5,6 +5,7 @@ import { useAuth } from "../auth/AuthProvider";
 import {
   collection,
   collectionGroup,
+  doc,
   onSnapshot,
   orderBy,
   query,
@@ -39,22 +40,16 @@ const TeacherDashboard: React.FC = () => {
   const [coursework, setCoursework] = useState<any[]>([]);
   const [submissions, setSubmissions] = useState<any[]>([]);
 
-  // ---------------- Live Teacher Application Profile ----------------
+  /* ---------------- Listen to Teacher Profile ---------------- */
   useEffect(() => {
     if (!user?.uid) return;
-
     setLoadingProfile(true);
 
-    const q = query(
-      collection(db, "teacherApplications"),
-      where("uid", "==", user.uid)
-    );
-
     const unsub = onSnapshot(
-      q,
+      doc(db, "teachers", user.uid), // ✅ canonical teacher profile
       (snap) => {
-        if (!snap.empty) {
-          setProfile(snap.docs[0].data() as TeacherProfile);
+        if (snap.exists()) {
+          setProfile(snap.data() as TeacherProfile);
         } else {
           setProfile(null);
         }
@@ -69,7 +64,7 @@ const TeacherDashboard: React.FC = () => {
     return () => unsub();
   }, [user?.uid]);
 
-  // ---------------- Guards ----------------
+  /* ---------------- Guards ---------------- */
   if (!user) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -93,17 +88,15 @@ const TeacherDashboard: React.FC = () => {
       <div className="min-h-screen flex items-center justify-center">
         <Alert variant="destructive">
           <AlertDescription>
-            No teacher application found. Please complete your application.
+            No teacher profile found. Please complete your application.
           </AlertDescription>
         </Alert>
       </div>
     );
   }
 
-  // ---------------- Status Banner ----------------
+  /* ---------------- Status Banner ---------------- */
   const renderStatusBanner = () => {
-    if (!profile) return null;
-
     if (profile.status === "approved" && profile.classActivated) {
       return (
         <div className="bg-green-600 text-white text-center py-2">
@@ -128,6 +121,7 @@ const TeacherDashboard: React.FC = () => {
     );
   };
 
+  // 🚧 Block access until approved + activated
   if (profile.status !== "approved" || !profile.classActivated) {
     return (
       <div className="min-h-screen flex flex-col">
@@ -143,7 +137,7 @@ const TeacherDashboard: React.FC = () => {
     );
   }
 
-  // ---------------- Realtime Firestore listeners ----------------
+  /* ---------------- Realtime Classroom Listeners ---------------- */
   useEffect(() => {
     if (!user?.uid) return;
 
@@ -181,7 +175,7 @@ const TeacherDashboard: React.FC = () => {
     };
   }, [user?.uid]);
 
-  // ---------------- Derived stats ----------------
+  /* ---------------- Derived Stats ---------------- */
   const pendingToGrade = useMemo(
     () =>
       submissions.filter(
@@ -190,7 +184,7 @@ const TeacherDashboard: React.FC = () => {
     [submissions]
   );
 
-  // ---------------- Connect / Sync handler ----------------
+  /* ---------------- Sync Handler ---------------- */
   const connectingRef = useRef(false);
 
   const handleConnectOrSync = async () => {
@@ -213,13 +207,13 @@ const TeacherDashboard: React.FC = () => {
     }
   };
 
-  // 🚪 logout
+  /* ---------------- Logout ---------------- */
   const handleLogout = async () => {
     await logout();
-    navigate("/"); // back to login
+    navigate("/");
   };
 
-  // ---------------- UI ----------------
+  /* ---------------- UI ---------------- */
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       {renderStatusBanner()}
