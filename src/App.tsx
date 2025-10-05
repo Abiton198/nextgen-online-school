@@ -10,6 +10,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 
 import { AuthProvider } from "@/components/auth/AuthProvider";
+import { ProtectedRoute } from "@/components/auth/ProtectedRoute"; // ✅ import
 
 // Auth Pages
 import LoginForm from "@/components/auth/LoginForm";
@@ -65,12 +66,47 @@ const App: React.FC = () => {
                 <Route path="/suspended" element={<SuspendedScreen />} />
                 <Route path="/teacher-application" element={<TeacherApplicationForm />} />
 
-                {/* 🧭 Dashboards */}
-                <Route path="/admin-dashboard" element={<AdminDashboard />} />
-                <Route path="/teacher-dashboard" element={<TeacherDashboard />} />
-                <Route path="/student-dashboard" element={<StudentDashboard />} />
-                <Route path="/parent-dashboard" element={<ParentDashboard />} />
-                <Route path="/principal-dashboard" element={<PrincipalDashboard />} />
+                {/* 🧭 Dashboards (protected by role) */}
+                <Route
+                  path="/admin-dashboard"
+                  element={
+                    <ProtectedRoute allowedRoles={["admin"]}>
+                      <AdminDashboard />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/teacher-dashboard"
+                  element={
+                    <ProtectedRoute allowedRoles={["teacher"]}>
+                      <TeacherDashboard />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/student-dashboard"
+                  element={
+                    <ProtectedRoute allowedRoles={["student"]}>
+                      <StudentDashboard />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/parent-dashboard"
+                  element={
+                    <ProtectedRoute allowedRoles={["parent"]}>
+                      <ParentDashboard />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/principal-dashboard"
+                  element={
+                    <ProtectedRoute allowedRoles={["principal"]}>
+                      <PrincipalDashboard />
+                    </ProtectedRoute>
+                  }
+                />
 
                 {/* 🚫 Fallback for invalid URLs */}
                 <Route path="*" element={<NotFound />} />
