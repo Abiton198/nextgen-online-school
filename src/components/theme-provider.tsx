@@ -1,8 +1,5 @@
-"use client"
-
 import * as React from "react"
 import { createContext, useContext, useEffect, useState } from "react"
-import { ThemeProviderProps } from "next-themes/dist/types"
 
 type Theme = "dark" | "light" | "system"
 
@@ -16,15 +13,17 @@ const ThemeContext = createContext<ThemeContextType | null>(null)
 export function ThemeProvider({
   children,
   defaultTheme = "system",
-  value: _value,
-  ...props
-}: ThemeProviderProps) {
+}: React.PropsWithChildren<{ defaultTheme?: Theme }>) {
   const [theme, setTheme] = useState<Theme>(() => {
     if (typeof window !== "undefined") {
       const savedTheme = localStorage.getItem("theme")
-      return (savedTheme && (savedTheme === "dark" || savedTheme === "light" || savedTheme === "system")
-        ? savedTheme
-        : defaultTheme) as Theme
+      return (
+        savedTheme === "dark" ||
+        savedTheme === "light" ||
+        savedTheme === "system"
+          ? savedTheme
+          : defaultTheme
+      ) as Theme
     }
     return defaultTheme as Theme
   })
@@ -39,10 +38,9 @@ export function ThemeProvider({
         ? "dark"
         : "light"
       root.classList.add(systemTheme)
-      return
+    } else {
+      root.classList.add(theme)
     }
-
-    root.classList.add(theme)
   }, [theme])
 
   const value: ThemeContextType = {
@@ -54,7 +52,7 @@ export function ThemeProvider({
   }
 
   return (
-    <ThemeContext.Provider value={value} {...props}>
+    <ThemeContext.Provider value={value}>
       {children}
     </ThemeContext.Provider>
   )

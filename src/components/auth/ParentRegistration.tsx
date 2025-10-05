@@ -27,10 +27,24 @@ const ParentRegistration: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!declarationAccepted || !currentUser) return;
+    console.log("✅ Submit clicked");
+
+    if (!declarationAccepted) {
+      alert("Please accept the declaration before submitting.");
+      console.warn("❌ Declaration not accepted");
+      return;
+    }
+
+    if (!currentUser) {
+      alert("No user is logged in. Please log in again.");
+      console.warn("❌ No currentUser");
+      return;
+    }
 
     setLoading(true);
     try {
+      console.log("🔄 Preparing Firestore doc for:", currentUser.uid);
+
       const parentRef = doc(db, "parents", currentUser.uid);
 
       // ✏️ Split learner name
@@ -40,6 +54,7 @@ const ParentRegistration: React.FC = () => {
       // 📂 Upload documents
       const docUrls: string[] = [];
       if (documents) {
+        console.log("📂 Uploading", documents.length, "files");
         for (const file of Array.from(documents)) {
           const storageRef = ref(
             storage,
@@ -52,6 +67,7 @@ const ParentRegistration: React.FC = () => {
       }
 
       // 📝 Save parent record in Firestore
+      console.log("📝 Writing parent record to Firestore…");
       await setDoc(
         parentRef,
         {
@@ -71,10 +87,10 @@ const ParentRegistration: React.FC = () => {
         { merge: true }
       );
 
-      // 🚀 Redirect straight to dashboard
+      console.log("✅ Firestore save success, redirecting…");
       navigate("/parent-dashboard");
     } catch (err) {
-      console.error("Error saving registration:", err);
+      console.error("❌ Error saving registration:", err);
       alert("Something went wrong. Please try again.");
     } finally {
       setLoading(false);
@@ -90,7 +106,7 @@ const ParentRegistration: React.FC = () => {
         <div className="border rounded-lg p-6 bg-gray-50">
           <h3 className="text-lg font-semibold mb-3">Parent Information</h3>
           <p className="text-sm text-gray-600 mb-2">
-            Logged in as: <b>{currentUser?.email}</b>
+            Logged in as: <b>{currentUser?.email ?? "Not logged in"}</b>
           </p>
           <Label>Full Name</Label>
           <Input
