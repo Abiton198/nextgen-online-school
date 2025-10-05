@@ -12,6 +12,12 @@ import {
   orderBy,
   getDocs,
 } from "firebase/firestore";
+import {
+  getStorage,
+  ref,
+  listAll,
+  getDownloadURL,
+} from "firebase/storage";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,6 +59,11 @@ interface Payment {
   processedAt: any;
 }
 
+interface DocumentFile {
+  name: string;
+  url: string;
+}
+
 // ---------------- Principal Dashboard ----------------
 const PrincipalDashboard: React.FC = () => {
   const [students, setStudents] = useState<Registration[]>([]);
@@ -68,26 +79,13 @@ const PrincipalDashboard: React.FC = () => {
   const { logout } = useAuth();
   const navigate = useNavigate();
 
-  // ✅ NEW — Generic modal state
   const [selectedItem, setSelectedItem] = useState<any>(null);
   const [selectedType, setSelectedType] = useState<
     "teacherApplications" | "registrations" | "parents" | null
   >(null);
   const [showModal, setShowModal] = useState(false);
 
-  const openModal = (
-    item: any,
-    type: "teacherApplications" | "registrations" | "parents"
-  ) => {
-    setSelectedItem(item);
-    setSelectedType(type);
-    setShowModal(true);
-  };
-  const closeModal = () => {
-    setSelectedItem(null);
-    setSelectedType(null);
-    setShowModal(false);
-  };
+  const storage = getStorage();
 
   // ⏰ Live clock
   useEffect(() => {
@@ -101,7 +99,6 @@ const PrincipalDashboard: React.FC = () => {
       const regs = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Registration) }));
       setStudents(regs);
 
-      // Parents list dynamically
       const parentMap: Record<string, Parent> = {};
       regs.forEach((reg) => {
         if (reg.parentData?.email) {
@@ -123,7 +120,6 @@ const PrincipalDashboard: React.FC = () => {
       });
       setParents(Object.values(parentMap));
 
-      // Payment history
       for (const reg of regs) {
         const payRef = collection(db, "registrations", reg.id, "payments");
         const q = query(payRef, orderBy("processedAt", "desc"));
@@ -176,7 +172,52 @@ const PrincipalDashboard: React.FC = () => {
   const freezeClass = (col: "registrations" | "teacherApplications", id: string, frozen: boolean) =>
     updateStatus(col, id, { classActivated: !frozen });
 
-  // ---------------- Helpers ----------------
+  // ---------------- Storage Helpers ----------------
+  const fetchDocuments = async (
+    col: "registrations" | "teacherApplications",
+    id: string
+  ): Promise<DocumentFile[]> => {
+    try {
+      const folderRef = ref(storage, `uploads/${col}/${id}`);
+      const result = await listAll(folderRef);
+      const files = await Promise.all(
+        result.items.map(async (item) => ({
+          name: item.name,
+          url: await getDownloadURL(item),
+        }))
+      );
+      return files;
+    } catch (err) {
+      console.error("Error fetching documents:", err);
+      return [];
+    }
+  };
+
+  // ---------------- Modal ----------------
+  const openModal = async (
+    item: any,
+    type: "teacherApplications" | "registrations" | "parents"
+  ) => {
+    setSelectedItem({ ...item, documentsLoading: true });
+    setSelectedType(type);
+    setShowModal(true);
+
+    if (type === "parents") {
+      setSelectedItem({ ...item, documents: [], documentsLoading: false });
+      return;
+    }
+
+    const docs = await fetchDocuments(type, item.id);
+    setSelectedItem({ ...item, documents: docs, documentsLoading: false });
+  };
+
+  const closeModal = () => {
+    setSelectedItem(null);
+    setSelectedType(null);
+    setShowModal(false);
+  };
+
+  // ---------------- Filters & Search ----------------
   const filterStudents = (users: Registration[]): Registration[] => {
     if (filter === "failed") {
       return users.filter((u) => payments[u.id]?.some((p) => p.paymentStatus !== "COMPLETE"));
@@ -200,7 +241,7 @@ const PrincipalDashboard: React.FC = () => {
     navigate("/");
   };
 
-  // ---------------- Render ----------------
+  // ---------------- Render Cards ----------------
   const renderCard = (
     title: string,
     users: (Registration | Teacher)[],
@@ -239,7 +280,6 @@ const PrincipalDashboard: React.FC = () => {
                     : "bg-gray-50"
                 }`}
               >
-                {/* Basic Info */}
                 <div>
                   <p className="font-medium">
                     {"learnerData" in u
@@ -250,7 +290,6 @@ const PrincipalDashboard: React.FC = () => {
                   <p className="text-xs text-gray-400">Status: {u.status}</p>
                 </div>
 
-                {/* Payment history (students only) */}
                 {"learnerData" in u && payments[u.id] && (
                   <div className="bg-white border rounded p-2 text-xs">
                     <p className="font-semibold mb-1">Payment History:</p>
@@ -282,11 +321,7 @@ const PrincipalDashboard: React.FC = () => {
                 {/* Actions */}
                 {u.status === "pending_review" ? (
                   <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => openModal(u, col)}
-                    >
+                    <Button size="sm" variant="outline" onClick={() => openModal(u, col)}>
                       Review Details
                     </Button>
                     <Button
@@ -296,11 +331,7 @@ const PrincipalDashboard: React.FC = () => {
                     >
                       Approve
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      onClick={() => reject(col, u.id)}
-                    >
+                    <Button size="sm" variant="destructive" onClick={() => reject(col, u.id)}>
                       Reject
                     </Button>
                   </div>
@@ -324,9 +355,7 @@ const PrincipalDashboard: React.FC = () => {
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() =>
-                        freezeClass(col, u.id, u.classActivated === false)
-                      }
+                      onClick={() => freezeClass(col, u.id, u.classActivated === false)}
                     >
                       {u.classActivated === false ? "Unfreeze Class" : "Freeze Class"}
                     </Button>
@@ -359,12 +388,7 @@ const PrincipalDashboard: React.FC = () => {
               <li key={p.id} className="p-3 border rounded bg-gray-50">
                 <p className="font-medium">{p.name}</p>
                 <p className="text-xs text-gray-500">{p.email}</p>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => openModal(p, "parents")}
-                  className="mt-2"
-                >
+                <Button size="sm" variant="outline" onClick={() => openModal(p, "parents")} className="mt-2">
                   Review Details
                 </Button>
               </li>
@@ -421,7 +445,7 @@ const PrincipalDashboard: React.FC = () => {
         {renderParents()}
       </div>
 
-      {/* ✅ Universal Review Modal */}
+      {/* ✅ Review Modal with Document Preview */}
       {showModal && selectedItem && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 relative">
@@ -439,41 +463,57 @@ const PrincipalDashboard: React.FC = () => {
                 : "Parent Record"}
             </h2>
 
-            {/* Display all object fields */}
             <div className="space-y-3 text-sm">
-              {Object.entries(selectedItem).map(([key, value]) => (
-                <p key={key}>
-                  <strong>{key}:</strong>{" "}
-                  {typeof value === "object"
-                    ? JSON.stringify(value, null, 2)
-                    : String(value)}
-                </p>
-              ))}
+              {Object.entries(selectedItem).map(([key, value]) =>
+                ["documents", "documentsLoading"].includes(key) ? null : (
+                  <p key={key}>
+                    <strong>{key}:</strong>{" "}
+                    {typeof value === "object"
+                      ? JSON.stringify(value, null, 2)
+                      : String(value)}
+                  </p>
+                )
+              )}
             </div>
 
-            {/* Approve/Reject buttons only for Teachers and Students */}
-            {selectedType !== "parents" && (
-              <div className="mt-6 flex justify-end gap-3">
-                <Button
-                  className="bg-green-600 hover:bg-green-700"
-                  onClick={() => {
-                    approve(selectedType as any, selectedItem.id);
-                    closeModal();
-                  }}
-                >
-                  Approve
-                </Button>
-                <Button
-                  variant="destructive"
-                  onClick={() => {
-                    reject(selectedType as any, selectedItem.id);
-                    closeModal();
-                  }}
-                >
-                  Reject
-                </Button>
-              </div>
-            )}
+            {/* 🔽 Uploaded Documents */}
+            <div className="mt-6 border-t pt-4">
+              <h3 className="text-lg font-semibold mb-2">📄 Uploaded Documents</h3>
+              {selectedItem.documentsLoading ? (
+                <p className="text-sm text-gray-500">Loading documents...</p>
+              ) : selectedItem.documents && selectedItem.documents.length > 0 ? (
+                <div className="space-y-4">
+                  {selectedItem.documents.map((doc: any) => (
+                    <div key={doc.name} className="border rounded p-2">
+                      <p className="text-sm mb-1 font-medium">{doc.name}</p>
+                      {doc.name.toLowerCase().endsWith(".pdf") ? (
+                        <iframe
+                          src={doc.url}
+                          className="w-full h-64 border rounded"
+                          title={doc.name}
+                        />
+                      ) : (
+                        <img
+                          src={doc.url}
+                          alt={doc.name}
+                          className="max-h-64 mx-auto rounded"
+                        />
+                      )}
+                      <a
+                        href={doc.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 underline text-sm block mt-2 text-right"
+                      >
+                        View / Download
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500">No documents uploaded.</p>
+              )}
+            </div>
           </div>
         </div>
       )}
