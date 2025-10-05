@@ -79,8 +79,11 @@ export default function LoginForm() {
         }
 
         const teacherData = teacherSnap.data();
-        if (teacherData?.status === "approved") {
+        if (teacherData?.status === "approved" && teacherData?.classActivated) {
           navigate("/teacher-dashboard");
+        } else if (teacherData?.status === "approved" && !teacherData?.classActivated) {
+          alert("Your application is approved but class is not yet activated by the principal.");
+          navigate("/teacher-application");
         } else {
           alert("Your application is still under review.");
           navigate("/teacher-application");
@@ -129,6 +132,7 @@ export default function LoginForm() {
             photoURL: user.photoURL || "",
             createdAt: serverTimestamp(),
             status: "pending_review",
+            classActivated: false,
           });
           alert("Application submitted. Please wait for approval.");
           navigate("/teacher-application");
@@ -136,8 +140,11 @@ export default function LoginForm() {
         }
 
         const teacherData = teacherSnap.data();
-        if (teacherData?.status === "approved") {
+        if (teacherData?.status === "approved" && teacherData?.classActivated) {
           navigate("/teacher-dashboard");
+        } else if (teacherData?.status === "approved" && !teacherData?.classActivated) {
+          alert("Your application is approved but class is not yet activated by the principal.");
+          navigate("/teacher-application");
         } else {
           alert("Your application is still under review.");
           navigate("/teacher-application");
