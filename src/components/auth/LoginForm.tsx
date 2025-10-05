@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { auth, db } from "@/lib/firebaseConfig";
 import {
   signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
   GoogleAuthProvider,
   signInWithPopup,
 } from "firebase/auth";
@@ -18,21 +19,57 @@ export default function LoginForm() {
   const [teacherAction, setTeacherAction] = useState<"none" | "apply" | "signin">(
     "none"
   );
+  const [isParentSignup, setIsParentSignup] = useState(false);
 
   const navigate = useNavigate();
 
-  // 🔑 Email/password login
-  const handleLogin = async () => {
+  // ✅ Handle Login or Signup
+  const handleLoginOrSignup = async () => {
     if (!role) {
       alert("Please select your role first.");
       return;
     }
 
     try {
-      const userCred = await signInWithEmailAndPassword(auth, email, password);
+      let userCred;
+
+      // 🟢 Parent signup
+      if (role === "parent" && isParentSignup) {
+        userCred = await createUserWithEmailAndPassword(auth, email, password);
+        const user = userCred.user;
+
+        await setDoc(doc(db, "parents", user.uid), {
+          uid: user.uid,
+          name: user.displayName || "",
+          email: user.email || "",
+          createdAt: serverTimestamp(),
+          status: "pending_registration",
+        });
+
+        alert("Signup successful! Redirecting to dashboard...");
+        navigate("/parent-dashboard");
+        return;
+      }
+
+      // 🟢 Regular login
+      userCred = await signInWithEmailAndPassword(auth, email, password);
       const user = userCred.user;
 
-      // ✅ Only navigate after confirmed role
+      // 🔒 Secure principal check
+      if (role === "principal") {
+        const principalRef = doc(db, "principals", user.uid);
+        const principalSnap = await getDoc(principalRef);
+
+        if (!principalSnap.exists()) {
+          alert("Access denied. You are not authorized as a principal.");
+          return;
+        }
+
+        navigate("/principal-dashboard");
+        return;
+      }
+
+      // ✅ Normal routing
       switch (role) {
         case "teacher":
           navigate("/teacher-dashboard");
@@ -43,17 +80,18 @@ export default function LoginForm() {
         case "student":
           navigate("/student-dashboard");
           break;
-        case "principal":
-          navigate("/principal-dashboard");
-          break;
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert("Login failed. Check your credentials.");
+      alert(
+        isParentSignup
+          ? "Signup failed. Please check your details and try again."
+          : "Login failed. Check your email or password."
+      );
     }
   };
 
-  // 🔑 Google login
+  // ✅ Google login
   const handleGoogleLogin = async () => {
     if (!role) {
       alert("Please select your role before using Google login.");
@@ -65,10 +103,10 @@ export default function LoginForm() {
       const result = await signInWithPopup(auth, provider);
       const user = result.user;
 
-      // ✅ Create doc only when first-time user applies
       if (role === "teacher") {
         const teacherRef = doc(db, "teachers", user.uid);
         const teacherSnap = await getDoc(teacherRef);
+
         if (!teacherSnap.exists()) {
           await setDoc(teacherRef, {
             uid: user.uid,
@@ -79,10 +117,12 @@ export default function LoginForm() {
             status: "pending_review",
           });
         }
+
         navigate("/teacher-dashboard");
       } else if (role === "parent") {
         const parentRef = doc(db, "parents", user.uid);
         const parentSnap = await getDoc(parentRef);
+
         if (!parentSnap.exists()) {
           await setDoc(parentRef, {
             uid: user.uid,
@@ -93,30 +133,55 @@ export default function LoginForm() {
             status: "pending_registration",
           });
         }
+
         navigate("/parent-dashboard");
       } else if (role === "student") {
         navigate("/student-dashboard");
       } else if (role === "principal") {
+        // 🔒 Verify principal authorization before allowing access
+        const principalRef = doc(db, "principals", user.uid);
+        const principalSnap = await getDoc(principalRef);
+
+        if (!principalSnap.exists()) {
+          alert("Access denied. You are not authorized as a principal.");
+          return;
+        }
+
         navigate("/principal-dashboard");
       }
     } catch (err) {
       console.error("Google login error:", err);
-      alert("Google login failed");
+      alert("Google login failed. Please try again.");
     }
   };
 
-  return (
-    <div className="max-w-md mx-auto p-6 border rounded bg-white shadow">
-      <h2 className="text-xl font-bold mb-4">Welcome — Choose Your Role</h2>
+  // ✅ Close login modal or page
+  const handleClose = () => {
+    navigate("/"); // Redirect to your home or landing route
+  };
 
-      {/* Role Selection */}
-      <div className="mb-4 space-x-2 flex flex-wrap gap-2">
+  return (
+    <div className="max-w-md mx-auto p-6 border rounded bg-white shadow relative">
+      {/* 🔴 Close Button */}
+      <button
+        onClick={handleClose}
+        className="absolute top-2 right-2 text-gray-600 hover:text-red-500 text-xl font-bold"
+        title="Close login"
+      >
+        ✕
+      </button>
+
+      <h2 className="text-xl font-bold mb-4 text-center">Welcome — Choose Your Role</h2>
+
+      {/* 🧩 Role Selection */}
+      <div className="mb-4 flex flex-wrap justify-center gap-2">
         {(["student", "teacher", "parent", "principal"] as const).map((r) => (
           <button
             key={r}
             onClick={() => {
               setRole(r);
               setTeacherAction("none");
+              setIsParentSignup(false);
             }}
             className={`px-3 py-1 rounded ${
               role === r ? "bg-blue-600 text-white" : "bg-gray-200"
@@ -127,10 +192,10 @@ export default function LoginForm() {
         ))}
       </div>
 
-      {/* Teacher choice */}
+      {/* 👨‍🏫 Teacher Choice */}
       {role === "teacher" && teacherAction === "none" && (
         <div className="mb-4 border p-3 rounded bg-gray-50">
-          <p className="mb-2 font-medium">Are you new or returning?</p>
+          <p className="mb-2 font-medium text-center">Are you new or returning?</p>
           <div className="flex gap-2">
             <button
               onClick={() => navigate("/teacher-application")}
@@ -148,15 +213,19 @@ export default function LoginForm() {
         </div>
       )}
 
-      {/* Login form */}
+      {/* 🔐 Login / Signup Form */}
       {(role && (role !== "teacher" || teacherAction === "signin")) && (
         <Card className="p-6 shadow-lg border rounded-2xl bg-white">
           <CardHeader>
             <CardTitle className="text-xl font-semibold text-center text-blue-700">
-              Sign in to Your Account
+              {role === "parent" && isParentSignup
+                ? "Parent Signup"
+                : "Sign in to Your Account"}
             </CardTitle>
           </CardHeader>
+
           <CardContent className="space-y-4">
+            {/* Email Field */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Email
@@ -170,6 +239,7 @@ export default function LoginForm() {
               />
             </div>
 
+            {/* Password Field */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Password
@@ -183,19 +253,49 @@ export default function LoginForm() {
               />
             </div>
 
+            {/* Login / Signup Button */}
             <button
-              onClick={handleLogin}
+              onClick={handleLoginOrSignup}
               className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition"
             >
-              Login
+              {role === "parent" && isParentSignup ? "Signup" : "Login"}
             </button>
 
+            {/* 👨‍👩‍👧 Parent Signup / Login Toggle */}
+            {role === "parent" && (
+              <p className="text-center text-sm text-gray-600">
+                {isParentSignup ? (
+                  <>
+                    Already have an account?{" "}
+                    <button
+                      className="text-blue-600 hover:underline"
+                      onClick={() => setIsParentSignup(false)}
+                    >
+                      Login here
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    New parent?{" "}
+                    <button
+                      className="text-blue-600 hover:underline"
+                      onClick={() => setIsParentSignup(true)}
+                    >
+                      Create account
+                    </button>
+                  </>
+                )}
+              </p>
+            )}
+
+            {/* Divider */}
             <div className="flex items-center gap-2 my-2">
               <div className="flex-1 h-px bg-gray-300"></div>
               <span className="text-sm text-gray-500">or</span>
               <div className="flex-1 h-px bg-gray-300"></div>
             </div>
 
+            {/* Google Sign-In */}
             <button
               onClick={handleGoogleLogin}
               className="w-full bg-red-500 text-white py-3 rounded-lg font-medium hover:bg-red-600 transition flex items-center justify-center gap-2"
