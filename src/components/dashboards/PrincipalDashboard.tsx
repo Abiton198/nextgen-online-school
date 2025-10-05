@@ -24,7 +24,7 @@ import { Input } from "@/components/ui/input";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useNavigate } from "react-router-dom";
 
-// ---------------- Types ----------------
+/* ---------------- Types ---------------- */
 interface Registration {
   id: string;
   learnerData?: { firstName?: string; lastName?: string; grade?: string };
@@ -59,12 +59,7 @@ interface Payment {
   processedAt: any;
 }
 
-interface DocumentFile {
-  name: string;
-  url: string;
-}
-
-// ---------------- Principal Dashboard ----------------
+/* ---------------- Main Component ---------------- */
 const PrincipalDashboard: React.FC = () => {
   const [students, setStudents] = useState<Registration[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
@@ -79,26 +74,52 @@ const PrincipalDashboard: React.FC = () => {
   const { logout } = useAuth();
   const navigate = useNavigate();
 
+  /* ---------------- Modal State ---------------- */
   const [selectedItem, setSelectedItem] = useState<any>(null);
   const [selectedType, setSelectedType] = useState<
     "teacherApplications" | "registrations" | "parents" | null
   >(null);
   const [showModal, setShowModal] = useState(false);
+  const [documents, setDocuments] = useState<Record<string, { name: string; url: string }[]>>({});
 
-  const storage = getStorage();
+  /* ---------------- Utilities ---------------- */
+  const openModal = async (
+    item: any,
+    type: "teacherApplications" | "registrations" | "parents"
+  ) => {
+    setSelectedItem(item);
+    setSelectedType(type);
+    setShowModal(true);
 
-  // ⏰ Live clock
+    // Load documents only for teacher/student
+    if (type !== "parents") {
+      const docs = await fetchDocuments(type, item.id);
+      setDocuments(docs);
+    } else {
+      setDocuments({});
+    }
+  };
+
+  const closeModal = () => {
+    setSelectedItem(null);
+    setSelectedType(null);
+    setShowModal(false);
+    setDocuments({});
+  };
+
+  /* ---------------- Live Clock ---------------- */
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  // 🔄 Firestore listeners
+  /* ---------------- Firestore Listeners ---------------- */
   useEffect(() => {
     const unsubRegistrations = onSnapshot(collection(db, "registrations"), async (snap) => {
       const regs = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Registration) }));
       setStudents(regs);
 
+      // Build parent list dynamically
       const parentMap: Record<string, Parent> = {};
       regs.forEach((reg) => {
         if (reg.parentData?.email) {
@@ -120,6 +141,7 @@ const PrincipalDashboard: React.FC = () => {
       });
       setParents(Object.values(parentMap));
 
+      // Payment history
       for (const reg of regs) {
         const payRef = collection(db, "registrations", reg.id, "payments");
         const q = query(payRef, orderBy("processedAt", "desc"));
@@ -139,7 +161,7 @@ const PrincipalDashboard: React.FC = () => {
     };
   }, []);
 
-  // ---------------- Firestore actions ----------------
+  /* ---------------- Firestore Actions ---------------- */
   const updateStatus = async (
     col: "registrations" | "teacherApplications",
     id: string,
@@ -172,52 +194,51 @@ const PrincipalDashboard: React.FC = () => {
   const freezeClass = (col: "registrations" | "teacherApplications", id: string, frozen: boolean) =>
     updateStatus(col, id, { classActivated: !frozen });
 
-  // ---------------- Storage Helpers ----------------
+  /* ---------------- Fetch Documents from Firebase Storage ---------------- */
   const fetchDocuments = async (
     col: "registrations" | "teacherApplications",
     id: string
-  ): Promise<DocumentFile[]> => {
-    try {
-      const folderRef = ref(storage, `uploads/${col}/${id}`);
+  ): Promise<Record<string, { name: string; url: string }[]>> => {
+    const storage = getStorage();
+
+    // Recursive function to fetch all files grouped by folder
+    const getAllFiles = async (folderRef: any): Promise<Record<string, { name: string; url: string }[]>> => {
       const result = await listAll(folderRef);
-      const files = await Promise.all(
-        result.items.map(async (item) => ({
-          name: item.name,
-          url: await getDownloadURL(item),
-        }))
-      );
-      return files;
+      const grouped: Record<string, { name: string; url: string }[]> = {};
+
+      // Add direct files
+      if (result.items.length > 0) {
+        const folderName = folderRef.name || "root";
+        grouped[folderName] = await Promise.all(
+          result.items.map(async (item: any) => ({
+            name: item.name,
+            url: await getDownloadURL(item),
+          }))
+        );
+      }
+
+      // Process subfolders recursively
+      for (const subRef of result.prefixes) {
+        const subFiles = await getAllFiles(subRef);
+        Object.entries(subFiles).forEach(([folder, files]) => {
+          if (!grouped[folder]) grouped[folder] = [];
+          grouped[folder].push(...files);
+        });
+      }
+      return grouped;
+    };
+
+    try {
+      const rootRef = ref(storage, `${col}/${id}`);
+      const allFiles = await getAllFiles(rootRef);
+      return allFiles;
     } catch (err) {
       console.error("Error fetching documents:", err);
-      return [];
+      return {};
     }
   };
 
-  // ---------------- Modal ----------------
-  const openModal = async (
-    item: any,
-    type: "teacherApplications" | "registrations" | "parents"
-  ) => {
-    setSelectedItem({ ...item, documentsLoading: true });
-    setSelectedType(type);
-    setShowModal(true);
-
-    if (type === "parents") {
-      setSelectedItem({ ...item, documents: [], documentsLoading: false });
-      return;
-    }
-
-    const docs = await fetchDocuments(type, item.id);
-    setSelectedItem({ ...item, documents: docs, documentsLoading: false });
-  };
-
-  const closeModal = () => {
-    setSelectedItem(null);
-    setSelectedType(null);
-    setShowModal(false);
-  };
-
-  // ---------------- Filters & Search ----------------
+  /* ---------------- Helper Filters ---------------- */
   const filterStudents = (users: Registration[]): Registration[] => {
     if (filter === "failed") {
       return users.filter((u) => payments[u.id]?.some((p) => p.paymentStatus !== "COMPLETE"));
@@ -241,7 +262,7 @@ const PrincipalDashboard: React.FC = () => {
     navigate("/");
   };
 
-  // ---------------- Render Cards ----------------
+  /* ---------------- Render Helpers ---------------- */
   const renderCard = (
     title: string,
     users: (Registration | Teacher)[],
@@ -271,15 +292,8 @@ const PrincipalDashboard: React.FC = () => {
           {displayUsers.length === 0 && <p className="text-sm text-gray-500">No records.</p>}
           <ul className="space-y-3">
             {displayUsers.map((u) => (
-              <li
-                key={u.id}
-                className={`p-3 border rounded flex flex-col gap-2 ${
-                  "learnerData" in u &&
-                  payments[u.id]?.some((p) => p.paymentStatus !== "COMPLETE")
-                    ? "border-red-500 bg-red-50"
-                    : "bg-gray-50"
-                }`}
-              >
+              <li key={u.id} className="p-3 border rounded bg-gray-50">
+                {/* Info */}
                 <div>
                   <p className="font-medium">
                     {"learnerData" in u
@@ -290,61 +304,21 @@ const PrincipalDashboard: React.FC = () => {
                   <p className="text-xs text-gray-400">Status: {u.status}</p>
                 </div>
 
-                {"learnerData" in u && payments[u.id] && (
-                  <div className="bg-white border rounded p-2 text-xs">
-                    <p className="font-semibold mb-1">Payment History:</p>
-                    {payments[u.id].length === 0 ? (
-                      <p className="text-gray-400">No payments yet.</p>
-                    ) : (
-                      <ul className="space-y-1">
-                        {payments[u.id].map((p) => (
-                          <li key={p.id} className="flex justify-between">
-                            <span
-                              className={
-                                p.paymentStatus === "COMPLETE"
-                                  ? "text-green-600"
-                                  : "text-red-600 font-semibold"
-                              }
-                            >
-                              R{p.amount} — {p.paymentStatus}
-                            </span>
-                            <span className="text-gray-400">
-                              {new Date(p.processedAt.toDate()).toLocaleDateString()}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                )}
-
                 {/* Actions */}
                 {u.status === "pending_review" ? (
                   <div className="flex gap-2">
                     <Button size="sm" variant="outline" onClick={() => openModal(u, col)}>
                       Review Details
                     </Button>
-                    <Button
-                      size="sm"
-                      className="bg-green-600 hover:bg-green-700"
-                      onClick={() => approve(col, u.id)}
-                    >
+                    <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => approve(col, u.id)}>
                       Approve
                     </Button>
                     <Button size="sm" variant="destructive" onClick={() => reject(col, u.id)}>
                       Reject
                     </Button>
                   </div>
-                ) : u.status === "suspended" ? (
-                  <Button
-                    size="sm"
-                    onClick={() => reinstate(col, u.id)}
-                    className="bg-green-600 hover:bg-green-700"
-                  >
-                    Reinstate
-                  </Button>
                 ) : (
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 mt-2">
                     <Button
                       size="sm"
                       className="bg-yellow-500 hover:bg-yellow-600"
@@ -369,37 +343,7 @@ const PrincipalDashboard: React.FC = () => {
     );
   };
 
-  const renderParents = () => {
-    const filtered = parents.filter(
-      (p) =>
-        p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.email.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-
-    return (
-      <Card className="bg-white shadow">
-        <CardHeader>
-          <CardTitle>Parents</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {filtered.length === 0 && <p className="text-sm text-gray-500">No parents found.</p>}
-          <ul className="space-y-3">
-            {filtered.map((p) => (
-              <li key={p.id} className="p-3 border rounded bg-gray-50">
-                <p className="font-medium">{p.name}</p>
-                <p className="text-xs text-gray-500">{p.email}</p>
-                <Button size="sm" variant="outline" onClick={() => openModal(p, "parents")} className="mt-2">
-                  Review Details
-                </Button>
-              </li>
-            ))}
-          </ul>
-        </CardContent>
-      </Card>
-    );
-  };
-
-  // ---------------- Layout ----------------
+  /* ---------------- Main Render ---------------- */
   return (
     <div className="min-h-screen bg-gray-50 p-6 space-y-6">
       {/* Header */}
@@ -438,82 +382,95 @@ const PrincipalDashboard: React.FC = () => {
         </span>
       </div>
 
-      {/* Grid */}
+      {/* Dashboard Grid */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {renderCard("Students", students, "registrations")}
         {renderCard("Teachers", teachers, "teacherApplications")}
-        {renderParents()}
       </div>
 
-      {/* ✅ Review Modal with Document Preview */}
+      {/* ✅ Review Modal with Inline Previews */}
       {showModal && selectedItem && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 relative">
+          <div className="bg-white rounded-xl shadow-lg w-full max-w-3xl max-h-[90vh] overflow-y-auto p-6 relative">
             <button
               className="absolute top-3 right-3 text-gray-500 hover:text-black"
               onClick={closeModal}
             >
               ✕
             </button>
+
             <h2 className="text-xl font-bold mb-4">
-              Review {selectedType === "teacherApplications"
-                ? "Teacher Application"
-                : selectedType === "registrations"
-                ? "Student Registration"
-                : "Parent Record"}
+              Review {selectedType === "teacherApplications" ? "Teacher Application" : "Student Registration"}
             </h2>
 
-            <div className="space-y-3 text-sm">
-              {Object.entries(selectedItem).map(([key, value]) =>
-                ["documents", "documentsLoading"].includes(key) ? null : (
-                  <p key={key}>
-                    <strong>{key}:</strong>{" "}
-                    {typeof value === "object"
-                      ? JSON.stringify(value, null, 2)
-                      : String(value)}
-                  </p>
-                )
+            {/* Document Section */}
+            <div className="space-y-4">
+              {Object.keys(documents).length > 0 ? (
+                Object.entries(documents).map(([folder, files]) => (
+                  <div key={folder} className="border rounded-lg p-3 bg-gray-50">
+                    <h4 className="font-medium text-blue-700 capitalize mb-2">
+                      📁 {folder}
+                    </h4>
+                    {files.map((file) => (
+                      <div key={file.name} className="mb-3">
+                        <p className="text-sm font-semibold">{file.name}</p>
+
+                        {/* Inline Preview */}
+                        {file.name.match(/\.(jpg|jpeg|png)$/i) && (
+                          <img
+                            src={file.url}
+                            alt={file.name}
+                            className="mt-2 rounded-lg border max-h-64 object-contain"
+                          />
+                        )}
+                        {file.name.match(/\.pdf$/i) && (
+                          <iframe
+                            src={file.url}
+                            className="w-full h-64 mt-2 border rounded"
+                            title={file.name}
+                          ></iframe>
+                        )}
+
+                        <a
+                          href={file.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 underline text-sm mt-1 inline-block"
+                        >
+                          View / Download
+                        </a>
+                      </div>
+                    ))}
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-gray-500">No documents uploaded yet.</p>
               )}
             </div>
 
-            {/* 🔽 Uploaded Documents */}
-            <div className="mt-6 border-t pt-4">
-              <h3 className="text-lg font-semibold mb-2">📄 Uploaded Documents</h3>
-              {selectedItem.documentsLoading ? (
-                <p className="text-sm text-gray-500">Loading documents...</p>
-              ) : selectedItem.documents && selectedItem.documents.length > 0 ? (
-                <div className="space-y-4">
-                  {selectedItem.documents.map((doc: any) => (
-                    <div key={doc.name} className="border rounded p-2">
-                      <p className="text-sm mb-1 font-medium">{doc.name}</p>
-                      {doc.name.toLowerCase().endsWith(".pdf") ? (
-                        <iframe
-                          src={doc.url}
-                          className="w-full h-64 border rounded"
-                          title={doc.name}
-                        />
-                      ) : (
-                        <img
-                          src={doc.url}
-                          alt={doc.name}
-                          className="max-h-64 mx-auto rounded"
-                        />
-                      )}
-                      <a
-                        href={doc.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-600 underline text-sm block mt-2 text-right"
-                      >
-                        View / Download
-                      </a>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-gray-500">No documents uploaded.</p>
-              )}
-            </div>
+            {/* Approve/Reject Buttons */}
+            {selectedType !== "parents" && (
+              <div className="mt-6 flex justify-end gap-3">
+                <Button
+                  className="bg-green-600 hover:bg-green-700"
+                  onClick={() => {
+                    approve(selectedType as any, selectedItem.id);
+                    closeModal();
+                  }}
+                >
+                  Approve
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => {
+                    reject(selectedType as any, selectedItem.id);
+                    closeModal();
+                  }}
+                >
+                  Reject
+                </Button>
+              </div>
+            )}
           </div>
         </div>
       )}
