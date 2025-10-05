@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { ThemeProvider } from "@/components/theme-provider";
@@ -11,14 +11,12 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 
 import { AuthProvider } from "@/components/auth/AuthProvider";
 
-// Auth
+// Auth Pages
 import LoginForm from "@/components/auth/LoginForm";
 import AdminLoginForm from "@/components/auth/AdminLoginForm";
 import SuspendedScreen from "@/components/auth/SuspendedScreen";
-
-// Pages
-import NotFound from "@/pages/NotFound";
-import AboutUs from "@/components/AboutUs";
+import TeacherApplicationForm from "@/components/auth/TeacherApplicationForm";
+import ParentRegistration from "@/components/auth/ParentRegistration";
 
 // Dashboards
 import AdminDashboard from "@/components/dashboards/AdminDashboard";
@@ -26,16 +24,15 @@ import TeacherDashboard from "@/components/dashboards/TeacherDashboard";
 import StudentDashboard from "@/components/dashboards/StudentDashboard";
 import ParentDashboard from "@/components/dashboards/parent/ParentDashboard";
 import PrincipalDashboard from "@/components/dashboards/PrincipalDashboard";
-import TeacherApplicationForm from "@/components/auth/TeacherApplicationForm";
 
-
-// Parent sections
-import ParentRegistration from "@/components/auth/ParentRegistration";
+// Parent Sections
 import PaymentsSection from "@/components/dashboards/parent/sections/PaymentSection";
 import StatusSection from "@/components/dashboards/parent/sections/StatusSection";
 
-// Landing
-import AppLayout from "@/components/AppLayout";
+// Public Pages
+import AboutUs from "@/components/AboutUs";
+import NotFound from "@/pages/NotFound";
+import AppLayout from "@/components/AppLayout"; // ✅ Landing/Home page
 
 const queryClient = new QueryClient();
 
@@ -44,38 +41,42 @@ const App: React.FC = () => {
     <ThemeProvider defaultTheme="light">
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
+          {/* Toast notifications */}
           <Toaster />
           <Sonner />
+
           <AuthProvider>
             <BrowserRouter>
               <Routes>
-                {/* Landing page with collapsible login */}
+                {/* 🌍 Default Home/Landing Page */}
                 <Route path="/" element={<AppLayout />} />
 
-                {/* Public pages */}
+                {/* ℹ️ Public Pages */}
                 <Route path="/about" element={<AboutUs />} />
+
+                {/* 👨‍👩‍👧 Parent Registration and Info */}
                 <Route path="/register" element={<ParentRegistration />} />
                 <Route path="/payments" element={<PaymentsSection />} />
                 <Route path="/status" element={<StatusSection />} />
 
-                {/* Auth pages */}
+                {/* 🔐 Authentication Pages */}
                 <Route path="/login" element={<LoginForm />} />
                 <Route path="/admin-login" element={<AdminLoginForm />} />
                 <Route path="/suspended" element={<SuspendedScreen />} />
+                <Route path="/teacher-application" element={<TeacherApplicationForm />} />
 
-                {/* Dashboards */}
+                {/* 🧭 Dashboards */}
                 <Route path="/admin-dashboard" element={<AdminDashboard />} />
                 <Route path="/teacher-dashboard" element={<TeacherDashboard />} />
                 <Route path="/student-dashboard" element={<StudentDashboard />} />
                 <Route path="/parent-dashboard" element={<ParentDashboard />} />
                 <Route path="/principal-dashboard" element={<PrincipalDashboard />} />
 
-
-                {/* Teacher Application */}
-                <Route path="/teacher-application" element={<TeacherApplicationForm />} />
-
-                {/* Catch-all (404) */}
+                {/* 🚫 Fallback for invalid URLs */}
                 <Route path="*" element={<NotFound />} />
+
+                {/* ✅ Optional: If user visits /home, redirect to main landing */}
+                <Route path="/home" element={<Navigate to="/" replace />} />
               </Routes>
             </BrowserRouter>
           </AuthProvider>
