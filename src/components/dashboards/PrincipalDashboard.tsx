@@ -28,25 +28,14 @@ interface Registration {
   parentData?: { name?: string; email?: string };
   status: "pending_review" | "enrolled" | "rejected" | "suspended";
   principalReviewed?: boolean;
-  classActivated?: boolean; // for students this may be unused
+  classActivated?: boolean;
   parentId?: string;
 }
 
 interface TeacherApplication {
-  id: string;           // applicationId (doc id in teacherApplications)
-  uid?: string;         // teacher’s Firebase Auth UID (important!)
-  firstName?: string;
-  lastName?: string;
-  email?: string;
-  gender?: string;
-  country?: string;
-  contact?: string;
-  qualification?: string;
-  references?: { name: string; contact: string }[];
-  status: "pending_review" | "approved" | "rejected" | "suspended";
-  principalReviewed?: boolean;
-  classActivated?: boolean; // whether teacher’s class access enabled
-  [key: string]: any;
+  id: string; // applicationId
+  uid?: string; // teacher’s Firebase Auth UID
+  [key: string]: any; // dynamic fields
 }
 
 interface ParentAgg {
@@ -59,13 +48,12 @@ interface ParentAgg {
 interface Payment {
   id: string;
   amount?: string;
-  paymentStatus?: string; // e.g. COMPLETE, FAILED
+  paymentStatus?: string;
   processedAt?: any;
 }
 
 /* ---------------- Main Component ---------------- */
 const PrincipalDashboard: React.FC = () => {
-  /* ---------------- State ---------------- */
   const [students, setStudents] = useState<Registration[]>([]);
   const [teachers, setTeachers] = useState<TeacherApplication[]>([]);
   const [parents, setParents] = useState<ParentAgg[]>([]);
@@ -85,9 +73,7 @@ const PrincipalDashboard: React.FC = () => {
     "teacherApplications" | "registrations" | "parents" | null
   >(null);
   const [showModal, setShowModal] = useState(false);
-  const [documents, setDocuments] = useState<
-    Record<string, { name: string; url: string }[]>
-  >({});
+  const [documents, setDocuments] = useState<Record<string, { name: string; url: string }[]>>({});
   const [activeTab, setActiveTab] = useState<"Details" | "Documents">("Details");
 
   /* ---------------- Utilities ---------------- */
@@ -100,7 +86,6 @@ const PrincipalDashboard: React.FC = () => {
     setShowModal(true);
     setActiveTab("Details");
 
-    // Load documents only for teacher and student
     if (type === "teacherApplications") {
       const docs = await fetchDocuments(type, item.id, item.uid);
       setDocuments(docs);
@@ -127,12 +112,10 @@ const PrincipalDashboard: React.FC = () => {
 
   /* ---------------- Firestore Listeners ---------------- */
   useEffect(() => {
-    // Students (registrations)
     const unsubRegistrations = onSnapshot(collection(db, "registrations"), async (snap) => {
       const regs = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Registration) }));
       setStudents(regs);
 
-      // Build Parents aggregation from registrations so a "Parents" card can be rendered
       const parentMap: Record<string, ParentAgg> = {};
       regs.forEach((reg) => {
         const pEmail = reg.parentData?.email;
@@ -154,7 +137,6 @@ const PrincipalDashboard: React.FC = () => {
       });
       setParents(Object.values(parentMap));
 
-      // Payment history for each registration
       for (const reg of regs) {
         const payRef = collection(db, "registrations", reg.id, "payments");
         const q = fsQuery(payRef, orderBy("processedAt", "desc"));
@@ -164,7 +146,6 @@ const PrincipalDashboard: React.FC = () => {
       }
     });
 
-    // Teachers (applications)
     const unsubTeachers = onSnapshot(collection(db, "teacherApplications"), (snap) => {
       setTeachers(snap.docs.map((d) => ({ id: d.id, ...(d.data() as TeacherApplication) })));
     });
@@ -176,23 +157,16 @@ const PrincipalDashboard: React.FC = () => {
   }, []);
 
   /* ---------------- Firestore Actions ---------------- */
-
-  /**
-   * Generic status update helper for both collections
-   */
   const updateStatus = async (
     col: "registrations" | "teacherApplications",
     id: string,
     updates: Record<string, any>
   ) => updateDoc(doc(db, col, id), updates);
 
-  /**
-   * Approve flow:
-   * - Students: sets status to "enrolled"
-   * - Teachers: sets status to "approved", principalReviewed, and creates/updates /teachers/{uid}
-   *   so that the teacher can access their dashboard immediately.
-   */
-  const approve = async (col: "registrations" | "teacherApplications", item: Registration | TeacherApplication) => {
+  const approve = async (
+    col: "registrations" | "teacherApplications",
+    item: Registration | TeacherApplication
+  ) => {
     const id = item.id;
 
     if (col === "registrations") {
@@ -204,7 +178,6 @@ const PrincipalDashboard: React.FC = () => {
       return;
     }
 
-    // Teacher Application flow
     const app = item as TeacherApplication;
     const uid = app.uid;
     await updateStatus("teacherApplications", id, {
@@ -214,21 +187,13 @@ const PrincipalDashboard: React.FC = () => {
       classActivated: true,
     });
 
-    // Create/Update the teacher profile doc to activate dashboard access
     if (uid) {
       await setDoc(
         doc(db, "teachers", uid),
         {
-          uid,
-          firstName: app.firstName || "",
-          lastName: app.lastName || "",
-          email: app.email || "",
-          contact: app.contact || "",
-          gender: app.gender || "",
-          country: app.country || "",
-          qualification: app.qualification || "",
-          status: "approved",          // profile status
-          classActivated: true,        // enables dashboard features
+          ...app,
+          status: "approved",
+          classActivated: true,
           updatedAt: serverTimestamp(),
         },
         { merge: true }
@@ -252,19 +217,15 @@ const PrincipalDashboard: React.FC = () => {
       reinstatedAt: serverTimestamp(),
     });
 
-  /**
-   * Freeze / Unfreeze:
-   * - Toggles classActivated in the application doc
-   * - If this is a teacher application AND the teacher profile exists, also toggles in /teachers/{uid}
-   */
-  const toggleClassActivation = async (item: Registration | TeacherApplication, col: "registrations" | "teacherApplications") => {
+  const toggleClassActivation = async (
+    item: Registration | TeacherApplication,
+    col: "registrations" | "teacherApplications"
+  ) => {
     const current = Boolean(item.classActivated);
     const next = !current;
 
-    // Update the source document
     await updateStatus(col, item.id, { classActivated: next });
 
-    // If teacher app and we know the uid, mirror the toggle in /teachers/{uid}
     if (col === "teacherApplications") {
       const t = item as TeacherApplication;
       if (t.uid) {
@@ -277,7 +238,7 @@ const PrincipalDashboard: React.FC = () => {
     }
   };
 
-  /* ---------------- Fetch Documents from Firebase Storage ---------------- */
+  /* ---------------- Fetch Documents ---------------- */
   const fetchDocuments = async (
     col: "registrations" | "teacherApplications",
     id: string,
@@ -285,12 +246,10 @@ const PrincipalDashboard: React.FC = () => {
   ): Promise<Record<string, { name: string; url: string }[]>> => {
     const storage = getStorage();
 
-    // Recursive fetch of all files grouped by folder
     const getAllFiles = async (folderRef: any): Promise<Record<string, { name: string; url: string }[]>> => {
       const result = await listAll(folderRef);
       const grouped: Record<string, { name: string; url: string }[]> = {};
 
-      // Files directly inside this folder
       if (result.items.length > 0) {
         const folderName = folderRef.name || "root";
         grouped[folderName] = await Promise.all(
@@ -301,7 +260,6 @@ const PrincipalDashboard: React.FC = () => {
         );
       }
 
-      // Recurse into subfolders
       for (const subRef of result.prefixes) {
         const subFiles = await getAllFiles(subRef);
         Object.entries(subFiles).forEach(([folder, files]) => {
@@ -315,22 +273,20 @@ const PrincipalDashboard: React.FC = () => {
     try {
       let rootRef;
       if (col === "teacherApplications" && uid) {
-        // ✅ Correct teacher docs path
-        rootRef = ref(storage, `teacherApplications/${uid}/${id}/documents`);
+        // ✅ Fix: applicationId first, then uid
+        rootRef = ref(storage, `teacherApplications/${id}/${uid}/documents`);
       } else {
-        // ✅ Student registration docs path
         rootRef = ref(storage, `${col}/${id}/documents`);
       }
 
-      const allFiles = await getAllFiles(rootRef);
-      return allFiles;
+      return await getAllFiles(rootRef);
     } catch (err) {
       console.error("Error fetching documents:", err);
       return {};
     }
   };
 
-  /* ---------------- Helper Filters ---------------- */
+  /* ---------------- Helpers ---------------- */
   const filterStudents = (users: Registration[]): Registration[] => {
     if (filter === "failed") {
       return users.filter((u) => payments[u.id]?.some((p) => p.paymentStatus !== "COMPLETE"));
@@ -354,7 +310,7 @@ const PrincipalDashboard: React.FC = () => {
     navigate("/");
   };
 
-  /* ---------------- Render Helpers ---------------- */
+  /* ---------------- Render ---------------- */
   const renderUsersCard = (
     title: string,
     users: (Registration | TeacherApplication)[],
@@ -389,22 +345,14 @@ const PrincipalDashboard: React.FC = () => {
 
               return (
                 <li key={u.id} className="p-3 border rounded bg-gray-50">
-                  {/* Info */}
                   <div className="mb-3">
                     <p className="font-medium">{name || "—"}</p>
                     <p className="text-xs text-gray-500">{email || "—"}</p>
                     <p className="text-xs text-gray-400">Status: {u.status}</p>
                   </div>
 
-                  {/* Actions:
-                      - Remove the "instant Approve" from the list to prevent accidental approvals.
-                      - Force principal to click "Review Details" to approve/reject. */}
                   <div className="flex flex-wrap gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => openModal(u, col)}
-                    >
+                    <Button size="sm" variant="outline" onClick={() => openModal(u, col)}>
                       Review Details
                     </Button>
 
@@ -422,7 +370,6 @@ const PrincipalDashboard: React.FC = () => {
                           variant="outline"
                           onClick={() => toggleClassActivation(u, col)}
                         >
-                          {/* Undefined/false => show "Unfreeze Class" to enable */}
                           {u.classActivated ? "Freeze Class" : "Unfreeze Class"}
                         </Button>
                       </>
@@ -477,7 +424,6 @@ const PrincipalDashboard: React.FC = () => {
   /* ---------------- Main Render ---------------- */
   return (
     <div className="min-h-screen bg-gray-50 p-6 space-y-6">
-      {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <h1 className="text-2xl font-bold">Welcome, {principalName} 👋</h1>
         <div className="flex items-center gap-4">
@@ -490,7 +436,6 @@ const PrincipalDashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* Search + Filter */}
       <div className="flex flex-col md:flex-row gap-4 items-center">
         <Input
           type="text"
@@ -513,17 +458,16 @@ const PrincipalDashboard: React.FC = () => {
         </span>
       </div>
 
-      {/* Dashboard Grid: now includes Parents card */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {renderUsersCard("Students", students, "registrations")}
         {renderUsersCard("Teachers", teachers, "teacherApplications")}
         {renderParentsCard(parents)}
       </div>
 
-      {/* ✅ Review Modal with Tabs (Details / Documents) */}
+      {/* ✅ Modal */}
       {showModal && selectedItem && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-lg w-full max-w-3xl max-height-[90vh] max-h-[90vh] overflow-y-auto p-6 relative">
+          <div className="bg-white rounded-xl shadow-lg w-full max-w-3xl max-h-[90vh] overflow-y-auto p-6 relative">
             <button
               className="absolute top-3 right-3 text-gray-500 hover:text-black"
               onClick={closeModal}
@@ -535,7 +479,6 @@ const PrincipalDashboard: React.FC = () => {
               Review {selectedType === "teacherApplications" ? "Teacher Application" : "Student Registration"}
             </h2>
 
-            {/* Tabs */}
             <div className="flex border-b mb-4">
               {["Details", "Documents"].map((tab) => (
                 <button
@@ -552,41 +495,16 @@ const PrincipalDashboard: React.FC = () => {
               ))}
             </div>
 
-            {/* Details Tab */}
+            {/* Details: Teachers see ALL fields dynamically */}
             {activeTab === "Details" && selectedType === "teacherApplications" && (
-              <>
-                <div className="border rounded-lg p-4 bg-gray-50 mb-6">
-                  <h3 className="text-lg font-semibold mb-3">👩‍🏫 Personal Information</h3>
-                  <p><span className="font-medium">Name:</span> {selectedItem.firstName} {selectedItem.lastName}</p>
-                  <p><span className="font-medium">Email:</span> {selectedItem.email}</p>
-                  <p><span className="font-medium">Status:</span> {selectedItem.status}</p>
-                  {selectedItem.gender && <p><span className="font-medium">Gender:</span> {selectedItem.gender}</p>}
-                  {selectedItem.country && <p><span className="font-medium">Country:</span> {selectedItem.country}</p>}
-                  {selectedItem.contact && <p><span className="font-medium">Contact:</span> {selectedItem.contact}</p>}
-                  {selectedItem.uid && <p><span className="font-medium">UID:</span> {selectedItem.uid}</p>}
-                </div>
-
-                <div className="border rounded-lg p-4 bg-gray-50 mb-6">
-                  <h3 className="text-lg font-semibold mb-3">🎓 Qualifications</h3>
-                  {selectedItem.qualification ? (
-                    <p>{selectedItem.qualification}</p>
-                  ) : (
-                    <p className="text-sm text-gray-500">No qualifications provided</p>
-                  )}
-                </div>
-
-                {selectedItem.references && Array.isArray(selectedItem.references) && (
-                  <div className="border rounded-lg p-4 bg-gray-50 mb-6">
-                    <h3 className="text-lg font-semibold mb-3">📌 References</h3>
-                    {selectedItem.references.map((ref: any, i: number) => (
-                      <div key={i} className="mb-2">
-                        <p><span className="font-medium">Name:</span> {ref.name}</p>
-                        <p><span className="font-medium">Contact:</span> {ref.contact}</p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </>
+              <div className="border rounded-lg p-4 bg-gray-50 mb-6 space-y-2">
+                {Object.entries(selectedItem).map(([key, value]) => (
+                  <p key={key} className="text-sm">
+                    <span className="font-medium capitalize">{key}:</span>{" "}
+                    {typeof value === "object" ? JSON.stringify(value) : String(value)}
+                  </p>
+                ))}
+              </div>
             )}
 
             {activeTab === "Details" && selectedType === "registrations" && (
@@ -603,7 +521,7 @@ const PrincipalDashboard: React.FC = () => {
               </div>
             )}
 
-            {/* Documents Tab */}
+            {/* Documents */}
             {activeTab === "Documents" && (
               <div className="border rounded-lg p-4 bg-gray-50">
                 <h3 className="text-lg font-semibold mb-3">📂 Documents</h3>
@@ -646,7 +564,7 @@ const PrincipalDashboard: React.FC = () => {
               </div>
             )}
 
-            {/* Approve/Reject are only inside modal now (prevents accidental approvals) */}
+            {/* Approve / Reject */}
             {selectedType !== "parents" && (
               <div className="mt-6 flex flex-wrap justify-end gap-3">
                 <Button
