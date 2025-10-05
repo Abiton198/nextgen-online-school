@@ -6,9 +6,10 @@ import {
   collection,
   onSnapshot,
   doc,
+  setDoc,
   updateDoc,
   serverTimestamp,
-  query,
+  query as fsQuery,
   orderBy,
   getDocs,
 } from "firebase/firestore";
@@ -25,14 +26,15 @@ interface Registration {
   id: string;
   learnerData?: { firstName?: string; lastName?: string; grade?: string };
   parentData?: { name?: string; email?: string };
-  status: string;
+  status: "pending_review" | "enrolled" | "rejected" | "suspended";
   principalReviewed?: boolean;
-  classActivated?: boolean;
+  classActivated?: boolean; // for students this may be unused
+  parentId?: string;
 }
 
-interface Teacher {
-  id: string; // applicationId
-  uid?: string; // teacher’s Firebase Auth UID
+interface TeacherApplication {
+  id: string;           // applicationId (doc id in teacherApplications)
+  uid?: string;         // teacher’s Firebase Auth UID (important!)
   firstName?: string;
   lastName?: string;
   email?: string;
@@ -41,13 +43,13 @@ interface Teacher {
   contact?: string;
   qualification?: string;
   references?: { name: string; contact: string }[];
-  status: string;
+  status: "pending_review" | "approved" | "rejected" | "suspended";
   principalReviewed?: boolean;
-  classActivated?: boolean;
+  classActivated?: boolean; // whether teacher’s class access enabled
   [key: string]: any;
 }
 
-interface Parent {
+interface ParentAgg {
   id: string;
   name: string;
   email: string;
@@ -56,17 +58,17 @@ interface Parent {
 
 interface Payment {
   id: string;
-  amount: string;
-  paymentStatus: string;
-  processedAt: any;
+  amount?: string;
+  paymentStatus?: string; // e.g. COMPLETE, FAILED
+  processedAt?: any;
 }
 
 /* ---------------- Main Component ---------------- */
 const PrincipalDashboard: React.FC = () => {
   /* ---------------- State ---------------- */
   const [students, setStudents] = useState<Registration[]>([]);
-  const [teachers, setTeachers] = useState<Teacher[]>([]);
-  const [parents, setParents] = useState<Parent[]>([]);
+  const [teachers, setTeachers] = useState<TeacherApplication[]>([]);
+  const [parents, setParents] = useState<ParentAgg[]>([]);
   const [payments, setPayments] = useState<Record<string, Payment[]>>({});
   const [searchTerm, setSearchTerm] = useState("");
   const [filter, setFilter] = useState<"all" | "failed" | "latest">("all");
@@ -88,7 +90,6 @@ const PrincipalDashboard: React.FC = () => {
   >({});
   const [activeTab, setActiveTab] = useState<"Details" | "Documents">("Details");
 
-
   /* ---------------- Utilities ---------------- */
   const openModal = async (
     item: any,
@@ -97,8 +98,9 @@ const PrincipalDashboard: React.FC = () => {
     setSelectedItem(item);
     setSelectedType(type);
     setShowModal(true);
+    setActiveTab("Details");
 
-    // Load documents if teacher or student
+    // Load documents only for teacher and student
     if (type === "teacherApplications") {
       const docs = await fetchDocuments(type, item.id, item.uid);
       setDocuments(docs);
@@ -125,46 +127,46 @@ const PrincipalDashboard: React.FC = () => {
 
   /* ---------------- Firestore Listeners ---------------- */
   useEffect(() => {
-    // Students
+    // Students (registrations)
     const unsubRegistrations = onSnapshot(collection(db, "registrations"), async (snap) => {
       const regs = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Registration) }));
       setStudents(regs);
 
-      // Parents aggregation
-      const parentMap: Record<string, Parent> = {};
+      // Build Parents aggregation from registrations so a "Parents" card can be rendered
+      const parentMap: Record<string, ParentAgg> = {};
       regs.forEach((reg) => {
-        if (reg.parentData?.email) {
-          const pid = reg.parentData.email;
-          if (!parentMap[pid]) {
-            parentMap[pid] = {
-              id: pid,
-              name: reg.parentData.name || "Unknown Parent",
-              email: reg.parentData.email,
-              children: [],
-            };
-          }
-          parentMap[pid].children.push({
-            name: `${reg.learnerData?.firstName || ""} ${reg.learnerData?.lastName || ""}`,
-            grade: reg.learnerData?.grade || "-",
-            status: reg.status,
-          });
+        const pEmail = reg.parentData?.email;
+        if (!pEmail) return;
+
+        if (!parentMap[pEmail]) {
+          parentMap[pEmail] = {
+            id: pEmail,
+            name: reg.parentData?.name || "Unknown Parent",
+            email: pEmail,
+            children: [],
+          };
         }
+        parentMap[pEmail].children.push({
+          name: `${reg.learnerData?.firstName || ""} ${reg.learnerData?.lastName || ""}`.trim(),
+          grade: reg.learnerData?.grade || "-",
+          status: reg.status,
+        });
       });
       setParents(Object.values(parentMap));
 
-      // Payment history
+      // Payment history for each registration
       for (const reg of regs) {
         const payRef = collection(db, "registrations", reg.id, "payments");
-        const q = query(payRef, orderBy("processedAt", "desc"));
+        const q = fsQuery(payRef, orderBy("processedAt", "desc"));
         const paySnap = await getDocs(q);
         const history: Payment[] = paySnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
         setPayments((prev) => ({ ...prev, [reg.id]: history }));
       }
     });
 
-    // Teachers
+    // Teachers (applications)
     const unsubTeachers = onSnapshot(collection(db, "teacherApplications"), (snap) => {
-      setTeachers(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Teacher) })));
+      setTeachers(snap.docs.map((d) => ({ id: d.id, ...(d.data() as TeacherApplication) })));
     });
 
     return () => {
@@ -174,20 +176,67 @@ const PrincipalDashboard: React.FC = () => {
   }, []);
 
   /* ---------------- Firestore Actions ---------------- */
+
+  /**
+   * Generic status update helper for both collections
+   */
   const updateStatus = async (
     col: "registrations" | "teacherApplications",
     id: string,
     updates: Record<string, any>
   ) => updateDoc(doc(db, col, id), updates);
 
-  const approve = (col: "registrations" | "teacherApplications", id: string) =>
-    updateStatus(col, id, {
-      status: col === "registrations" ? "enrolled" : "approved",
+  /**
+   * Approve flow:
+   * - Students: sets status to "enrolled"
+   * - Teachers: sets status to "approved", principalReviewed, and creates/updates /teachers/{uid}
+   *   so that the teacher can access their dashboard immediately.
+   */
+  const approve = async (col: "registrations" | "teacherApplications", item: Registration | TeacherApplication) => {
+    const id = item.id;
+
+    if (col === "registrations") {
+      await updateStatus(col, id, {
+        status: "enrolled",
+        principalReviewed: true,
+        reviewedAt: serverTimestamp(),
+      });
+      return;
+    }
+
+    // Teacher Application flow
+    const app = item as TeacherApplication;
+    const uid = app.uid;
+    await updateStatus("teacherApplications", id, {
+      status: "approved",
       principalReviewed: true,
       reviewedAt: serverTimestamp(),
+      classActivated: true,
     });
 
-  const reject = (col: "registrations" | "teacherApplications", id: string) =>
+    // Create/Update the teacher profile doc to activate dashboard access
+    if (uid) {
+      await setDoc(
+        doc(db, "teachers", uid),
+        {
+          uid,
+          firstName: app.firstName || "",
+          lastName: app.lastName || "",
+          email: app.email || "",
+          contact: app.contact || "",
+          gender: app.gender || "",
+          country: app.country || "",
+          qualification: app.qualification || "",
+          status: "approved",          // profile status
+          classActivated: true,        // enables dashboard features
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+    }
+  };
+
+  const reject = async (col: "registrations" | "teacherApplications", id: string) =>
     updateStatus(col, id, {
       status: "rejected",
       principalReviewed: true,
@@ -203,10 +252,32 @@ const PrincipalDashboard: React.FC = () => {
       reinstatedAt: serverTimestamp(),
     });
 
-  const freezeClass = (col: "registrations" | "teacherApplications", id: string, frozen: boolean) =>
-    updateStatus(col, id, { classActivated: !frozen });
+  /**
+   * Freeze / Unfreeze:
+   * - Toggles classActivated in the application doc
+   * - If this is a teacher application AND the teacher profile exists, also toggles in /teachers/{uid}
+   */
+  const toggleClassActivation = async (item: Registration | TeacherApplication, col: "registrations" | "teacherApplications") => {
+    const current = Boolean(item.classActivated);
+    const next = !current;
 
-  /* ---------------- Fetch Documents ---------------- */
+    // Update the source document
+    await updateStatus(col, item.id, { classActivated: next });
+
+    // If teacher app and we know the uid, mirror the toggle in /teachers/{uid}
+    if (col === "teacherApplications") {
+      const t = item as TeacherApplication;
+      if (t.uid) {
+        await setDoc(
+          doc(db, "teachers", t.uid),
+          { classActivated: next, updatedAt: serverTimestamp() },
+          { merge: true }
+        );
+      }
+    }
+  };
+
+  /* ---------------- Fetch Documents from Firebase Storage ---------------- */
   const fetchDocuments = async (
     col: "registrations" | "teacherApplications",
     id: string,
@@ -214,10 +285,12 @@ const PrincipalDashboard: React.FC = () => {
   ): Promise<Record<string, { name: string; url: string }[]>> => {
     const storage = getStorage();
 
+    // Recursive fetch of all files grouped by folder
     const getAllFiles = async (folderRef: any): Promise<Record<string, { name: string; url: string }[]>> => {
       const result = await listAll(folderRef);
       const grouped: Record<string, { name: string; url: string }[]> = {};
 
+      // Files directly inside this folder
       if (result.items.length > 0) {
         const folderName = folderRef.name || "root";
         grouped[folderName] = await Promise.all(
@@ -228,6 +301,7 @@ const PrincipalDashboard: React.FC = () => {
         );
       }
 
+      // Recurse into subfolders
       for (const subRef of result.prefixes) {
         const subFiles = await getAllFiles(subRef);
         Object.entries(subFiles).forEach(([folder, files]) => {
@@ -241,8 +315,10 @@ const PrincipalDashboard: React.FC = () => {
     try {
       let rootRef;
       if (col === "teacherApplications" && uid) {
+        // ✅ Correct teacher docs path
         rootRef = ref(storage, `teacherApplications/${uid}/${id}/documents`);
       } else {
+        // ✅ Student registration docs path
         rootRef = ref(storage, `${col}/${id}/documents`);
       }
 
@@ -279,22 +355,18 @@ const PrincipalDashboard: React.FC = () => {
   };
 
   /* ---------------- Render Helpers ---------------- */
-  const renderCard = (
+  const renderUsersCard = (
     title: string,
-    users: (Registration | Teacher)[],
+    users: (Registration | TeacherApplication)[],
     col: "registrations" | "teacherApplications"
   ) => {
-    const filtered = users.filter((u) =>
-      (u.learnerData?.firstName || u.firstName || "")
-        .toLowerCase()
-        .includes(searchTerm.toLowerCase()) ||
-      (u.learnerData?.lastName || u.lastName || "")
-        .toLowerCase()
-        .includes(searchTerm.toLowerCase()) ||
-      (u.parentData?.email || u.email || "")
-        .toLowerCase()
-        .includes(searchTerm.toLowerCase())
-    );
+    const filtered = users.filter((u) => {
+      const first = (u as any).learnerData?.firstName || (u as any).firstName || "";
+      const last = (u as any).learnerData?.lastName || (u as any).lastName || "";
+      const email = (u as any).parentData?.email || (u as any).email || "";
+      const hay = `${first} ${last} ${email}`.toLowerCase();
+      return hay.includes(searchTerm.toLowerCase());
+    });
 
     const displayUsers =
       col === "registrations" ? filterStudents(filtered as Registration[]) : filtered;
@@ -307,50 +379,93 @@ const PrincipalDashboard: React.FC = () => {
         <CardContent>
           {displayUsers.length === 0 && <p className="text-sm text-gray-500">No records.</p>}
           <ul className="space-y-3">
-            {displayUsers.map((u) => (
-              <li key={u.id} className="p-3 border rounded bg-gray-50">
-                {/* Info */}
-                <div>
-                  <p className="font-medium">
-                    {"learnerData" in u
-                      ? `${u.learnerData?.firstName ?? ""} ${u.learnerData?.lastName ?? ""}`
-                      : `${u.firstName ?? ""} ${u.lastName ?? ""}`}
-                  </p>
-                  <p className="text-xs text-gray-500">{u.parentData?.email || u.email}</p>
-                  <p className="text-xs text-gray-400">Status: {u.status}</p>
-                </div>
+            {displayUsers.map((u) => {
+              const isStudent = "learnerData" in u;
+              const name = isStudent
+                ? `${u.learnerData?.firstName ?? ""} ${u.learnerData?.lastName ?? ""}`.trim()
+                : `${(u as TeacherApplication).firstName ?? ""} ${(u as TeacherApplication).lastName ?? ""}`.trim();
 
-                {/* Actions */}
-                {u.status === "pending_review" ? (
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="outline" onClick={() => openModal(u, col)}>
-                      Review Details
-                    </Button>
-                    <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => approve(col, u.id)}>
-                      Approve
-                    </Button>
-                    <Button size="sm" variant="destructive" onClick={() => reject(col, u.id)}>
-                      Reject
-                    </Button>
+              const email = isStudent ? u.parentData?.email : (u as TeacherApplication).email;
+
+              return (
+                <li key={u.id} className="p-3 border rounded bg-gray-50">
+                  {/* Info */}
+                  <div className="mb-3">
+                    <p className="font-medium">{name || "—"}</p>
+                    <p className="text-xs text-gray-500">{email || "—"}</p>
+                    <p className="text-xs text-gray-400">Status: {u.status}</p>
                   </div>
-                ) : (
-                  <div className="flex gap-2 mt-2">
-                    <Button
-                      size="sm"
-                      className="bg-yellow-500 hover:bg-yellow-600"
-                      onClick={() => suspend(col, u.id)}
-                    >
-                      Suspend
-                    </Button>
+
+                  {/* Actions:
+                      - Remove the "instant Approve" from the list to prevent accidental approvals.
+                      - Force principal to click "Review Details" to approve/reject. */}
+                  <div className="flex flex-wrap gap-2">
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => freezeClass(col, u.id, u.classActivated === false)}
+                      onClick={() => openModal(u, col)}
                     >
-                      {u.classActivated === false ? "Unfreeze Class" : "Freeze Class"}
+                      Review Details
                     </Button>
+
+                    {u.status !== "pending_review" && (
+                      <>
+                        <Button
+                          size="sm"
+                          className="bg-yellow-500 hover:bg-yellow-600"
+                          onClick={() => suspend(col, u.id)}
+                        >
+                          Suspend
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => toggleClassActivation(u, col)}
+                        >
+                          {/* Undefined/false => show "Unfreeze Class" to enable */}
+                          {u.classActivated ? "Freeze Class" : "Unfreeze Class"}
+                        </Button>
+                      </>
+                    )}
                   </div>
-                )}
+                </li>
+              );
+            })}
+          </ul>
+        </CardContent>
+      </Card>
+    );
+  };
+
+  const renderParentsCard = (items: ParentAgg[]) => {
+    const filtered = items.filter((p) =>
+      `${p.name} ${p.email}`.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
+    return (
+      <Card className="bg-white shadow">
+        <CardHeader>
+          <CardTitle>Parents</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {filtered.length === 0 && <p className="text-sm text-gray-500">No parent records.</p>}
+          <ul className="space-y-3">
+            {filtered.map((p) => (
+              <li key={p.id} className="p-3 border rounded bg-gray-50">
+                <div className="mb-2">
+                  <p className="font-medium">{p.name}</p>
+                  <p className="text-xs text-gray-500">{p.email}</p>
+                </div>
+                <div className="text-xs text-gray-600">
+                  <p className="font-semibold mb-1">Children:</p>
+                  <ul className="list-disc ml-5">
+                    {p.children.map((c, i) => (
+                      <li key={i}>
+                        {c.name} — Grade {c.grade} ({c.status})
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               </li>
             ))}
           </ul>
@@ -398,149 +513,165 @@ const PrincipalDashboard: React.FC = () => {
         </span>
       </div>
 
-      {/* Dashboard Grid */}
+      {/* Dashboard Grid: now includes Parents card */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {renderCard("Students", students, "registrations")}
-        {renderCard("Teachers", teachers, "teacherApplications")}
+        {renderUsersCard("Students", students, "registrations")}
+        {renderUsersCard("Teachers", teachers, "teacherApplications")}
+        {renderParentsCard(parents)}
       </div>
 
-      {/* ✅ Review Modal */}
-     {/* ✅ Review Modal with Tabs */}
-{showModal && selectedItem && (
-  <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-    <div className="bg-white rounded-xl shadow-lg w-full max-w-3xl max-h-[90vh] overflow-y-auto p-6 relative">
-      <button
-        className="absolute top-3 right-3 text-gray-500 hover:text-black"
-        onClick={closeModal}
-      >
-        ✕
-      </button>
+      {/* ✅ Review Modal with Tabs (Details / Documents) */}
+      {showModal && selectedItem && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-lg w-full max-w-3xl max-height-[90vh] max-h-[90vh] overflow-y-auto p-6 relative">
+            <button
+              className="absolute top-3 right-3 text-gray-500 hover:text-black"
+              onClick={closeModal}
+            >
+              ✕
+            </button>
 
-      <h2 className="text-xl font-bold mb-4">
-        Review {selectedType === "teacherApplications" ? "Teacher Application" : "Student Registration"}
-      </h2>
+            <h2 className="text-xl font-bold mb-4">
+              Review {selectedType === "teacherApplications" ? "Teacher Application" : "Student Registration"}
+            </h2>
 
-      {/* --- Tabs --- */}
-      <div className="flex border-b mb-4">
-        {["Details", "Documents"].map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition ${
-              activeTab === tab
-                ? "border-blue-600 text-blue-600"
-                : "border-transparent text-gray-500 hover:text-gray-700"
-            }`}
-          >
-            {tab}
-          </button>
-        ))}
-      </div>
-
-      {/* --- Tab Content --- */}
-      {activeTab === "Details" && selectedType === "teacherApplications" && (
-        <>
-          <div className="border rounded-lg p-4 bg-gray-50 mb-6">
-            <h3 className="text-lg font-semibold mb-3">👩‍🏫 Personal Information</h3>
-            <p><span className="font-medium">Name:</span> {selectedItem.firstName} {selectedItem.lastName}</p>
-            <p><span className="font-medium">Email:</span> {selectedItem.email}</p>
-            <p><span className="font-medium">Status:</span> {selectedItem.status}</p>
-            {selectedItem.gender && <p><span className="font-medium">Gender:</span> {selectedItem.gender}</p>}
-            {selectedItem.country && <p><span className="font-medium">Country:</span> {selectedItem.country}</p>}
-            {selectedItem.contact && <p><span className="font-medium">Contact:</span> {selectedItem.contact}</p>}
-          </div>
-
-          <div className="border rounded-lg p-4 bg-gray-50 mb-6">
-            <h3 className="text-lg font-semibold mb-3">🎓 Qualifications</h3>
-            {selectedItem.qualification ? (
-              <p>{selectedItem.qualification}</p>
-            ) : (
-              <p className="text-sm text-gray-500">No qualifications provided</p>
-            )}
-          </div>
-
-          {selectedItem.references && (
-            <div className="border rounded-lg p-4 bg-gray-50 mb-6">
-              <h3 className="text-lg font-semibold mb-3">📌 References</h3>
-              {selectedItem.references.map((ref: any, i: number) => (
-                <div key={i} className="mb-2">
-                  <p><span className="font-medium">Name:</span> {ref.name}</p>
-                  <p><span className="font-medium">Contact:</span> {ref.contact}</p>
-                </div>
+            {/* Tabs */}
+            <div className="flex border-b mb-4">
+              {["Details", "Documents"].map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab as "Details" | "Documents")}
+                  className={`px-4 py-2 text-sm font-medium border-b-2 transition ${
+                    activeTab === tab
+                      ? "border-blue-600 text-blue-600"
+                      : "border-transparent text-gray-500 hover:text-gray-700"
+                  }`}
+                >
+                  {tab}
+                </button>
               ))}
             </div>
-          )}
-        </>
-      )}
 
-      {activeTab === "Documents" && (
-        <div className="border rounded-lg p-4 bg-gray-50">
-          <h3 className="text-lg font-semibold mb-3">📂 Documents</h3>
-          {Object.keys(documents).length > 0 ? (
-            Object.entries(documents).map(([folder, files]) => (
-              <div key={folder} className="mb-4">
-                <h4 className="font-medium text-blue-700 mb-2">{folder}</h4>
-                {files.map((file) => (
-                  <div key={file.name} className="mb-3">
-                    <p className="text-sm font-semibold">{file.name}</p>
-                    {file.name.match(/\.(jpg|jpeg|png)$/i) && (
-                      <img
-                        src={file.url}
-                        alt={file.name}
-                        className="mt-2 rounded border max-h-64 object-contain"
-                      />
-                    )}
-                    {file.name.match(/\.pdf$/i) && (
-                      <iframe
-                        src={file.url}
-                        className="w-full h-64 mt-2 border rounded"
-                        title={file.name}
-                      ></iframe>
-                    )}
-                    <a
-                      href={file.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-600 underline text-sm mt-1 inline-block"
-                    >
-                      View / Download
-                    </a>
+            {/* Details Tab */}
+            {activeTab === "Details" && selectedType === "teacherApplications" && (
+              <>
+                <div className="border rounded-lg p-4 bg-gray-50 mb-6">
+                  <h3 className="text-lg font-semibold mb-3">👩‍🏫 Personal Information</h3>
+                  <p><span className="font-medium">Name:</span> {selectedItem.firstName} {selectedItem.lastName}</p>
+                  <p><span className="font-medium">Email:</span> {selectedItem.email}</p>
+                  <p><span className="font-medium">Status:</span> {selectedItem.status}</p>
+                  {selectedItem.gender && <p><span className="font-medium">Gender:</span> {selectedItem.gender}</p>}
+                  {selectedItem.country && <p><span className="font-medium">Country:</span> {selectedItem.country}</p>}
+                  {selectedItem.contact && <p><span className="font-medium">Contact:</span> {selectedItem.contact}</p>}
+                  {selectedItem.uid && <p><span className="font-medium">UID:</span> {selectedItem.uid}</p>}
+                </div>
+
+                <div className="border rounded-lg p-4 bg-gray-50 mb-6">
+                  <h3 className="text-lg font-semibold mb-3">🎓 Qualifications</h3>
+                  {selectedItem.qualification ? (
+                    <p>{selectedItem.qualification}</p>
+                  ) : (
+                    <p className="text-sm text-gray-500">No qualifications provided</p>
+                  )}
+                </div>
+
+                {selectedItem.references && Array.isArray(selectedItem.references) && (
+                  <div className="border rounded-lg p-4 bg-gray-50 mb-6">
+                    <h3 className="text-lg font-semibold mb-3">📌 References</h3>
+                    {selectedItem.references.map((ref: any, i: number) => (
+                      <div key={i} className="mb-2">
+                        <p><span className="font-medium">Name:</span> {ref.name}</p>
+                        <p><span className="font-medium">Contact:</span> {ref.contact}</p>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            ))
-          ) : (
-            <p className="text-sm text-gray-500">No documents uploaded yet.</p>
-          )}
-        </div>
-      )}
+                )}
+              </>
+            )}
 
-      {/* Approve/Reject Buttons */}
-      {selectedType !== "parents" && (
-        <div className="mt-6 flex justify-end gap-3">
-          <Button
-            className="bg-green-600 hover:bg-green-700"
-            onClick={() => {
-              approve(selectedType as any, selectedItem.id);
-              closeModal();
-            }}
-          >
-            Approve
-          </Button>
-          <Button
-            variant="destructive"
-            onClick={() => {
-              reject(selectedType as any, selectedItem.id);
-              closeModal();
-            }}
-          >
-            Reject
-          </Button>
+            {activeTab === "Details" && selectedType === "registrations" && (
+              <div className="border rounded-lg p-4 bg-gray-50 mb-6">
+                <h3 className="text-lg font-semibold mb-3">👨‍🎓 Student Information</h3>
+                <p>
+                  <span className="font-medium">Learner:</span>{" "}
+                  {`${selectedItem.learnerData?.firstName || ""} ${selectedItem.learnerData?.lastName || ""}`.trim()}
+                </p>
+                <p><span className="font-medium">Grade:</span> {selectedItem.learnerData?.grade || "-"}</p>
+                <p><span className="font-medium">Parent:</span> {selectedItem.parentData?.name || "-"}</p>
+                <p><span className="font-medium">Parent Email:</span> {selectedItem.parentData?.email || "-"}</p>
+                <p><span className="font-medium">Status:</span> {selectedItem.status}</p>
+              </div>
+            )}
+
+            {/* Documents Tab */}
+            {activeTab === "Documents" && (
+              <div className="border rounded-lg p-4 bg-gray-50">
+                <h3 className="text-lg font-semibold mb-3">📂 Documents</h3>
+                {Object.keys(documents).length > 0 ? (
+                  Object.entries(documents).map(([folder, files]) => (
+                    <div key={folder} className="mb-4">
+                      <h4 className="font-medium text-blue-700 mb-2">{folder}</h4>
+                      {files.map((file) => (
+                        <div key={file.name} className="mb-3">
+                          <p className="text-sm font-semibold">{file.name}</p>
+                          {file.name.match(/\.(jpg|jpeg|png)$/i) && (
+                            <img
+                              src={file.url}
+                              alt={file.name}
+                              className="mt-2 rounded border max-h-64 object-contain"
+                            />
+                          )}
+                          {file.name.match(/\.pdf$/i) && (
+                            <iframe
+                              src={file.url}
+                              className="w-full h-64 mt-2 border rounded"
+                              title={file.name}
+                            ></iframe>
+                          )}
+                          <a
+                            href={file.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 underline text-sm mt-1 inline-block"
+                          >
+                            View / Download
+                          </a>
+                        </div>
+                      ))}
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-gray-500">No documents uploaded yet.</p>
+                )}
+              </div>
+            )}
+
+            {/* Approve/Reject are only inside modal now (prevents accidental approvals) */}
+            {selectedType !== "parents" && (
+              <div className="mt-6 flex flex-wrap justify-end gap-3">
+                <Button
+                  className="bg-green-600 hover:bg-green-700"
+                  onClick={async () => {
+                    await approve(selectedType as any, selectedItem);
+                    closeModal();
+                  }}
+                >
+                  Approve
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={async () => {
+                    await reject(selectedType as any, selectedItem.id);
+                    closeModal();
+                  }}
+                >
+                  Reject
+                </Button>
+              </div>
+            )}
+          </div>
         </div>
       )}
-    </div>
-  </div>
-)}
     </div>
   );
 };
