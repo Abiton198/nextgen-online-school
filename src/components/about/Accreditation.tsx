@@ -2,7 +2,6 @@
 
 import React from "react";
 import { Link } from "react-router-dom";
-import coursera from "../../img/coursera.jpeg";
 
 
 // Placeholder logo URLs (replace with local assets or CDN links)
@@ -99,7 +98,7 @@ const Accreditation: React.FC = () => {
                 transition seamlessly into top universities in South Africa and beyond.
               </p>
               <div className="flex flex-wrap gap-4 mt-2 items-center">
-                <img src={coursera} alt="Coursera" className="h-8" />
+                <img src="/logos/coursera.jpeg" alt="Coursera" className="h-8" />
                 <img src={logos.google} alt="Google" className="h-6" />
                 <img src={logos.amazon} alt="Amazon" className="h-6" />
                 <img src={logos.ibm} alt="IBM" className="h-8" />
