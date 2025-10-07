@@ -2,7 +2,8 @@
 
 import React from "react";
 import { Link } from "react-router-dom";
-import coursera from '../img/cousera.jpeg'
+import coursera from "../../img/coursera.jpeg";
+
 
 // Placeholder logo URLs (replace with local assets or CDN links)
 const logos = {
