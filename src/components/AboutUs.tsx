@@ -1,231 +1,130 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import React from "react";
 import { Link } from "react-router-dom";
 
 const AboutUs: React.FC = () => {
-  const [expanded, setExpanded] = useState(false);
-  const expandedRef = useRef<HTMLDivElement | null>(null);
-
-  // Auto-scroll into view when expanded
-  useEffect(() => {
-    if (expanded && expandedRef.current) {
-      expandedRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  }, [expanded]);
-
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-800 px-6 py-12">
-      <div className="max-w-5xl mx-auto space-y-8">
-        {/* Page Heading */}
-        <h1 className="text-4xl font-bold text-center text-blue-700">
-          About Us
+    <div className="min-h-screen bg-gradient-to-br from-gray-100 to-gray-200 px-6 py-12">
+      <div className="max-w-6xl mx-auto space-y-12">
+        {/* Heading */}
+        <h1 className="text-4xl font-bold text-gray-800 text-center">
+          Discover NextGen Independent Online School
         </h1>
+        <p className="text-center text-lg text-gray-600 max-w-3xl mx-auto">
+          We’re not just another school. We’re building{" "}
+          <strong>future-ready innovators</strong> across South Africa and beyond.
+        </p>
 
-        {/* 🔹 Navigation buttons (TOP) */}
-        <div className="flex justify-center gap-4 mt-4">
-          <Link
-            to="/"
-            className="bg-gray-200 text-gray-800 px-4 py-2 rounded-lg shadow hover:bg-gray-300 transition"
-          >
-            ← Return Home
-          </Link>
-          <Link
-            to="/login"
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg shadow hover:bg-blue-700 transition"
-          >
-            Enrol Now
-          </Link>
-        </div>
-
-        {/* Intro */}
-        <section className="space-y-4 text-lg leading-relaxed">
-          <p>
-            <strong>NextGen Independent Online School</strong>, based in{" "}
-            <strong>Gqeberha, Eastern Cape</strong>, is a proudly{" "}
-            <em>indigenous Black South African women–led initiative</em> created in
-            collaboration with experienced science educators and software innovators.
-          </p>
-          <p>
-            As a <strong>CAPS-registered independent STEM high school</strong>, we
-            empower learners with career-focused pathways in{" "}
-            <strong>engineering, medicine, mathematics, robotics, and technology
-            innovation</strong>.
-          </p>
-        </section>
-
-        {/* Two Featured Sections */}
-        <section>
-          <h2 className="text-2xl font-semibold text-blue-600 mb-2">
-            Why Choose NextGen?
-          </h2>
-          <p>
-            We offer a <strong>globally accessible</strong> STEM education with
-            integrated dashboards for parents, teachers, and students. Learners
-            benefit from <strong>secure tuition payments</strong>, immersive
-            science labs, and a focus on career-readiness through Pure Mathematics
-            and advanced science modules.
-          </p>
-        </section>
-
-        <section>
-          <h2 className="text-2xl font-semibold text-blue-600 mb-2">
-            Our Learning Platform
-          </h2>
-          <p>
-            Powered by <strong>Google Classroom</strong> and enhanced with{" "}
-            <strong>custom dashboards</strong>, our platform creates a
-            transparent, collaborative environment. It supports{" "}
-            <strong>virtual science labs</strong>, AI, robotics, and programming
-            as complementary programs to CAPS subjects.
-          </p>
-        </section>
-
-        {/* Read More Toggle */}
-        {!expanded && (
-          <div className="text-center pt-6">
-            <button
-              onClick={() => setExpanded(true)}
-              className="inline-block bg-blue-600 text-white px-6 py-2 rounded-lg shadow hover:bg-blue-700 transition"
+        {/* Sections Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          {/* Why Choose */}
+          <div className="p-6 bg-white rounded-xl shadow hover:shadow-lg transition">
+            <h2 className="text-2xl font-semibold text-indigo-600 mb-2">🌟 Why Choose Us?</h2>
+            <p className="text-gray-700 mb-4">
+              Affordable, accessible, and globally connected. See why parents trust
+              us to unlock their child’s full potential.
+            </p>
+            <Link
+              to="/about/why-choose"
+              className="inline-block bg-indigo-600 text-white px-4 py-2 rounded-lg shadow hover:bg-indigo-700 transition"
             >
-              Read More
-            </button>
+              Read More →
+            </Link>
           </div>
-        )}
 
-        {/* Animated Expanded Content */}
-        <AnimatePresence>
-          {expanded && (
-            <motion.div
-              key="expanded-content"
-              ref={expandedRef}
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.5, ease: "easeInOut" }}
-              className="overflow-hidden space-y-8 relative"
+          {/* Learning Platform */}
+          <div className="p-6 bg-white rounded-xl shadow hover:shadow-lg transition">
+            <h2 className="text-2xl font-semibold text-blue-600 mb-2">💻 Learning Platform</h2>
+            <p className="text-gray-700 mb-4">
+              Our classrooms live inside Google Classroom, with dashboards that
+              connect parents, students, and teachers seamlessly.
+            </p>
+            <Link
+              to="/about/learning-platform"
+              className="inline-block bg-blue-600 text-white px-4 py-2 rounded-lg shadow hover:bg-blue-700 transition"
             >
-              <section>
-                <h2 className="text-2xl font-semibold text-blue-600 mb-2">Our Niche</h2>
-                <p>
-                  Unlike general online schools, <strong>NextGen Online School</strong> is dedicated
-                  exclusively to <strong>STEM education</strong>. We go beyond textbooks with
-                  real-world applications, industry exposure, and innovation-driven programs.
-                </p>
-              </section>
+              Read More →
+            </Link>
+          </div>
 
-              <section>
-                <h2 className="text-2xl font-semibold text-blue-600 mb-2">Future Partnerships</h2>
-                <p>
-                  We are building partnerships with leading South African universities such as{" "}
-                  <strong>Nelson Mandela University</strong>, with the goal of creating{" "}
-                  <strong>feeder pathways</strong> for our learners into science and technology degrees.
-                </p>
-              </section>
+          {/* Subjects Offered */}
+          <div className="p-6 bg-white rounded-xl shadow hover:shadow-lg transition">
+            <h2 className="text-2xl font-semibold text-green-600 mb-2">📘 Subjects Offered</h2>
+            <p className="text-gray-700 mb-4">
+              From coding to natural sciences, every subject is a pathway to
+              tomorrow’s careers. Which future will your child choose?
+            </p>
+            <Link
+              to="/about/subjects"
+              className="inline-block bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700 transition"
+            >
+              Read More →
+            </Link>
+          </div>
 
-              {/* Subjects Offered */}
-              <section>
-                <h2 className="text-2xl font-semibold text-blue-600 mb-2">Subjects Offered</h2>
-                <p className="mb-4">
-                  Learners are required to choose a <strong>minimum of 5 subjects</strong> including at least one{" "}
-                  <strong>language</strong>, as outlined by the CAPS curriculum. At NextGen, our focus is on{" "}
-                  <strong>STEM pathways</strong> with modern integration.
-                </p>
+          {/* Enrolment */}
+          <div className="p-6 bg-white rounded-xl shadow hover:shadow-lg transition">
+            <h2 className="text-2xl font-semibold text-yellow-600 mb-2">📝 Enrolment</h2>
+            <p className="text-gray-700 mb-4">
+              Fast, safe, and 100% online. Get started in less than 10 minutes
+              with PayFast-powered enrolment.
+            </p>
+            <Link
+              to="/about/enrolment"
+              className="inline-block bg-yellow-600 text-white px-4 py-2 rounded-lg shadow hover:bg-yellow-700 transition"
+            >
+              Read More →
+            </Link>
+          </div>
 
-                <h3 className="text-xl font-semibold text-blue-500 mt-4 mb-2">
-                  Senior Phase (Grades 7–9) – Foundations
-                </h3>
-                <ul className="list-disc list-inside space-y-1">
-                  <li>English Language</li>
-                  <li>Mathematics (Pure)</li>
-                  <li>Natural Sciences (combined Physical & Life Sciences)</li>
-                  <li>Digital Technology</li>
-                  <li>Life Orientation</li>
-                  
-                </ul>
+          {/* Vision */}
+          <div className="p-6 bg-white rounded-xl shadow hover:shadow-lg transition">
+            <h2 className="text-2xl font-semibold text-purple-600 mb-2">🚀 Our Vision</h2>
+            <p className="text-gray-700 mb-4">
+              We’re not just teaching lessons — we’re shaping Africa’s future
+              leaders in STEM, medicine, and innovation.
+            </p>
+            <Link
+              to="/about/vision"
+              className="inline-block bg-purple-600 text-white px-4 py-2 rounded-lg shadow hover:bg-purple-700 transition"
+            >
+              Read More →
+            </Link>
+          </div>
 
-                <h3 className="text-xl font-semibold text-blue-500 mt-6 mb-2">
-                  FET Phase (Grades 10–12) – STEM Core Pathways
-                </h3>
-                <p className="mb-2 text-sm text-gray-600">
-                  Learners specialize in career-focused STEM subjects while completing the CAPS compulsory requirements.
-                </p>
-                <ul className="list-disc list-inside space-y-1">
-          
-                  <li>English Language</li>
-                  <li>Mathematics (Pure)</li>
-                  <li>Life Orientation</li>
-                  <li>Physical Sciences</li>
-                  <li>Life Sciences</li>
-                  <li>Information Technology (IT)</li>
-                  <li>Computer Applications Technology (CAT)</li>
-                </ul>
-
-                <h3 className="text-xl font-semibold text-blue-500 mt-6 mb-2">
-                  Beyond CAPS – Future-Focused
-                </h3>
-                <ul className="list-disc list-inside space-y-1">
-                  <li>Artificial Intelligence (AI)</li>
-                  <li>Robotics</li>
-                  <li>Programming & App Development</li>
-                </ul>
-              </section>
-
-              <section>
-                <h2 className="text-2xl font-semibold text-blue-600 mb-2">Enrolment</h2>
-                <ol className="list-decimal list-inside space-y-2">
-                  <li>Parents sign up online via our secure portal.</li>
-                  <li>They register their child’s details in the Parent Dashboard.</li>
-                  <li>Payments are made via PayFast (monthly or annually).</li>
-                  <li>Learners are onboarded into Google Classroom to begin their STEM journey.</li>
-                </ol>
-              </section>
-
-              <section className="text-center pt-6 border-t">
-                <h2 className="text-2xl font-semibold text-blue-700 mb-2">Our Vision</h2>
-                <p>
-                  To be South Africa’s leading online CAPS STEM high school — preparing{" "}
-                  <strong>innovators, problem-solvers, and leaders</strong> who will shape the
-                  future in engineering, science, medicine, and technology.
-                </p>
-              </section>
-
-              <div className="text-center mt-10">
-                <p className="font-bold text-blue-800 text-lg">
-                  🔥 NextGen Independent Online School — “Future-Ready. Globally Connected. Rooted in African Innovation.”
-                </p>
-              </div>
-
-              {/* 🔹 Navigation buttons (BOTTOM) */}
-              <div className="flex justify-center gap-4 mt-8">
-                <Link
-                  to="/"
-                  className="bg-gray-200 text-gray-800 px-4 py-2 rounded-lg shadow hover:bg-gray-300 transition"
-                >
-                  ← Return Home
-                </Link>
-                <Link
-                  to="/login"
-                  className="bg-blue-600 text-white px-4 py-2 rounded-lg shadow hover:bg-blue-700 transition"
-                >
-                  Enrol Now
-                </Link>
-              </div>
-
-              {/* Sticky Collapse Button */}
-              <div className="sticky bottom-4 flex justify-center pt-6 bg-gradient-to-t from-gray-50">
-                <button
-                  onClick={() => setExpanded(false)}
-                  className="inline-block bg-gray-200 text-gray-700 px-6 py-2 rounded-lg shadow hover:bg-gray-300 transition"
-                >
-                  Show Less
-                </button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+          {/* Fees Structure */}
+          <div className="p-6 bg-white rounded-xl shadow hover:shadow-lg transition">
+            <h2 className="text-2xl font-semibold text-red-600 mb-2">💳 Fees Structure</h2>
+            <p className="text-gray-700 mb-4">
+              Quality education doesn’t have to break the bank. Explore our
+              flexible, parent-friendly plans with built-in discounts.
+            </p>
+            <Link
+              to="/about/fees"
+              className="inline-block bg-red-600 text-white px-4 py-2 rounded-lg shadow hover:bg-red-700 transition"
+            >
+              Read More →
+            </Link>
+          </div>
+        </div>
       </div>
+
+      {/* Teaching Staff */}
+<div className="p-6 bg-white rounded-xl shadow hover:shadow-lg transition">
+  <h2 className="text-2xl font-semibold text-pink-600 mb-2">👩‍🏫 Our Teaching Staff</h2>
+  <p className="text-gray-700 mb-4">
+    We empower women, uplift marginalized communities, and unite teachers of 
+    all races to pass knowledge on to the next generation.
+  </p>
+  <Link
+    to="/about/teaching-staff"
+    className="inline-block bg-pink-600 text-white px-4 py-2 rounded-lg shadow hover:bg-pink-700 transition"
+  >
+    Read More →
+  </Link>
+</div>
+
     </div>
   );
 };

@@ -10,7 +10,7 @@ import { Toaster } from "./components/ui/toaster";
 import { Toaster as Sonner } from "./components/ui/sonner";
 
 import { AuthProvider } from "@/components/auth/AuthProvider";
-import { ProtectedRoute } from "@/components/auth/ProtectedRoute"; // ✅ import
+import { ProtectedRoute } from "@/components/auth/ProtectedRoute"; 
 
 // Auth Pages
 import LoginForm from "@/components/auth/LoginForm";
@@ -33,7 +33,16 @@ import StatusSection from "@/components/dashboards/parent/sections/StatusSection
 // Public Pages
 import AboutUs from "@/components/AboutUs";
 import NotFound from "@/pages/NotFound";
-import AppLayout from "@/components/AppLayout"; // ✅ Landing/Home page
+import AppLayout from "@/components/AppLayout";
+
+// 🔥 New Detail Pages (Marketing)
+import WhyChoose from "./components/about/WhyChoose";
+import LearningPlatform from "./components/about/LearningPlatform";
+import SubjectsOffered from "./components/about/SubjectsOffered";
+import Enrolment from "./components/about/Enrolment";
+import Vision from "./components/about/Vision";
+import FeesStructure from "./components/about/FeesStructure";
+import TeachingStaff from "./components/about/TeachingStaff";
 
 const queryClient = new QueryClient();
 
@@ -54,6 +63,15 @@ const App: React.FC = () => {
 
                 {/* ℹ️ Public Pages */}
                 <Route path="/about" element={<AboutUs />} />
+
+                {/* 🔎 About detail pages */}
+                <Route path="/about/why-choose" element={<WhyChoose />} />
+                <Route path="/about/learning-platform" element={<LearningPlatform />} />
+                <Route path="/about/subjects" element={<SubjectsOffered />} />
+                <Route path="/about/enrolment" element={<Enrolment />} />
+                <Route path="/about/vision" element={<Vision />} />
+                <Route path="/about/fees" element={<FeesStructure />} />
+                <Route path="/about/teaching-staff" element={<TeachingStaff />} />
 
                 {/* 👨‍👩‍👧 Parent Registration and Info */}
                 <Route path="/register" element={<ParentRegistration />} />
@@ -108,11 +126,11 @@ const App: React.FC = () => {
                   }
                 />
 
+                {/* ✅ Optional: If user visits /home, redirect to landing */}
+                <Route path="/home" element={<Navigate to="/" replace />} />
+
                 {/* 🚫 Fallback for invalid URLs */}
                 <Route path="*" element={<NotFound />} />
-
-                {/* ✅ Optional: If user visits /home, redirect to main landing */}
-                <Route path="/home" element={<Navigate to="/" replace />} />
               </Routes>
             </BrowserRouter>
           </AuthProvider>
