@@ -1,24 +1,21 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useAuth } from "../auth/AuthProvider";
+import { db } from "@/lib/firebaseConfig";
 import {
   collection,
-  collectionGroup,
-  doc,
-  onSnapshot,
-  orderBy,
   query,
   where,
+  onSnapshot,
+  orderBy,
 } from "firebase/firestore";
-import { db } from "@/lib/firebaseConfig";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Card } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
-import { syncClassroomToFirestore } from "@/lib/classroomSync";
 import { useNavigate } from "react-router-dom";
 
+/* ---------------- Types ---------------- */
 interface TeacherProfile {
   firstName?: string;
   lastName?: string;
@@ -27,18 +24,27 @@ interface TeacherProfile {
   classActivated?: boolean;
 }
 
+interface TimetableEntry {
+  id: string;
+  grade: string;
+  subject: string;
+  day: string;
+  time: string;
+  duration: number;
+  teacherName: string;
+  googleClassroomLink: string;
+}
+
 const TeacherDashboard: React.FC = () => {
-  const { user, logout, linkClassroomScopes } = useAuth();
+  const { user, logout } = useAuth();
   const navigate = useNavigate();
 
-  const [err, setErr] = useState<string>("");
-  const [syncing, setSyncing] = useState(false);
   const [profile, setProfile] = useState<TeacherProfile | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
 
   const [courses, setCourses] = useState<any[]>([]);
-  const [coursework, setCoursework] = useState<any[]>([]);
-  const [submissions, setSubmissions] = useState<any[]>([]);
+  const [timetable, setTimetable] = useState<TimetableEntry[]>([]);
+  const [activeTab, setActiveTab] = useState<"classroom" | "timetable">("classroom");
 
   /* ---------------- Listen to Teacher Profile ---------------- */
   useEffect(() => {
@@ -46,102 +52,21 @@ const TeacherDashboard: React.FC = () => {
     setLoadingProfile(true);
 
     const unsub = onSnapshot(
-      doc(db, "teachers", user.uid), // ✅ canonical teacher profile
+      doc(db, "teachers", user.uid),
       (snap) => {
-        if (snap.exists()) {
-          setProfile(snap.data() as TeacherProfile);
-        } else {
-          setProfile(null);
-        }
+        setProfile(snap.exists() ? (snap.data() as TeacherProfile) : null);
         setLoadingProfile(false);
       },
-      (error) => {
-        setErr(error.message || "Failed to load teacher profile");
-        setLoadingProfile(false);
-      }
+      () => setLoadingProfile(false)
     );
 
     return () => unsub();
   }, [user?.uid]);
 
-  /* ---------------- Guards ---------------- */
-  if (!user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Alert variant="destructive">
-          <AlertDescription>You must sign in first.</AlertDescription>
-        </Alert>
-      </div>
-    );
-  }
-
-  if (loadingProfile) {
-    return (
-      <div className="min-h-screen flex items-center justify-center text-gray-600">
-        <Loader2 className="h-6 w-6 animate-spin mr-2" /> Loading profile...
-      </div>
-    );
-  }
-
-  if (!profile) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Alert variant="destructive">
-          <AlertDescription>
-            No teacher profile found. Please complete your application.
-          </AlertDescription>
-        </Alert>
-      </div>
-    );
-  }
-
-  /* ---------------- Status Banner ---------------- */
-  const renderStatusBanner = () => {
-    if (profile.status === "approved" && profile.classActivated) {
-      return (
-        <div className="bg-green-600 text-white text-center py-2">
-          ✅ Your application is approved and your class is active!
-        </div>
-      );
-    }
-
-    if (profile.status === "rejected") {
-      return (
-        <div className="bg-red-600 text-white text-center py-2">
-          ❌ Your application has been rejected. Please contact the principal.
-        </div>
-      );
-    }
-
-    return (
-      <div className="bg-yellow-500 text-white text-center py-2">
-        ⏳ Your application is <b>{profile.status}</b>.{" "}
-        {!profile.classActivated && "Waiting for class activation."}
-      </div>
-    );
-  };
-
-  // 🚧 Block access until approved + activated
-  if (profile.status !== "approved" || !profile.classActivated) {
-    return (
-      <div className="min-h-screen flex flex-col">
-        {renderStatusBanner()}
-        <div className="flex-grow flex items-center justify-center">
-          <Alert>
-            <AlertDescription>
-              You’ll gain access once approved and your class is activated.
-            </AlertDescription>
-          </Alert>
-        </div>
-      </div>
-    );
-  }
-
-  /* ---------------- Realtime Classroom Listeners ---------------- */
+  /* ---------------- Load Courses (from Firestore sync) ---------------- */
   useEffect(() => {
     if (!user?.uid) return;
 
-    // Courses
     const qCourses = query(
       collection(db, "users", user.uid, "classroom", "courses"),
       orderBy("name")
@@ -150,62 +75,50 @@ const TeacherDashboard: React.FC = () => {
       setCourses(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
     );
 
-    // Coursework
-    const qWork = query(
-      collectionGroup(db, "coursework"),
-      where("ownerUid", "==", user.uid)
-    );
-    const unsubWork = onSnapshot(qWork, (snap) =>
-      setCoursework(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
-    );
-
-    // Submissions
-    const qSubs = query(
-      collectionGroup(db, "submissions"),
-      where("ownerUid", "==", user.uid)
-    );
-    const unsubSubs = onSnapshot(qSubs, (snap) =>
-      setSubmissions(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
-    );
-
-    return () => {
-      unsubCourses();
-      unsubWork();
-      unsubSubs();
-    };
+    return () => unsubCourses();
   }, [user?.uid]);
 
-  /* ---------------- Derived Stats ---------------- */
-  const pendingToGrade = useMemo(
-    () =>
-      submissions.filter(
-        (s) => s.state === "TURNED_IN" && s.assignedGrade == null
-      ),
-    [submissions]
-  );
+  /* ---------------- Load Timetable (principal-created) ---------------- */
+  useEffect(() => {
+    if (!profile?.subject) return;
 
-  /* ---------------- Sync Handler ---------------- */
-  const connectingRef = useRef(false);
+    const qTT = query(
+      collection(db, "timetable"),
+      where("subject", "==", profile.subject),
+      orderBy("day")
+    );
+    const unsubTT = onSnapshot(qTT, (snap) =>
+      setTimetable(snap.docs.map((d) => ({ id: d.id, ...(d.data() as TimetableEntry) })))
+    );
 
-  const handleConnectOrSync = async () => {
-    if (!user) return;
-    if (connectingRef.current) return;
-    connectingRef.current = true;
+    return () => unsubTT();
+  }, [profile?.subject]);
 
-    setErr("");
-    setSyncing(true);
-    try {
-      const token = await linkClassroomScopes(user, "teacher");
-      if (!token) throw new Error("Failed to get Google Classroom token");
-
-      await syncClassroomToFirestore(user.uid, token, "teacher");
-    } catch (e: any) {
-      setErr(e.message || "Failed to sync with Classroom");
-    } finally {
-      setSyncing(false);
-      connectingRef.current = false;
-    }
-  };
+  /* ---------------- Guards ---------------- */
+  if (!user) {
+    return <div className="min-h-screen flex items-center justify-center">Please sign in.</div>;
+  }
+  if (loadingProfile) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-gray-600">
+        <Loader2 className="h-6 w-6 animate-spin mr-2" /> Loading profile...
+      </div>
+    );
+  }
+  if (!profile) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-red-600">
+        No teacher profile found. Please complete your application.
+      </div>
+    );
+  }
+  if (profile.status !== "approved" || !profile.classActivated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-yellow-600">
+        Your application is {profile.status}. Waiting for class activation.
+      </div>
+    );
+  }
 
   /* ---------------- Logout ---------------- */
   const handleLogout = async () => {
@@ -216,68 +129,88 @@ const TeacherDashboard: React.FC = () => {
   /* ---------------- UI ---------------- */
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      {renderStatusBanner()}
-
       {/* Header */}
       <div className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 flex justify-between items-center py-4">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Teacher Dashboard</h1>
-            <p className="text-gray-600">
-              Welcome back,{" "}
-              {profile.firstName
-                ? `${profile.firstName} ${profile.lastName || ""}`
-                : user.displayName || "Teacher"}
-              {profile.subject && ` — ${profile.subject}`}
-            </p>
-          </div>
+        <div className="max-w-6xl mx-auto px-4 flex justify-between items-center py-4">
+          <h1 className="text-xl font-bold">Teacher Dashboard</h1>
           <div className="flex gap-2">
-            <Button onClick={handleConnectOrSync} disabled={syncing}>
-              {syncing ? (
-                <span className="inline-flex items-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Syncing...
-                </span>
-              ) : (
-                "Connect / Sync Classroom"
-              )}
-            </Button>
             <Button onClick={handleLogout} className="bg-red-600 hover:bg-red-700">
               Logout
             </Button>
           </div>
         </div>
+
+        {/* Tabs */}
+        <div className="flex justify-center space-x-6 border-t bg-gray-100 py-2">
+          {["classroom", "timetable"].map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab as "classroom" | "timetable")}
+              className={`px-4 py-2 rounded ${
+                activeTab === tab ? "bg-blue-600 text-white" : "text-gray-700"
+              }`}
+            >
+              {tab.charAt(0).toUpperCase() + tab.slice(1)}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {err && (
-        <div className="max-w-3xl mx-auto mt-4 px-4">
-          <Alert variant="destructive">
-            <AlertDescription>{err}</AlertDescription>
-          </Alert>
-        </div>
-      )}
+      {/* Content */}
+      <div className="max-w-6xl mx-auto w-full flex-grow p-6">
+        {activeTab === "classroom" && (
+          <div className="grid gap-4">
+            {courses.length === 0 ? (
+              <p className="text-gray-600">No courses synced yet.</p>
+            ) : (
+              courses.map((c) => (
+                <Card key={c.id} className="p-4 flex justify-between items-center">
+                  <div>
+                    <h3 className="font-semibold">{c.name}</h3>
+                    <p className="text-sm text-gray-600">{c.section || ""}</p>
+                  </div>
+                  <a
+                    href={c.alternateLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <Button className="bg-blue-600 text-white hover:bg-blue-700">
+                      Join Classroom
+                    </Button>
+                  </a>
+                </Card>
+              ))
+            )}
+          </div>
+        )}
 
-      {/* Stats */}
-      <div className="max-w-7xl mx-auto px-4 py-8 flex-grow">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <Card className="bg-orange-600 text-white">
-            <CardContent className="p-6">
-              <h3 className="text-lg font-semibold mb-2">Courses</h3>
-              <p className="text-3xl font-bold">{courses.length}</p>
-            </CardContent>
-          </Card>
-          <Card className="bg-yellow-600 text-white">
-            <CardContent className="p-6">
-              <h3 className="text-lg font-semibold mb-2">Pending Grading</h3>
-              <p className="text-3xl font-bold">{pendingToGrade.length}</p>
-            </CardContent>
-          </Card>
-          <Card className="bg-blue-600 text-white">
-            <CardContent className="p-6">
-              <h3 className="text-lg font-semibold mb-2">Coursework</h3>
-              <p className="text-3xl font-bold">{coursework.length}</p>
-            </CardContent>
-          </Card>
-        </div>
+        {activeTab === "timetable" && (
+          <div className="space-y-3">
+            {timetable.length === 0 ? (
+              <p className="text-gray-600">No timetable entries yet.</p>
+            ) : (
+              timetable.map((t) => (
+                <Card key={t.id} className="p-4">
+                  <h3 className="font-semibold">{t.subject}</h3>
+                  <p className="text-sm text-gray-600">
+                    Grade {t.grade} — {t.day}, {t.time} ({t.duration}m)
+                  </p>
+                  <p className="text-sm text-gray-500">Teacher: {t.teacherName}</p>
+                  <a
+                    href={t.googleClassroomLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-block mt-2"
+                  >
+                    <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white">
+                      Join Class
+                    </Button>
+                  </a>
+                </Card>
+              ))
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

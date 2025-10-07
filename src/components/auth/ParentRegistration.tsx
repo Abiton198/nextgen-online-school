@@ -1,9 +1,8 @@
 "use client";
 
 import React, { useState } from "react";
-import { db, storage } from "@/lib/firebaseConfig";
+import { db } from "@/lib/firebaseConfig";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,62 +11,34 @@ import { useAuth } from "@/components/auth/AuthProvider";
 
 const ParentRegistration: React.FC = () => {
   const navigate = useNavigate();
-  const { currentUser } = useAuth(); // 🔑 get logged-in parent
+  const { currentUser } = useAuth(); // 🔑 logged-in parent
 
   const [parentName, setParentName] = useState("");
   const [learnerName, setLearnerName] = useState("");
   const [learnerGrade, setLearnerGrade] = useState("");
-  const [documents, setDocuments] = useState<FileList | null>(null);
   const [declarationAccepted, setDeclarationAccepted] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setDocuments(e.target.files);
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("✅ Submit clicked");
-
     if (!declarationAccepted) {
-      alert("Please accept the declaration before submitting.");
-      console.warn("❌ Declaration not accepted");
+      alert("Please agree to the terms and conditions before submitting.");
       return;
     }
-
     if (!currentUser) {
       alert("No user is logged in. Please log in again.");
-      console.warn("❌ No currentUser");
       return;
     }
 
     setLoading(true);
     try {
-      console.log("🔄 Preparing Firestore doc for:", currentUser.uid);
-
       const parentRef = doc(db, "parents", currentUser.uid);
 
       // ✏️ Split learner name
       const [firstName, ...rest] = learnerName.trim().split(" ");
       const lastName = rest.join(" ") || "-";
 
-      // 📂 Upload documents
-      const docUrls: string[] = [];
-      if (documents) {
-        console.log("📂 Uploading", documents.length, "files");
-        for (const file of Array.from(documents)) {
-          const storageRef = ref(
-            storage,
-            `parents/${currentUser.uid}/documents/${file.name}`
-          );
-          await uploadBytes(storageRef, file);
-          const url = await getDownloadURL(storageRef);
-          docUrls.push(url);
-        }
-      }
-
-      // 📝 Save parent record in Firestore
-      console.log("📝 Writing parent record to Firestore…");
+      // 📝 Save parent record
       await setDoc(
         parentRef,
         {
@@ -79,15 +50,32 @@ const ParentRegistration: React.FC = () => {
             lastName,
             grade: learnerGrade || "-",
           },
-          complianceDocs: docUrls,
           applicationStatus: "submitted",
-          principalReviewed: false,
+          agreedToStandards: true,
           createdAt: serverTimestamp(),
         },
         { merge: true }
       );
 
-      console.log("✅ Firestore save success, redirecting…");
+      // 📝 Create student applicant record
+      const studentRef = doc(db, "students", currentUser.uid); 
+      // 🔑 using uid as ID (if only 1 learner per parent). 
+      // If multiple learners → use addDoc(collection(db, "students"), {...})
+      await setDoc(studentRef, {
+        uid: currentUser.uid,
+        firstName: firstName || "Unknown",
+        lastName,
+        grade: learnerGrade || "-",
+        parentEmail: currentUser.email,
+        parentName: parentName || "Unknown",
+        applicationStatus: "pending", // principal must accept/reject
+        principalReviewed: false,
+        createdAt: serverTimestamp(),
+      });
+
+      console.log("✅ Parent & student records saved. Redirecting…");
+
+      // 🚀 Redirect straight to parent dashboard
       navigate("/parent-dashboard");
     } catch (err) {
       console.error("❌ Error saving registration:", err);
@@ -136,10 +124,19 @@ const ParentRegistration: React.FC = () => {
           />
         </div>
 
-        {/* Documents */}
+        {/* Online Class Requirements */}
         <div className="border rounded-lg p-6 bg-blue-50">
-          <h3 className="text-lg font-semibold mb-2">Required Documents</h3>
-          <Input type="file" multiple onChange={handleFileChange} />
+          <h3 className="text-lg font-semibold mb-3">
+            Online Class Requirements
+          </h3>
+          <ul className="list-disc list-inside text-sm text-gray-700 space-y-1">
+            <li>Stable internet connection</li>
+            <li>Computer or laptop with a working camera</li>
+            <li>Quiet and controlled background (no disruptions)</li>
+            <li>Headphones or speakers for clear audio</li>
+            <li>Updated browser (Chrome/Firefox/Edge recommended)</li>
+            <li>A dedicated study space free from distractions</li>
+          </ul>
         </div>
 
         {/* Declaration */}
@@ -152,8 +149,8 @@ const ParentRegistration: React.FC = () => {
               onChange={(e) => setDeclarationAccepted(e.target.checked)}
               className="w-4 h-4"
             />
-            I confirm all information is valid and I accept the school’s
-            requirements.
+            I agree to the terms and conditions of the school standards and
+            confirm all information is valid.
           </label>
         </div>
 
