@@ -142,3 +142,6 @@ const TimetableManager: React.FC = () => {
     </Card>
   );
 };
+
+export default TimetableManager;
+
