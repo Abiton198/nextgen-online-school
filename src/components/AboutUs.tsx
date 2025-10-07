@@ -5,7 +5,26 @@ import { Link } from "react-router-dom";
 
 const AboutUs: React.FC = () => {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 px-6 py-12">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 px-6 py-12 relative">
+      {/* Navigation Controls */}
+      <div className="absolute top-4 left-4">
+        <Link
+          to="/"
+          className="flex items-center space-x-1 text-gray-600 hover:text-gray-800 transition"
+        >
+          <span className="text-xl">⬅️</span>
+          <span className="font-medium">Home</span>
+        </Link>
+      </div>
+      <div className="absolute top-4 right-4">
+        <Link
+          to="/"
+          className="text-gray-600 hover:text-red-600 text-2xl font-bold transition"
+        >
+          ✖
+        </Link>
+      </div>
+
       <div className="max-w-6xl mx-auto space-y-12">
         {/* Heading */}
         <h1 className="text-4xl font-bold text-gray-800 text-center">

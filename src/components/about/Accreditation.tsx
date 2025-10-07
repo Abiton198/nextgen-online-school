@@ -2,11 +2,10 @@
 
 import React from "react";
 import { Link } from "react-router-dom";
+import coursera from '../img/cousera.jpeg'
 
 // Placeholder logo URLs (replace with local assets or CDN links)
 const logos = {
-  nmu: "https://upload.wikimedia.org/wikipedia/en/4/4e/Nelson_Mandela_University_logo.png",
-  coursera: "https://upload.wikimedia.org/wikipedia/commons/7/75/Coursera_logo.svg",
   google: "https://upload.wikimedia.org/wikipedia/commons/2/2f/Google_2015_logo.svg",
   amazon: "https://upload.wikimedia.org/wikipedia/commons/a/a9/Amazon_logo.svg",
   ibm: "https://upload.wikimedia.org/wikipedia/commons/5/51/IBM_logo.svg",
@@ -90,9 +89,7 @@ const Accreditation: React.FC = () => {
                 Learners register at their nearest exam centre to write the official 
                 <strong> National Senior Certificate</strong> (Matric) exams.
               </p>
-              <div className="mt-2">
-                <img src={logos.nmu} alt="NMU logo" className="h-10" />
-              </div>
+            
             </div>
             <div>
               <h3 className="text-lg font-semibold text-teal-600">Step 4: University Pathways</h3>
@@ -101,7 +98,7 @@ const Accreditation: React.FC = () => {
                 transition seamlessly into top universities in South Africa and beyond.
               </p>
               <div className="flex flex-wrap gap-4 mt-2 items-center">
-                <img src={logos.coursera} alt="Coursera" className="h-8" />
+                <img src={coursera} alt="Coursera" className="h-8" />
                 <img src={logos.google} alt="Google" className="h-6" />
                 <img src={logos.amazon} alt="Amazon" className="h-6" />
                 <img src={logos.ibm} alt="IBM" className="h-8" />

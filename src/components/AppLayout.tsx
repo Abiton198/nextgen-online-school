@@ -1,3 +1,5 @@
+"use client";
+
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { AuthProvider, useAuth } from "./auth/AuthProvider";
@@ -6,7 +8,10 @@ import ParentDashboard from "./dashboards/parent/ParentDashboard";
 import TeacherDashboard from "./dashboards/TeacherDashboard";
 import PrincipalDashboard from "./dashboards/PrincipalDashboard";
 import AdminDashboard from "./dashboards/AdminDashboard";
-import logo from "../img/logo.png";
+
+// ✅ Logos
+import logo from "../img/logo.png";       // NextGen Logo
+import dbeLogo from "../img/dbe.png";     // DBE Logo
 
 const AppContent: React.FC = () => {
   const { user, loading } = useAuth();
@@ -37,6 +42,12 @@ const AppContent: React.FC = () => {
           }}
         />
         <div className="absolute inset-0 bg-gradient-to-br from-blue-900/60 via-purple-900/60 to-indigo-900/60"></div>
+
+        {/* 🔥 Top Logos Bar */}
+        <div className="absolute top-4 left-0 right-0 flex justify-between items-center px-6 z-20">
+          <img src={logo} alt="NextGen Logo" className="h-14 w-auto drop-shadow-lg" />
+          <img src={dbeLogo} alt="DBE Logo" className="h-14 w-auto drop-shadow-lg" />
+        </div>
 
         {/* Content */}
         <div className="relative z-10 flex flex-col items-center justify-center min-h-screen px-6 text-center text-white">
@@ -128,7 +139,7 @@ const AppContent: React.FC = () => {
   }
 };
 
-// 🧱 App Layout Wrapper (with Admin Modal)
+// 🧱 App Layout Wrapper
 const AppLayout: React.FC = () => {
   const [showAdminPrompt, setShowAdminPrompt] = useState(false);
 
