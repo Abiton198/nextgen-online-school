@@ -43,6 +43,7 @@ import Enrolment from "./components/about/Enrolment";
 import Vision from "./components/about/Vision";
 import FeesStructure from "./components/about/FeesStructure";
 import TeachingStaff from "./components/about/TeachingStaff";
+import Accreditation from "./components/about/Accreditation";
 
 const queryClient = new QueryClient();
 
@@ -72,6 +73,8 @@ const App: React.FC = () => {
                 <Route path="/about/vision" element={<Vision />} />
                 <Route path="/about/fees" element={<FeesStructure />} />
                 <Route path="/about/teaching-staff" element={<TeachingStaff />} />
+                <Route path="/about/accreditation" element={<Accreditation />} />
+                
 
                 {/* 👨‍👩‍👧 Parent Registration and Info */}
                 <Route path="/register" element={<ParentRegistration />} />
