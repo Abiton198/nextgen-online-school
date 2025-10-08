@@ -23,15 +23,19 @@ import { useNavigate } from "react-router-dom";
 import TimetableManager from "@/lib/TimetableManager";
 
 /* ---------------- Types ---------------- */
-interface Registration {
+interface Student {
   id: string;
-  learnerData?: { firstName?: string; lastName?: string; grade?: string };
-  parentData?: { name?: string; email?: string };
-  status: "pending_review" | "enrolled" | "rejected" | "suspended";
+  firstName: string;
+  lastName: string;
+  grade: string;
+  parentEmail: string;
+  parentId: string;
+  applicationStatus: "pending" | "enrolled" | "rejected" | "suspended";
   principalReviewed?: boolean;
-  classActivated?: boolean;
-  parentId?: string;
+  createdAt?: any;
+  reviewedAt?: any;
 }
+
 
 interface TeacherApplication {
   id: string; // applicationId
@@ -55,7 +59,7 @@ interface Payment {
 
 /* ---------------- Main Component ---------------- */
 const PrincipalDashboard: React.FC = () => {
-  const [students, setStudents] = useState<Registration[]>([]);
+  const [students, setStudents] = useState<Student[]>([]);
   const [teachers, setTeachers] = useState<TeacherApplication[]>([]);
   const [parents, setParents] = useState<ParentAgg[]>([]);
   const [payments, setPayments] = useState<Record<string, Payment[]>>({});
@@ -111,10 +115,13 @@ const PrincipalDashboard: React.FC = () => {
     return () => clearInterval(timer);
   }, []);
 
+
+  
+
   /* ---------------- Firestore Listeners ---------------- */
   useEffect(() => {
-    const unsubRegistrations = onSnapshot(collection(db, "registrations"), async (snap) => {
-      const regs = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Registration) }));
+    const unsubRegistrations = onSnapshot(collection(db, "students"), async (snap) => {
+      const regs = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Student) }));
       setStudents(regs);
 
       const parentMap: Record<string, ParentAgg> = {};
@@ -164,41 +171,67 @@ const PrincipalDashboard: React.FC = () => {
     updates: Record<string, any>
   ) => updateDoc(doc(db, col, id), updates);
 
-  const approve = async (
-    col: "registrations" | "teacherApplications",
-    item: Registration | TeacherApplication
+    const approve = async (
+    col: "students" | "teacherApplications",
+    item: Student | TeacherApplication
   ) => {
     const id = item.id;
 
-    if (col === "registrations") {
+    /* ---------------- Student Registrations ---------------- */
+    if (col === "students") {
+      const reg = item as Student;
+
+      // 1. Mark registration as enrolled
       await updateStatus(col, id, {
         status: "enrolled",
         principalReviewed: true,
         reviewedAt: serverTimestamp(),
       });
-      return;
-    }
 
-    const app = item as TeacherApplication;
-    const uid = app.uid;
-    await updateStatus("teacherApplications", id, {
-      status: "approved",
-      principalReviewed: true,
-      reviewedAt: serverTimestamp(),
-      classActivated: true,
-    });
+      // 2. Create a student profile in `/students`
+      const newStudentId = crypto.randomUUID(); // or link to UID if available
 
-    if (uid) {
       await setDoc(
-        doc(db, "teachers", uid),
+        doc(db, "students", newStudentId),
         {
-          ...app,
-          status: "approved",
-          classActivated: true,
-          updatedAt: serverTimestamp(),
+          firstName: reg.learnerData?.firstName || "",
+          lastName: reg.learnerData?.lastName || "",
+          grade: reg.learnerData?.grade || "",
+          parentId: reg.parentId || "",
+          parentEmail: reg.parentData?.email || "",
+          status: "enrolled",
+          createdAt: serverTimestamp(),
         },
         { merge: true }
       );
+
+      return;
+    }
+
+    /* ---------------- Teacher Applications ---------------- */
+    if (col === "teacherApplications") {
+      const app = item as TeacherApplication;
+      const uid = app.uid;
+
+      await updateStatus("teacherApplications", id, {
+        status: "approved",
+        principalReviewed: true,
+        reviewedAt: serverTimestamp(),
+        classActivated: true,
+      });
+
+      if (uid) {
+        await setDoc(
+          doc(db, "teachers", uid),
+          {
+            ...app,
+            status: "approved",
+            classActivated: true,
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+      }
     }
   };
 
@@ -314,8 +347,8 @@ const PrincipalDashboard: React.FC = () => {
   /* ---------------- Render ---------------- */
   const renderUsersCard = (
     title: string,
-    users: (Registration | TeacherApplication)[],
-    col: "registrations" | "teacherApplications"
+    users: (Student | TeacherApplication)[],
+    col: "students" | "teacherApplications"
   ) => {
     const filtered = users.filter((u) => {
       const first = (u as any).learnerData?.firstName || (u as any).firstName || "";
@@ -326,7 +359,7 @@ const PrincipalDashboard: React.FC = () => {
     });
 
     const displayUsers =
-      col === "registrations" ? filterStudents(filtered as Registration[]) : filtered;
+      col === "students" ? filterStudents(filtered as Student[]) : filtered;
 
     return (
       <Card className="bg-white shadow">
@@ -460,7 +493,7 @@ const PrincipalDashboard: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {renderUsersCard("Students", students, "registrations")}
+        {renderUsersCard("Students", students, "students")}
         {renderUsersCard("Teachers", teachers, "teacherApplications")}
         {renderParentsCard(parents)}
       </div>
