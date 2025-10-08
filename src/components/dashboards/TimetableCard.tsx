@@ -15,11 +15,10 @@ interface TimetableEntry {
   id: string;
   grade: string;
   subject: string;
-  day: string;
+  date: string;       // now using date instead of "day"
   time: string;
   duration: number;
   teacherName: string;
-  googleClassroomLink: string;
 }
 
 interface Props {
@@ -31,36 +30,34 @@ const TimetableCard: React.FC<Props> = ({ grade, subject }) => {
   const [entries, setEntries] = useState<TimetableEntry[]>([]);
 
   useEffect(() => {
-    // don’t run without filters
     if (!grade && !subject) return;
 
     const timetableRef = collection(db, "timetable");
-
     let q;
 
     if (subject && grade === "all") {
-      // ✅ teacher view → filter by subject only (all grades)
+      // Teacher view → filter by subject only (all grades)
       q = query(
         timetableRef,
         where("subject", "==", subject),
-        orderBy("day"),
+        orderBy("date"),
         orderBy("time")
       );
     } else if (subject && grade) {
-      // ✅ (optional) filter by both grade + subject
+      // Filter by both grade + subject
       q = query(
         timetableRef,
         where("grade", "==", grade),
         where("subject", "==", subject),
-        orderBy("day"),
+        orderBy("date"),
         orderBy("time")
       );
     } else {
-      // ✅ student/parent view → filter by grade only
+      // Student/parent view → filter by grade only
       q = query(
         timetableRef,
         where("grade", "==", grade!),
-        orderBy("day"),
+        orderBy("date"),
         orderBy("time")
       );
     }
@@ -79,7 +76,7 @@ const TimetableCard: React.FC<Props> = ({ grade, subject }) => {
       <CardHeader>
         <CardTitle>
           📅 Timetable{" "}
-          {grade && grade !== "all" ? `— Grade ${grade}` : ""}
+          {grade && grade !== "all" ? `— ${grade}` : ""}
           {subject ? ` — ${subject}` : ""}
         </CardTitle>
       </CardHeader>
@@ -95,19 +92,9 @@ const TimetableCard: React.FC<Props> = ({ grade, subject }) => {
               >
                 <p className="font-semibold">{e.subject}</p>
                 <p className="text-sm text-gray-600">
-                  {e.day} • {e.time} ({e.duration}m) <br />
-                  Teacher: {e.teacherName} | Grade {e.grade}
+                  {e.date} • {e.time} ({e.duration}m) <br />
+                  Teacher: {e.teacherName} | {e.grade}
                 </p>
-                {e.googleClassroomLink && (
-                  <a
-                    href={e.googleClassroomLink}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-600 text-sm underline mt-1"
-                  >
-                    Join Classroom
-                  </a>
-                )}
               </div>
             ))}
           </div>
