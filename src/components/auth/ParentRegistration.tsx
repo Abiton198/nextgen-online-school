@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { db } from "@/lib/firebaseConfig";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { Button } from "@/components/ui/button";
@@ -19,26 +19,31 @@ const ParentRegistration: React.FC = () => {
   const [declarationAccepted, setDeclarationAccepted] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  // 🚨 Redirect if not logged in
+  useEffect(() => {
+    if (!currentUser) {
+      navigate("/login");
+    }
+  }, [currentUser, navigate]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
     if (!declarationAccepted) {
       alert("Please agree to the terms and conditions before submitting.");
       return;
     }
-    if (!currentUser) {
-      alert("No user is logged in. Please log in again.");
-      return;
-    }
+
+    if (!currentUser) return; // safety check
 
     setLoading(true);
     try {
       const parentRef = doc(db, "parents", currentUser.uid);
 
-      // ✏️ Split learner name
       const [firstName, ...rest] = learnerName.trim().split(" ");
       const lastName = rest.join(" ") || "-";
 
-      // 📝 Save parent record
+      // Save parent record
       await setDoc(
         parentRef,
         {
@@ -57,10 +62,8 @@ const ParentRegistration: React.FC = () => {
         { merge: true }
       );
 
-      // 📝 Create student applicant record
-      const studentRef = doc(db, "students", currentUser.uid); 
-      // 🔑 using uid as ID (if only 1 learner per parent). 
-      // If multiple learners → use addDoc(collection(db, "students"), {...})
+      // Create student applicant record
+      const studentRef = doc(db, "students", currentUser.uid);
       await setDoc(studentRef, {
         uid: currentUser.uid,
         firstName: firstName || "Unknown",
@@ -68,14 +71,13 @@ const ParentRegistration: React.FC = () => {
         grade: learnerGrade || "-",
         parentEmail: currentUser.email,
         parentName: parentName || "Unknown",
-        applicationStatus: "pending", // principal must accept/reject
+        applicationStatus: "pending",
         principalReviewed: false,
         createdAt: serverTimestamp(),
       });
 
       console.log("✅ Parent & student records saved. Redirecting…");
 
-      // 🚀 Redirect straight to parent dashboard
       navigate("/parent-dashboard");
     } catch (err) {
       console.error("❌ Error saving registration:", err);
@@ -84,6 +86,14 @@ const ParentRegistration: React.FC = () => {
       setLoading(false);
     }
   };
+
+  if (!currentUser) {
+    return (
+      <div className="p-6 text-center text-gray-700">
+        Redirecting to login...
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-2xl mx-auto p-6 space-y-6 bg-white border rounded-lg shadow">
@@ -94,7 +104,7 @@ const ParentRegistration: React.FC = () => {
         <div className="border rounded-lg p-6 bg-gray-50">
           <h3 className="text-lg font-semibold mb-3">Parent Information</h3>
           <p className="text-sm text-gray-600 mb-2">
-            Logged in as: <b>{currentUser?.email ?? "Not logged in"}</b>
+            Logged in as: <b>{currentUser?.email}</b>
           </p>
           <Label>Full Name</Label>
           <Input
@@ -126,9 +136,7 @@ const ParentRegistration: React.FC = () => {
 
         {/* Online Class Requirements */}
         <div className="border rounded-lg p-6 bg-blue-50">
-          <h3 className="text-lg font-semibold mb-3">
-            Online Class Requirements
-          </h3>
+          <h3 className="text-lg font-semibold mb-3">Online Class Requirements</h3>
           <ul className="list-disc list-inside text-sm text-gray-700 space-y-1">
             <li>Stable internet connection</li>
             <li>Computer or laptop with a working camera</li>

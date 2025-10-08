@@ -12,6 +12,7 @@ import AdminDashboard from "./dashboards/AdminDashboard";
 // ✅ Logos
 import logo from "../img/logo.png";       // NextGen Logo
 import dbeLogo from "../img/dbe.png";     // DBE Logo
+import ZoomableImage from "@/lib/ZoomableImage";
 
 const AppContent: React.FC = () => {
   const { user, loading } = useAuth();
@@ -45,7 +46,14 @@ const AppContent: React.FC = () => {
 
         {/* 🔥 Top Logos Bar */}
         <div className="absolute top-4 left-0 right-0 flex justify-between items-center px-6 z-20">
-          <img src={logo} alt="NextGen Logo" className="h-14 w-auto drop-shadow-lg" />
+        
+        {/* zoomable image */}
+          <ZoomableImage 
+            src={logo} 
+            alt="NextGen Logo" 
+            className="h-14 w-auto drop-shadow-lg" 
+          />
+        
           <img src={dbeLogo} alt="DBE Logo" className="h-14 w-auto drop-shadow-lg" />
         </div>
 
