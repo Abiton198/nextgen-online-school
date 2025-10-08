@@ -21,30 +21,44 @@ import { Input } from "@/components/ui/input";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useNavigate } from "react-router-dom";
 import TimetableManager from "@/lib/TimetableManager";
+import ChatWindow from "@/components/chat/ChatWindow";
 
 /* ---------------- Types ---------------- */
 interface Student {
   id: string;
-  firstName: string;
-  lastName: string;
-  grade: string;
-  parentEmail: string;
-  parentId: string;
-  applicationStatus: "pending" | "enrolled" | "rejected" | "suspended";
+  firstName?: string;
+  lastName?: string;
+  grade?: string;
+  parentEmail?: string;
+  parentId?: string;
+  learnerData?: {
+    firstName: string;
+    lastName: string;
+    grade: string;
+  };
+  parentData?: {
+    name: string;
+    email: string;
+  };
+  applicationStatus?: "pending" | "enrolled" | "rejected" | "suspended";
+  status?: string;
   principalReviewed?: boolean;
   createdAt?: any;
   reviewedAt?: any;
+  classActivated?: boolean;
 }
 
-
 interface TeacherApplication {
-  id: string; // applicationId
-  uid?: string; // teacher’s Firebase Auth UID
-  [key: string]: any; // dynamic fields
+  id: string;
+  uid?: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  [key: string]: any;
 }
 
 interface ParentAgg {
-  id: string;
+  id: string; // use email or uid
   name: string;
   email: string;
   children: { name: string; grade: string; status: string }[];
@@ -75,17 +89,17 @@ const PrincipalDashboard: React.FC = () => {
   /* ---------------- Modal State ---------------- */
   const [selectedItem, setSelectedItem] = useState<any>(null);
   const [selectedType, setSelectedType] = useState<
-    "teacherApplications" | "registrations" | "parents" | null
+    "teacherApplications" | "students" | "parents" | null
   >(null);
   const [showModal, setShowModal] = useState(false);
   const [documents, setDocuments] = useState<Record<string, { name: string; url: string }[]>>({});
   const [activeTab, setActiveTab] = useState<"Details" | "Documents">("Details");
 
+  /* ---------------- Chat State ---------------- */
+  const [chatRecipient, setChatRecipient] = useState<string | null>(null);
+
   /* ---------------- Utilities ---------------- */
-  const openModal = async (
-    item: any,
-    type: "teacherApplications" | "registrations" | "parents"
-  ) => {
+  const openModal = async (item: any, type: "teacherApplications" | "students" | "parents") => {
     setSelectedItem(item);
     setSelectedType(type);
     setShowModal(true);
@@ -94,8 +108,8 @@ const PrincipalDashboard: React.FC = () => {
     if (type === "teacherApplications") {
       const docs = await fetchDocuments(type, item.id, item.uid);
       setDocuments(docs);
-    } else if (type === "registrations") {
-      const docs = await fetchDocuments(type, item.id);
+    } else if (type === "students") {
+      const docs = await fetchDocuments("registrations", item.id);
       setDocuments(docs);
     } else {
       setDocuments({});
@@ -115,12 +129,9 @@ const PrincipalDashboard: React.FC = () => {
     return () => clearInterval(timer);
   }, []);
 
-
-  
-
   /* ---------------- Firestore Listeners ---------------- */
   useEffect(() => {
-    const unsubRegistrations = onSnapshot(collection(db, "students"), async (snap) => {
+    const unsubStudents = onSnapshot(collection(db, "students"), async (snap) => {
       const regs = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Student) }));
       setStudents(regs);
 
@@ -131,7 +142,7 @@ const PrincipalDashboard: React.FC = () => {
 
         if (!parentMap[pEmail]) {
           parentMap[pEmail] = {
-            id: pEmail,
+            id: reg.parentId || pEmail,
             name: reg.parentData?.name || "Unknown Parent",
             email: pEmail,
             children: [],
@@ -140,7 +151,7 @@ const PrincipalDashboard: React.FC = () => {
         parentMap[pEmail].children.push({
           name: `${reg.learnerData?.firstName || ""} ${reg.learnerData?.lastName || ""}`.trim(),
           grade: reg.learnerData?.grade || "-",
-          status: reg.status,
+          status: reg.status || "-",
         });
       });
       setParents(Object.values(parentMap));
@@ -159,56 +170,30 @@ const PrincipalDashboard: React.FC = () => {
     });
 
     return () => {
-      unsubRegistrations();
+      unsubStudents();
       unsubTeachers();
     };
   }, []);
 
   /* ---------------- Firestore Actions ---------------- */
   const updateStatus = async (
-    col: "registrations" | "teacherApplications",
+    col: "students" | "teacherApplications",
     id: string,
     updates: Record<string, any>
   ) => updateDoc(doc(db, col, id), updates);
 
-    const approve = async (
-    col: "students" | "teacherApplications",
-    item: Student | TeacherApplication
-  ) => {
+  const approve = async (col: "students" | "teacherApplications", item: Student | TeacherApplication) => {
     const id = item.id;
 
-    /* ---------------- Student Registrations ---------------- */
     if (col === "students") {
-      const reg = item as Student;
-
-      // 1. Mark registration as enrolled
       await updateStatus(col, id, {
         status: "enrolled",
         principalReviewed: true,
         reviewedAt: serverTimestamp(),
       });
-
-      // 2. Create a student profile in `/students`
-      const newStudentId = crypto.randomUUID(); // or link to UID if available
-
-      await setDoc(
-        doc(db, "students", newStudentId),
-        {
-          firstName: reg.learnerData?.firstName || "",
-          lastName: reg.learnerData?.lastName || "",
-          grade: reg.learnerData?.grade || "",
-          parentId: reg.parentId || "",
-          parentEmail: reg.parentData?.email || "",
-          status: "enrolled",
-          createdAt: serverTimestamp(),
-        },
-        { merge: true }
-      );
-
       return;
     }
 
-    /* ---------------- Teacher Applications ---------------- */
     if (col === "teacherApplications") {
       const app = item as TeacherApplication;
       const uid = app.uid;
@@ -235,25 +220,21 @@ const PrincipalDashboard: React.FC = () => {
     }
   };
 
-  const reject = async (col: "registrations" | "teacherApplications", id: string) =>
-    updateStatus(col, id, {
-      status: "rejected",
-      principalReviewed: true,
-      reviewedAt: serverTimestamp(),
-    });
+  const reject = async (col: "students" | "teacherApplications", id: string) =>
+    updateStatus(col, id, { status: "rejected", principalReviewed: true, reviewedAt: serverTimestamp() });
 
-  const suspend = (col: "registrations" | "teacherApplications", id: string) =>
+  const suspend = (col: "students" | "teacherApplications", id: string) =>
     updateStatus(col, id, { status: "suspended", suspendedAt: serverTimestamp() });
 
-  const reinstate = (col: "registrations" | "teacherApplications", id: string) =>
+  const reinstate = (col: "students" | "teacherApplications", id: string) =>
     updateStatus(col, id, {
-      status: col === "registrations" ? "enrolled" : "approved",
+      status: col === "students" ? "enrolled" : "approved",
       reinstatedAt: serverTimestamp(),
     });
 
   const toggleClassActivation = async (
-    item: Registration | TeacherApplication,
-    col: "registrations" | "teacherApplications"
+    item: Student | TeacherApplication,
+    col: "students" | "teacherApplications"
   ) => {
     const current = Boolean(item.classActivated);
     const next = !current;
@@ -307,12 +288,10 @@ const PrincipalDashboard: React.FC = () => {
     try {
       let rootRef;
       if (col === "teacherApplications" && uid) {
-        // ✅ Fix: applicationId first, then uid
         rootRef = ref(storage, `teacherApplications/${id}/${uid}/documents`);
       } else {
         rootRef = ref(storage, `${col}/${id}/documents`);
       }
-
       return await getAllFiles(rootRef);
     } catch (err) {
       console.error("Error fetching documents:", err);
@@ -321,7 +300,7 @@ const PrincipalDashboard: React.FC = () => {
   };
 
   /* ---------------- Helpers ---------------- */
-  const filterStudents = (users: Registration[]): Registration[] => {
+  const filterStudents = (users: Student[]): Student[] => {
     if (filter === "failed") {
       return users.filter((u) => payments[u.id]?.some((p) => p.paymentStatus !== "COMPLETE"));
     }
@@ -358,8 +337,7 @@ const PrincipalDashboard: React.FC = () => {
       return hay.includes(searchTerm.toLowerCase());
     });
 
-    const displayUsers =
-      col === "students" ? filterStudents(filtered as Student[]) : filtered;
+    const displayUsers = col === "students" ? filterStudents(filtered as Student[]) : filtered;
 
     return (
       <Card className="bg-white shadow">
@@ -374,7 +352,6 @@ const PrincipalDashboard: React.FC = () => {
               const name = isStudent
                 ? `${u.learnerData?.firstName ?? ""} ${u.learnerData?.lastName ?? ""}`.trim()
                 : `${(u as TeacherApplication).firstName ?? ""} ${(u as TeacherApplication).lastName ?? ""}`.trim();
-
               const email = isStudent ? u.parentData?.email : (u as TeacherApplication).email;
 
               return (
@@ -384,12 +361,10 @@ const PrincipalDashboard: React.FC = () => {
                     <p className="text-xs text-gray-500">{email || "—"}</p>
                     <p className="text-xs text-gray-400">Status: {u.status}</p>
                   </div>
-
                   <div className="flex flex-wrap gap-2">
                     <Button size="sm" variant="outline" onClick={() => openModal(u, col)}>
                       Review Details
                     </Button>
-
                     {u.status !== "pending_review" && (
                       <>
                         <Button
@@ -437,7 +412,7 @@ const PrincipalDashboard: React.FC = () => {
                   <p className="font-medium">{p.name}</p>
                   <p className="text-xs text-gray-500">{p.email}</p>
                 </div>
-                <div className="text-xs text-gray-600">
+                <div className="text-xs text-gray-600 mb-2">
                   <p className="font-semibold mb-1">Children:</p>
                   <ul className="list-disc ml-5">
                     {p.children.map((c, i) => (
@@ -447,6 +422,14 @@ const PrincipalDashboard: React.FC = () => {
                     ))}
                   </ul>
                 </div>
+                {/* ✅ Start Chat Button */}
+                <Button
+                  size="sm"
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                  onClick={() => setChatRecipient(p.id)}
+                >
+                  Start Chat
+                </Button>
               </li>
             ))}
           </ul>
@@ -509,8 +492,13 @@ const PrincipalDashboard: React.FC = () => {
               ✕
             </button>
 
-            <h2 className="text-xl font-bold mb-4">
-              Review {selectedType === "teacherApplications" ? "Teacher Application" : "Student Registration"}
+                        <h2 className="text-xl font-bold mb-4">
+              Review{" "}
+              {selectedType === "teacherApplications"
+                ? "Teacher Application"
+                : selectedType === "students"
+                ? "Student Registration"
+                : "Parent"}
             </h2>
 
             <div className="flex border-b mb-4">
@@ -529,7 +517,7 @@ const PrincipalDashboard: React.FC = () => {
               ))}
             </div>
 
-            {/* Details: Teachers see ALL fields dynamically */}
+            {/* Teacher Details */}
             {activeTab === "Details" && selectedType === "teacherApplications" && (
               <div className="border rounded-lg p-4 bg-gray-50 mb-6 space-y-2">
                 {Object.entries(selectedItem).map(([key, value]) => (
@@ -541,83 +529,120 @@ const PrincipalDashboard: React.FC = () => {
               </div>
             )}
 
-            {activeTab === "Details" && selectedType === "registrations" && (
+            {/* Student Details */}
+            {activeTab === "Details" && selectedType === "students" && (
               <div className="border rounded-lg p-4 bg-gray-50 mb-6">
                 <h3 className="text-lg font-semibold mb-3">👨‍🎓 Student Information</h3>
                 <p>
                   <span className="font-medium">Learner:</span>{" "}
-                  {`${selectedItem.learnerData?.firstName || ""} ${selectedItem.learnerData?.lastName || ""}`.trim()}
+                  {`${selectedItem.learnerData?.firstName || ""} ${
+                    selectedItem.learnerData?.lastName || ""
+                  }`.trim()}
                 </p>
-                <p><span className="font-medium">Grade:</span> {selectedItem.learnerData?.grade || "-"}</p>
-                <p><span className="font-medium">Parent:</span> {selectedItem.parentData?.name || "-"}</p>
-                <p><span className="font-medium">Parent Email:</span> {selectedItem.parentData?.email || "-"}</p>
-                <p><span className="font-medium">Status:</span> {selectedItem.status}</p>
+                <p>
+                  <span className="font-medium">Grade:</span>{" "}
+                  {selectedItem.learnerData?.grade || "-"}
+                </p>
+                <p>
+                  <span className="font-medium">Parent:</span>{" "}
+                  {selectedItem.parentData?.name || "-"}
+                </p>
+                <p>
+                  <span className="font-medium">Parent Email:</span>{" "}
+                  {selectedItem.parentData?.email || "-"}
+                </p>
+                <p>
+                  <span className="font-medium">Status:</span> {selectedItem.status}
+                </p>
+              </div>
+            )}
+
+            {/* Parent Details */}
+            {activeTab === "Details" && selectedType === "parents" && (
+              <div className="border rounded-lg p-4 bg-gray-50 mb-6">
+                <h3 className="text-lg font-semibold mb-3">👪 Parent Information</h3>
+                <p>
+                  <span className="font-medium">Name:</span> {selectedItem.name}
+                </p>
+                <p>
+                  <span className="font-medium">Email:</span> {selectedItem.email}
+                </p>
+                <h4 className="mt-3 font-semibold">Children:</h4>
+                <ul className="list-disc ml-5">
+                  {selectedItem.children.map((c: any, i: number) => (
+                    <li key={i}>
+                      {c.name} — Grade {c.grade} ({c.status})
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
 
             {/* Documents */}
             {activeTab === "Documents" && (
-  <div className="border rounded-lg p-4 bg-gray-50">
-    <h3 className="text-lg font-semibold mb-3">📂 Documents</h3>
-    {Object.keys(documents).length > 0 ? (
-      Object.entries(documents).map(([folder, files]) => (
-        <div key={folder} className="mb-6">
-          <h4 className="font-medium text-blue-700 mb-2">{folder}</h4>
-          {files.map((file) => (
-            <div key={file.name} className="mb-4">
-              <p className="text-sm font-semibold">{file.name}</p>
+              <div className="border rounded-lg p-4 bg-gray-50">
+                <h3 className="text-lg font-semibold mb-3">📂 Documents</h3>
+                {Object.keys(documents).length > 0 ? (
+                  Object.entries(documents).map(([folder, files]) => (
+                    <div key={folder} className="mb-6">
+                      <h4 className="font-medium text-blue-700 mb-2">{folder}</h4>
+                      {files.map((file) => (
+                        <div key={file.name} className="mb-4">
+                          <p className="text-sm font-semibold">{file.name}</p>
 
-              {/* ✅ Image Preview */}
-              {file.name.match(/\.(jpg|jpeg|png|gif|webp)$/i) && (
-                <img
-                  src={file.url}
-                  alt={file.name}
-                  className="mt-2 rounded border max-h-96 object-contain"
-                />
-              )}
+                          {/* Image Preview */}
+                          {file.name.match(/\.(jpg|jpeg|png|gif|webp)$/i) && (
+                            <img
+                              src={file.url}
+                              alt={file.name}
+                              className="mt-2 rounded border max-h-96 object-contain"
+                            />
+                          )}
 
-              {/* ✅ PDF Preview */}
-              {file.name.match(/\.pdf$/i) && (
-                <iframe
-                  src={file.url}
-                  className="w-full h-[600px] mt-2 border rounded"
-                  title={file.name}
-                ></iframe>
-              )}
+                          {/* PDF Preview */}
+                          {file.name.match(/\.pdf$/i) && (
+                            <iframe
+                              src={file.url}
+                              className="w-full h-[600px] mt-2 border rounded"
+                              title={file.name}
+                            ></iframe>
+                          )}
 
-              {/* ✅ Word / Excel / PPT Preview via Google Docs Viewer */}
-              {file.name.match(/\.(docx?|xlsx?|pptx?)$/i) && (
-                <iframe
-                  src={`https://docs.google.com/gview?url=${encodeURIComponent(
-                    file.url
-                  )}&embedded=true`}
-                  className="w-full h-[600px] mt-2 border rounded"
-                  title={file.name}
-                ></iframe>
-              )}
+                          {/* Docs/Excel/PPT Preview */}
+                          {file.name.match(/\.(docx?|xlsx?|pptx?)$/i) && (
+                            <iframe
+                              src={`https://docs.google.com/gview?url=${encodeURIComponent(
+                                file.url
+                              )}&embedded=true`}
+                              className="w-full h-[600px] mt-2 border rounded"
+                              title={file.name}
+                            ></iframe>
+                          )}
 
-              {/* Fallback: show link if unsupported */}
-              {!file.name.match(/\.(jpg|jpeg|png|gif|webp|pdf|docx?|xlsx?|pptx?)$/i) && (
-                <a
-                  href={file.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-600 underline text-sm mt-2 inline-block"
-                >
-                  View / Download
-                </a>
-              )}
-            </div>
-          ))}
-        </div>
-      ))
-    ) : (
-      <p className="text-sm text-gray-500">No documents uploaded yet.</p>
-    )}
-  </div>
-)}
+                          {/* Fallback */}
+                          {!file.name.match(
+                            /\.(jpg|jpeg|png|gif|webp|pdf|docx?|xlsx?|pptx?)$/i
+                          ) && (
+                            <a
+                              href={file.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 underline text-sm mt-2 inline-block"
+                            >
+                              View / Download
+                            </a>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-gray-500">No documents uploaded yet.</p>
+                )}
+              </div>
+            )}
 
-            {/* Approve / Reject */}
+            {/* Approve / Reject Buttons */}
             {selectedType !== "parents" && (
               <div className="mt-6 flex flex-wrap justify-end gap-3">
                 <Button
@@ -643,9 +668,25 @@ const PrincipalDashboard: React.FC = () => {
           </div>
         </div>
       )}
-      <TimetableManager/>
+
+      {/* Timetable Manager */}
+      <TimetableManager />
+
+      {/* ✅ Floating Chat Window */}
+      {chatRecipient && (
+        <div className="fixed bottom-6 right-6 z-50">
+          <ChatWindow
+            uid={auth.currentUser?.uid || "principal"}
+            role="principal"
+            initialRecipient={chatRecipient}
+            forceOpen={true}
+            onClose={() => setChatRecipient(null)}
+          />
+        </div>
+      )}
     </div>
   );
 };
 
 export default PrincipalDashboard;
+
