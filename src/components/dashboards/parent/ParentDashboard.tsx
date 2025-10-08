@@ -41,6 +41,9 @@ export default function ParentDashboard() {
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // ✅ NEW: Track which child is selected
+  const [selectedChildId, setSelectedChildId] = useState<string | null>(null);
+
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -50,7 +53,7 @@ export default function ParentDashboard() {
 
     const fetchParentAndStudents = async () => {
       try {
-        // ✅ fetch parent doc (should always exist after signup)
+        // ✅ fetch parent doc
         const parentDoc = await getDoc(doc(db, "parents", user.uid));
         if (parentDoc.exists()) {
           const data = parentDoc.data();
@@ -58,7 +61,7 @@ export default function ParentDashboard() {
           setTitle(data.title || "");
         }
 
-        // 👶 set up real-time listener for students
+        // 👶 set up real-time listener for children
         const q = query(
           collection(db, "students"),
           where("parentId", "==", user.uid)
@@ -69,6 +72,11 @@ export default function ParentDashboard() {
             ...(d.data() as Student),
           }));
           setStudents(list);
+
+          // ✅ auto-select the first child if none selected
+          if (list.length > 0 && !selectedChildId) {
+            setSelectedChildId(list[0].id!);
+          }
         });
       } catch (err) {
         console.error("Error fetching dashboard data:", err);
@@ -83,7 +91,7 @@ export default function ParentDashboard() {
     return () => {
       if (unsubscribe) unsubscribe();
     };
-  }, [user]);
+  }, [user, selectedChildId]);
 
   const handleLogout = async () => {
     await signOut(auth);
@@ -108,6 +116,9 @@ export default function ParentDashboard() {
   };
 
   if (loading) return <p className="p-6">Loading dashboard...</p>;
+
+  // find the selected child object
+  const selectedChild = students.find((c) => c.id === selectedChildId);
 
   return (
     <div className="p-6 space-y-6">
@@ -168,9 +179,37 @@ export default function ParentDashboard() {
         <CardContent>{renderSection()}</CardContent>
       </Card>
 
-      <TimetableCard grade={child.grade} />
+      {/* ✅ Child Selector */}
+      {students.length > 0 && (
+        <div className="mt-6">
+          <h2 className="text-lg font-semibold mb-2">Select Child:</h2>
+          <div className="flex gap-2">
+            {students.map((s) => (
+              <button
+                key={s.id}
+                onClick={() => setSelectedChildId(s.id!)}
+                className={`px-3 py-1 rounded ${
+                  selectedChildId === s.id
+                    ? "bg-blue-600 text-white"
+                    : "bg-gray-200 hover:bg-gray-300"
+                }`}
+              >
+                {s.firstName}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
-
+      {/* ✅ Show timetable only for the selected child */}
+      {selectedChild && (
+        <div className="mt-6">
+          <h3 className="font-semibold mb-2">
+            Timetable for {selectedChild.firstName} (Grade {selectedChild.grade})
+          </h3>
+          <TimetableCard grade={selectedChild.grade} />
+        </div>
+      )}
     </div>
   );
 }

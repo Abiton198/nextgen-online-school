@@ -9,6 +9,7 @@ import {
   where,
   onSnapshot,
   orderBy,
+  doc,
 } from "firebase/firestore";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -187,35 +188,11 @@ const TeacherDashboard: React.FC = () => {
 
         {activeTab === "timetable" && (
           <div className="space-y-3">
-            {timetable.length === 0 ? (
-              <p className="text-gray-600">No timetable entries yet.</p>
-            ) : (
-              timetable.map((t) => (
-                <Card key={t.id} className="p-4">
-                  <h3 className="font-semibold">{t.subject}</h3>
-                  <p className="text-sm text-gray-600">
-                    Grade {t.grade} — {t.day}, {t.time} ({t.duration}m)
-                  </p>
-                  <p className="text-sm text-gray-500">Teacher: {t.teacherName}</p>
-                  <a
-                    href={t.googleClassroomLink}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-block mt-2"
-                  >
-                    <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white">
-                      Join Class
-                    </Button>
-                  </a>
-                </Card>
-              ))
-            )}
+            {/* ✅ Use TimetableCard with subject filter */}
+            <TimetableCard grade="all" subject={profile.subject!} />
           </div>
         )}
       </div>
-
-      <TimetableCard grade={teacher.grade} />
-
     </div>
   );
 };

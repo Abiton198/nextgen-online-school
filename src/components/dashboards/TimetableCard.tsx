@@ -23,22 +23,47 @@ interface TimetableEntry {
 }
 
 interface Props {
-  grade: string; // pass student’s grade, or child’s grade for parent, or teacher’s grade group
+  grade?: string;   // student’s grade OR parent’s child grade
+  subject?: string; // teacher’s subject filter
 }
 
-const TimetableCard: React.FC<Props> = ({ grade }) => {
+const TimetableCard: React.FC<Props> = ({ grade, subject }) => {
   const [entries, setEntries] = useState<TimetableEntry[]>([]);
 
   useEffect(() => {
-    if (!grade) return;
+    // don’t run without filters
+    if (!grade && !subject) return;
 
-    // live listen to timetable for this grade
-    const q = query(
-      collection(db, "timetable"),
-      where("grade", "==", grade),
-      orderBy("day"),
-      orderBy("time")
-    );
+    const timetableRef = collection(db, "timetable");
+
+    let q;
+
+    if (subject && grade === "all") {
+      // ✅ teacher view → filter by subject only (all grades)
+      q = query(
+        timetableRef,
+        where("subject", "==", subject),
+        orderBy("day"),
+        orderBy("time")
+      );
+    } else if (subject && grade) {
+      // ✅ (optional) filter by both grade + subject
+      q = query(
+        timetableRef,
+        where("grade", "==", grade),
+        where("subject", "==", subject),
+        orderBy("day"),
+        orderBy("time")
+      );
+    } else {
+      // ✅ student/parent view → filter by grade only
+      q = query(
+        timetableRef,
+        where("grade", "==", grade!),
+        orderBy("day"),
+        orderBy("time")
+      );
+    }
 
     const unsub = onSnapshot(q, (snap) => {
       setEntries(
@@ -47,12 +72,16 @@ const TimetableCard: React.FC<Props> = ({ grade }) => {
     });
 
     return () => unsub();
-  }, [grade]);
+  }, [grade, subject]);
 
   return (
     <Card className="bg-white shadow mt-6">
       <CardHeader>
-        <CardTitle>📅 Timetable — {grade}</CardTitle>
+        <CardTitle>
+          📅 Timetable{" "}
+          {grade && grade !== "all" ? `— Grade ${grade}` : ""}
+          {subject ? ` — ${subject}` : ""}
+        </CardTitle>
       </CardHeader>
       <CardContent>
         {entries.length === 0 ? (
@@ -67,7 +96,7 @@ const TimetableCard: React.FC<Props> = ({ grade }) => {
                 <p className="font-semibold">{e.subject}</p>
                 <p className="text-sm text-gray-600">
                   {e.day} • {e.time} ({e.duration}m) <br />
-                  Teacher: {e.teacherName}
+                  Teacher: {e.teacherName} | Grade {e.grade}
                 </p>
                 {e.googleClassroomLink && (
                   <a
