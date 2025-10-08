@@ -20,12 +20,14 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles, ch
     );
   }
 
+  // Not logged in at all → back to login
   if (!user) {
     return <Navigate to="/login" replace />;
   }
 
+  // Role mismatch → send back to login with a query param
   if (!allowedRoles.includes(user.role)) {
-    return <Navigate to="/unauthorized" replace />;
+    return <Navigate to="/login?unauthorized=true" replace />;
   }
 
   return <>{children}</>;

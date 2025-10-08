@@ -1,56 +1,74 @@
-// components/auth/AuthProvider.tsx
 "use client";
 
-import React, { createContext, useContext, useEffect, useState } from "react";
-import { onAuthStateChanged } from "firebase/auth";
+import { onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
 import { auth, db } from "@/lib/firebaseConfig";
-import { doc, getDoc } from "firebase/firestore";
+import {
+  doc,
+  getDoc,
+} from "firebase/firestore";
+import React, { createContext, useContext, useEffect, useState } from "react";
 
-interface UserWithRole {
+interface AppUser {
   uid: string;
   email: string | null;
-  role: string;
+  role: "student" | "teacher" | "parent" | "principal" | "admin";
 }
 
 interface AuthContextType {
-  user: UserWithRole | null;
+  user: AppUser | null;
   loading: boolean;
 }
 
-const AuthContext = createContext<AuthContextType>({ user: null, loading: true });
+const AuthContext = createContext<AuthContextType>({
+  user: null,
+  loading: true,
+});
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<UserWithRole | null>(null);
+  const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
       if (!firebaseUser) {
         setUser(null);
         setLoading(false);
         return;
       }
 
-      let role = "student"; // default
-      const parentSnap = await getDoc(doc(db, "parents", firebaseUser.uid));
-      const teacherSnap = await getDoc(doc(db, "teachers", firebaseUser.uid));
-      const adminSnap = await getDoc(doc(db, "admins", firebaseUser.uid));
-      const principalSnap = await getDoc(doc(db, "principals", firebaseUser.uid));
+      try {
+        // Look up role in "users/{uid}"
+        const userRef = doc(db, "users", firebaseUser.uid);
+        const userSnap = await getDoc(userRef);
 
-      if (adminSnap.exists()) role = "admin";
-      else if (principalSnap.exists()) role = "principal";
-      else if (teacherSnap.exists()) role = "teacher";
-      else if (parentSnap.exists()) role = "parent";
-
-      setUser({
-        uid: firebaseUser.uid,
-        email: firebaseUser.email,
-        role,
-      });
-      setLoading(false);
+        if (userSnap.exists()) {
+          const data = userSnap.data();
+          setUser({
+            uid: firebaseUser.uid,
+            email: firebaseUser.email,
+            role: data.role || "student", // fallback
+          });
+        } else {
+          // Fallback if doc missing
+          setUser({
+            uid: firebaseUser.uid,
+            email: firebaseUser.email,
+            role: "student",
+          });
+        }
+      } catch (err) {
+        console.error("Error fetching user role:", err);
+        setUser({
+          uid: firebaseUser.uid,
+          email: firebaseUser.email,
+          role: "student",
+        });
+      } finally {
+        setLoading(false);
+      }
     });
 
-    return () => unsub();
+    return () => unsubscribe();
   }, []);
 
   return (

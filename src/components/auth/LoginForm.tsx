@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { auth, db } from "@/lib/firebaseConfig";
 import {
   signInWithEmailAndPassword,
@@ -15,13 +15,15 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 export default function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState<
-    "student" | "teacher" | "parent" | "principal" | null
-  >(null);
+  const [role, setRole] = useState<"student" | "teacher" | "parent" | "principal" | null>(null);
   const [teacherAction, setTeacherAction] = useState<"none" | "apply" | "signin">("none");
   const [isParentSignup, setIsParentSignup] = useState(false);
 
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // check for ?unauthorized=true
+  const unauthorized = new URLSearchParams(location.search).get("unauthorized") === "true";
 
   /* -------------------- Handle Login/Signup -------------------- */
   const handleLoginOrSignup = async () => {
@@ -33,18 +35,33 @@ export default function LoginForm() {
     try {
       let userCred;
 
-      // 🟢 Parent signup flow
+      // 🟢 Parent signup
       if (role === "parent" && isParentSignup) {
         userCred = await createUserWithEmailAndPassword(auth, email, password);
         const user = userCred.user;
 
-        // Create parent record (no status)
-        await setDoc(doc(db, "parents", user.uid), {
-          uid: user.uid,
-          name: user.displayName || "",
-          email: user.email || "",
-          createdAt: serverTimestamp(),
-        }, { merge: true });
+        await setDoc(
+          doc(db, "parents", user.uid),
+          {
+            uid: user.uid,
+            name: user.displayName || "",
+            email: user.email || "",
+            createdAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+
+        // 🔑 Role assignment
+        await setDoc(
+          doc(db, "users", user.uid),
+          {
+            uid: user.uid,
+            email: user.email,
+            role: "parent",
+            createdAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
 
         alert("Signup successful! Redirecting to parent dashboard...");
         navigate("/parent-dashboard");
@@ -56,46 +73,89 @@ export default function LoginForm() {
       const user = userCred.user;
 
       if (role === "principal") {
-        // 🔒 Verify principal exists
-        const principalRef = doc(db, "principals", user.uid);
-        const principalSnap = await getDoc(principalRef);
-        if (!principalSnap.exists()) {
+        const ref = doc(db, "principals", user.uid);
+        const snap = await getDoc(ref);
+        if (!snap.exists()) {
           alert("Access denied. You are not authorized as a principal.");
           return;
         }
+
+        await setDoc(
+          doc(db, "users", user.uid),
+          {
+            uid: user.uid,
+            email: user.email,
+            role: "principal",
+            createdAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+
         navigate("/principal-dashboard");
         return;
       }
 
       if (role === "teacher") {
-        // 🔒 Verify teacher status
-        const teacherRef = doc(db, "teachers", user.uid);
-        const teacherSnap = await getDoc(teacherRef);
+        const ref = doc(db, "teachers", user.uid);
+        const snap = await getDoc(ref);
 
-        if (!teacherSnap.exists()) {
+        if (!snap.exists()) {
           alert("No teacher profile found. Please apply first.");
           navigate("/teacher-application");
           return;
         }
 
-        const teacherData = teacherSnap.data();
-        if (teacherData?.status === "approved" && teacherData?.classActivated) {
+        const data = snap.data();
+        await setDoc(
+          doc(db, "users", user.uid),
+          {
+            uid: user.uid,
+            email: user.email,
+            role: "teacher",
+            createdAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+
+        if (data?.status === "approved" && data?.classActivated) {
           navigate("/teacher-dashboard");
-        } else if (teacherData?.status === "approved" && !teacherData?.classActivated) {
-          alert("Your application is approved but class is not yet activated by the principal.");
-          navigate("/teacher-application");
         } else {
-          alert("Your application is still under review.");
+          alert("Your teacher account is not fully active.");
           navigate("/teacher-application");
         }
         return;
       }
 
-      // Students & Parents
       if (role === "student") {
+        await setDoc(
+          doc(db, "users", user.uid),
+          {
+            uid: user.uid,
+            email: user.email,
+            role: "student",
+            createdAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+
         navigate("/student-dashboard");
-      } else if (role === "parent") {
+        return;
+      }
+
+      if (role === "parent") {
+        await setDoc(
+          doc(db, "users", user.uid),
+          {
+            uid: user.uid,
+            email: user.email,
+            role: "parent",
+            createdAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+
         navigate("/parent-dashboard");
+        return;
       }
     } catch (err: any) {
       console.error("Login error:", err);
@@ -120,12 +180,11 @@ export default function LoginForm() {
       const user = result.user;
 
       if (role === "teacher") {
-        const teacherRef = doc(db, "teachers", user.uid);
-        const teacherSnap = await getDoc(teacherRef);
+        const ref = doc(db, "teachers", user.uid);
+        const snap = await getDoc(ref);
 
-        if (!teacherSnap.exists()) {
-          // Create pending teacher profile
-          await setDoc(teacherRef, {
+        if (!snap.exists()) {
+          await setDoc(ref, {
             uid: user.uid,
             name: user.displayName || "",
             email: user.email || "",
@@ -134,54 +193,113 @@ export default function LoginForm() {
             status: "pending_review",
             classActivated: false,
           });
+          await setDoc(
+            doc(db, "users", user.uid),
+            {
+              uid: user.uid,
+              email: user.email,
+              role: "teacher",
+              createdAt: serverTimestamp(),
+            },
+            { merge: true }
+          );
+
           alert("Application submitted. Please wait for approval.");
           navigate("/teacher-application");
           return;
         }
 
-        const teacherData = teacherSnap.data();
-        if (teacherData?.status === "approved" && teacherData?.classActivated) {
+        const data = snap.data();
+        await setDoc(
+          doc(db, "users", user.uid),
+          {
+            uid: user.uid,
+            email: user.email,
+            role: "teacher",
+            createdAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+
+        if (data?.status === "approved" && data?.classActivated) {
           navigate("/teacher-dashboard");
-        } else if (teacherData?.status === "approved" && !teacherData?.classActivated) {
-          alert("Your application is approved but class is not yet activated by the principal.");
-          navigate("/teacher-application");
         } else {
-          alert("Your application is still under review.");
+          alert("Your teacher account is not fully active.");
           navigate("/teacher-application");
         }
         return;
       }
 
       if (role === "parent") {
-        const parentRef = doc(db, "parents", user.uid);
-        const parentSnap = await getDoc(parentRef);
+        const ref = doc(db, "parents", user.uid);
+        const snap = await getDoc(ref);
 
-        if (!parentSnap.exists()) {
-          await setDoc(parentRef, {
-            uid: user.uid,
-            name: user.displayName || "",
-            email: user.email || "",
-            photoURL: user.photoURL || "",
-            createdAt: serverTimestamp(),
-          }, { merge: true });
+        if (!snap.exists()) {
+          await setDoc(
+            ref,
+            {
+              uid: user.uid,
+              name: user.displayName || "",
+              email: user.email || "",
+              photoURL: user.photoURL || "",
+              createdAt: serverTimestamp(),
+            },
+            { merge: true }
+          );
         }
+
+        await setDoc(
+          doc(db, "users", user.uid),
+          {
+            uid: user.uid,
+            email: user.email,
+            role: "parent",
+            createdAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+
         navigate("/parent-dashboard");
         return;
       }
 
       if (role === "student") {
+        await setDoc(
+          doc(db, "users", user.uid),
+          {
+            uid: user.uid,
+            email: user.email,
+            role: "student",
+            createdAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+
         navigate("/student-dashboard");
         return;
       }
 
       if (role === "principal") {
-        const principalRef = doc(db, "principals", user.uid);
-        const principalSnap = await getDoc(principalRef);
-        if (!principalSnap.exists()) {
+        const ref = doc(db, "principals", user.uid);
+        const snap = await getDoc(ref);
+        if (!snap.exists()) {
           alert("Access denied. You are not authorized as a principal.");
           return;
         }
+
+        await setDoc(
+          doc(db, "users", user.uid),
+          {
+            uid: user.uid,
+            email: user.email,
+            role: "principal",
+            createdAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+
         navigate("/principal-dashboard");
+        return;
       }
     } catch (err) {
       console.error("Google login error:", err);
@@ -202,6 +320,13 @@ export default function LoginForm() {
       >
         ✕
       </button>
+
+      {/* 🚨 Unauthorized banner */}
+      {unauthorized && (
+        <div className="mb-4 p-3 rounded bg-red-100 border border-red-400 text-red-700 text-center">
+          You are not authorized to access that page. Please log in with the correct role.
+        </div>
+      )}
 
       <h2 className="text-xl font-bold mb-4 text-center">Welcome — Choose Your Role</h2>
 
@@ -250,9 +375,7 @@ export default function LoginForm() {
         <Card className="p-6 shadow-lg border rounded-2xl bg-white">
           <CardHeader>
             <CardTitle className="text-xl font-semibold text-center text-blue-700">
-              {role === "parent" && isParentSignup
-                ? "Parent Signup"
-                : "Sign in to Your Account"}
+              {role === "parent" && isParentSignup ? "Parent Signup" : "Sign in to Your Account"}
             </CardTitle>
           </CardHeader>
 
