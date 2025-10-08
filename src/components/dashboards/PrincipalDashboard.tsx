@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useNavigate } from "react-router-dom";
+import TimetableManager from "@/lib/TimetableManager";
 
 /* ---------------- Types ---------------- */
 interface Registration {
@@ -609,6 +610,7 @@ const PrincipalDashboard: React.FC = () => {
           </div>
         </div>
       )}
+      <TimetableManager/>
     </div>
   );
 };

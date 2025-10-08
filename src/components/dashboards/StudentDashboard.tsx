@@ -15,6 +15,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import TimetableCard from "./TimetableCard";
 
 /* ---------------- Types ---------------- */
 interface StudentProfile {
@@ -222,6 +223,11 @@ const StudentDashboard: React.FC = () => {
           </div>
         )}
       </div>
+
+{/* timetable */}
+<TimetableCard grade={student.grade} />
+
+
     </div>
   );
 };

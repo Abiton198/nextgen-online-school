@@ -20,7 +20,7 @@ import {
 } from "firebase/firestore";
 import { useNavigate } from "react-router-dom";
 import { LogOut } from "lucide-react";
-import TimetableManager from "@/lib/TimetableManager";
+import TimetableCard from "../TimetableCard";
 
 const sections = ["Registration", "Payments", "Settings", "Communications", "Status"];
 
@@ -168,7 +168,9 @@ export default function ParentDashboard() {
         <CardContent>{renderSection()}</CardContent>
       </Card>
 
-      <TimetableManager />
+      <TimetableCard grade={child.grade} />
+
+
     </div>
   );
 }

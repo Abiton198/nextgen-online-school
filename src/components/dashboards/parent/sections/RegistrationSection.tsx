@@ -146,19 +146,21 @@ export default function RegistrationSection() {
           { firstName, lastName, grade, updatedAt: serverTimestamp() },
           { merge: true }
         );
-      } else {
-        await addDoc(collection(db, "students"), {
-          parentId: user.uid,
-          parentEmail: user.email,
-          firstName,
-          lastName,
-          grade,
-          applicationStatus: "pending",
-          principalReviewed: false,
-          createdAt: serverTimestamp(),
-        });
-      }
+     } else {
+  // generate a predictable unique student ID
+  const studentId = `student-${Date.now()}`;
 
+  await setDoc(doc(db, "students", studentId), {
+    parentId: user.uid,
+    parentEmail: user.email,
+    firstName,
+    lastName,
+    grade,
+    applicationStatus: "pending",
+    principalReviewed: false,
+    createdAt: serverTimestamp(),
+  });
+}
       // reset form
       setFirstName("");
       setLastName("");
