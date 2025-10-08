@@ -10,14 +10,13 @@ import { Toaster } from "./components/ui/toaster";
 import { Toaster as Sonner } from "./components/ui/sonner";
 
 import { AuthProvider } from "@/components/auth/AuthProvider";
-import { ProtectedRoute } from "@/components/auth/ProtectedRoute"; 
+import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 
 // Auth Pages
 import LoginForm from "@/components/auth/LoginForm";
 import AdminLoginForm from "@/components/auth/AdminLoginForm";
 import SuspendedScreen from "@/components/auth/SuspendedScreen";
 import TeacherApplicationForm from "@/components/auth/TeacherApplicationForm";
-import ParentRegistration from "@/components/auth/ParentRegistration";
 
 // Dashboards
 import AdminDashboard from "@/components/dashboards/AdminDashboard";
@@ -74,20 +73,8 @@ const App: React.FC = () => {
                 <Route path="/about/fees" element={<FeesStructure />} />
                 <Route path="/about/teaching-staff" element={<TeachingStaff />} />
                 <Route path="/about/accreditation" element={<Accreditation />} />
-                
 
-                {/* 👨‍👩‍👧 Parent Registration and Info */}
-             
-<Route
-  path="/register"
-  element={
-    <ProtectedRoute allowedRoles={["parent"]}>
-      <ParentRegistration />
-    </ProtectedRoute>
-  }
-/>
-
-
+                {/* 👨‍👩‍👧 Parent Dashboard Sections */}
                 <Route path="/payments" element={<PaymentsSection />} />
                 <Route path="/status" element={<StatusSection />} />
 

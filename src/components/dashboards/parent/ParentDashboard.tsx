@@ -50,16 +50,13 @@ export default function ParentDashboard() {
 
     const fetchParentAndStudents = async () => {
       try {
-        // fetch parent doc once
+        // ✅ fetch parent doc (should always exist after signup)
         const parentDoc = await getDoc(doc(db, "parents", user.uid));
-        if (!parentDoc.exists()) {
-          navigate("/register");
-          return;
+        if (parentDoc.exists()) {
+          const data = parentDoc.data();
+          setParentName(data.name || data.parentName || "");
+          setTitle(data.title || "");
         }
-
-        const data = parentDoc.data();
-        setParentName(data.parentName || "");
-        setTitle(data.title || "");
 
         // 👶 set up real-time listener for students
         const q = query(
@@ -86,11 +83,11 @@ export default function ParentDashboard() {
     return () => {
       if (unsubscribe) unsubscribe();
     };
-  }, [user, navigate]);
+  }, [user]);
 
   const handleLogout = async () => {
     await signOut(auth);
-    navigate("/signin");
+    navigate("/login");
   };
 
   const renderSection = () => {
