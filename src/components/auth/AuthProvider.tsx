@@ -7,9 +7,11 @@ import {
   signOut,
   sendPasswordResetEmail,
   onAuthStateChanged,
+  signInWithPopup,
+  GoogleAuthProvider,
   User,
 } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 
 interface AppUser {
   uid: string;
@@ -36,7 +38,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        // 🔹 detect role from Firestore
         let role = "student";
         let status = "active";
 
@@ -76,16 +77,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const login = (email: string, password: string) =>
     signInWithEmailAndPassword(auth, email, password).then((cred) => cred.user);
 
-  const loginWithGoogle = async () => {
-    // 👉 you can implement Google login later
-    return null;
+  // 🔑 Google Login with automatic "parent" role assignment
+  const loginWithGoogle = async (): Promise<User | null> => {
+    try {
+      const provider = new GoogleAuthProvider();
+      const result = await signInWithPopup(auth, provider);
+      const firebaseUser = result.user;
+
+      // ensure parent record exists
+      const parentRef = doc(db, "parents", firebaseUser.uid);
+      const parentSnap = await getDoc(parentRef);
+
+      if (!parentSnap.exists()) {
+        await setDoc(parentRef, {
+          uid: firebaseUser.uid,
+          email: firebaseUser.email,
+          parentName: firebaseUser.displayName || "",
+          status: "pending_registration",
+          createdAt: new Date(),
+        });
+        console.log("✅ New parent record created");
+      }
+
+      return firebaseUser;
+    } catch (err) {
+      console.error("Google login error:", err);
+      return null;
+    }
   };
 
   const resetPassword = (email: string) => sendPasswordResetEmail(auth, email);
   const logout = () => signOut(auth);
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, loginWithGoogle, resetPassword, logout }}>
+    <AuthContext.Provider
+      value={{ user, loading, login, loginWithGoogle, resetPassword, logout }}
+    >
       {children}
     </AuthContext.Provider>
   );

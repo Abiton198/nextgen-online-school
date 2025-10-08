@@ -77,7 +77,17 @@ const App: React.FC = () => {
                 
 
                 {/* 👨‍👩‍👧 Parent Registration and Info */}
-                <Route path="/register" element={<ParentRegistration />} />
+             
+<Route
+  path="/register"
+  element={
+    <ProtectedRoute allowedRoles={["parent"]}>
+      <ParentRegistration />
+    </ProtectedRoute>
+  }
+/>
+
+
                 <Route path="/payments" element={<PaymentsSection />} />
                 <Route path="/status" element={<StatusSection />} />
 

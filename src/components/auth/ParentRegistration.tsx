@@ -44,23 +44,26 @@ const ParentRegistration: React.FC = () => {
       const lastName = rest.join(" ") || "-";
 
       // Save parent record
-      await setDoc(
-        parentRef,
-        {
-          uid: currentUser.uid,
-          email: currentUser.email,
-          parentName: parentName || "Unknown",
-          learnerData: {
-            firstName: firstName || "Unknown",
-            lastName,
-            grade: learnerGrade || "-",
-          },
-          applicationStatus: "submitted",
-          agreedToStandards: true,
-          createdAt: serverTimestamp(),
-        },
-        { merge: true }
-      );
+   // Save parent record
+await setDoc(
+  parentRef,
+  {
+    uid: currentUser.uid,
+    email: currentUser.email,
+    parentName: parentName || "Unknown",
+    learnerData: {
+      firstName: firstName || "Unknown",
+      lastName,
+      grade: learnerGrade || "-",
+    },
+    applicationStatus: "submitted",
+    agreedToStandards: true,
+    status: "active",              // 👈 mark parent as active
+    createdAt: serverTimestamp(),
+  },
+  { merge: true }
+);
+
 
       // Create student applicant record
       const studentRef = doc(db, "students", currentUser.uid);
