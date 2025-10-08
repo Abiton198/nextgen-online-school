@@ -12,6 +12,7 @@ import {
   query as fsQuery,
   orderBy,
   getDocs,
+  getDoc, // ✅ needed to fetch /parents/{parentId}
 } from "firebase/firestore";
 import { getStorage, ref, listAll, getDownloadURL } from "firebase/storage";
 
@@ -32,13 +33,13 @@ interface Student {
   parentEmail?: string;
   parentId?: string;
   learnerData?: {
-    firstName: string;
-    lastName: string;
-    grade: string;
+    firstName?: string;
+    lastName?: string;
+    grade?: string;
   };
   parentData?: {
-    name: string;
-    email: string;
+    name?: string;
+    email?: string;
   };
   applicationStatus?: "pending" | "enrolled" | "rejected" | "suspended";
   status?: string;
@@ -57,10 +58,19 @@ interface TeacherApplication {
   [key: string]: any;
 }
 
-interface ParentAgg {
-  id: string; // use email or uid
+interface ParentDoc {
+  uid: string;
   name: string;
   email: string;
+  photoURL?: string | null;
+  createdAt?: any;
+}
+
+interface ParentAgg {
+  id: string; // parent UID (from /parents/{uid})
+  name: string;
+  email: string;
+  photoURL?: string | null;
   children: { name: string; grade: string; status: string }[];
 }
 
@@ -96,7 +106,7 @@ const PrincipalDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<"Details" | "Documents">("Details");
 
   /* ---------------- Chat State ---------------- */
-  const [chatRecipient, setChatRecipient] = useState<string | null>(null);
+  const [chatRecipient, setChatRecipient] = useState<string | null>(null); // parent uid
 
   /* ---------------- Utilities ---------------- */
   const openModal = async (item: any, type: "teacherApplications" | "students" | "parents") => {
@@ -109,6 +119,7 @@ const PrincipalDashboard: React.FC = () => {
       const docs = await fetchDocuments(type, item.id, item.uid);
       setDocuments(docs);
     } else if (type === "students") {
+      // if you store registration docs/media under /registrations/{studentId}/documents
       const docs = await fetchDocuments("registrations", item.id);
       setDocuments(docs);
     } else {
@@ -131,40 +142,58 @@ const PrincipalDashboard: React.FC = () => {
 
   /* ---------------- Firestore Listeners ---------------- */
   useEffect(() => {
+    // Students
     const unsubStudents = onSnapshot(collection(db, "students"), async (snap) => {
-      const regs = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Student) }));
-      setStudents(regs);
+      const list = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Student) }));
+      setStudents(list);
 
+      // Build parent aggregates (fetch parent's name/email/photo from /parents/{parentId})
       const parentMap: Record<string, ParentAgg> = {};
-      regs.forEach((reg) => {
-        const pEmail = reg.parentData?.email;
-        if (!pEmail) return;
 
-        if (!parentMap[pEmail]) {
-          parentMap[pEmail] = {
-            id: reg.parentId || pEmail,
-            name: reg.parentData?.name || "Unknown Parent",
-            email: pEmail,
-            children: [],
-          };
+      for (const s of list) {
+        const parentId = s.parentId;
+        if (!parentId) continue;
+
+        if (!parentMap[parentId]) {
+          const pDoc = await getDoc(doc(db, "parents", parentId));
+          if (pDoc.exists()) {
+            const pData = pDoc.data() as ParentDoc;
+            parentMap[parentId] = {
+              id: parentId,
+              name: pData.name || "(Unknown Parent)",
+              email: pData.email || s.parentEmail || "",
+              photoURL: pData.photoURL || null,
+              children: [],
+            };
+          } else {
+            // fallback to fields on student doc
+            parentMap[parentId] = {
+              id: parentId,
+              name: s.parentData?.name || "(Unknown Parent)",
+              email: s.parentData?.email || s.parentEmail || "",
+              photoURL: null,
+              children: [],
+            };
+          }
         }
-        parentMap[pEmail].children.push({
-          name: `${reg.learnerData?.firstName || ""} ${reg.learnerData?.lastName || ""}`.trim(),
-          grade: reg.learnerData?.grade || "-",
-          status: reg.status || "-",
-        });
-      });
-      setParents(Object.values(parentMap));
 
-      for (const reg of regs) {
-        const payRef = collection(db, "registrations", reg.id, "payments");
-        const q = fsQuery(payRef, orderBy("processedAt", "desc"));
-        const paySnap = await getDocs(q);
-        const history: Payment[] = paySnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
-        setPayments((prev) => ({ ...prev, [reg.id]: history }));
+        const childName =
+          `${s.firstName ?? s.learnerData?.firstName ?? ""} ${s.lastName ?? s.learnerData?.lastName ?? ""}`.trim() ||
+          "(Unnamed)";
+        const childGrade = s.grade ?? s.learnerData?.grade ?? "-";
+        const childStatus = s.status ?? s.applicationStatus ?? "pending";
+
+        parentMap[parentId].children.push({
+          name: childName,
+          grade: String(childGrade),
+          status: childStatus,
+        });
       }
+
+      setParents(Object.values(parentMap));
     });
 
+    // Teachers
     const unsubTeachers = onSnapshot(collection(db, "teacherApplications"), (snap) => {
       setTeachers(snap.docs.map((d) => ({ id: d.id, ...(d.data() as TeacherApplication) })));
     });
@@ -174,6 +203,20 @@ const PrincipalDashboard: React.FC = () => {
       unsubTeachers();
     };
   }, []);
+
+  // (Optional) Payment history: if you track by registration id, adapt as needed
+  useEffect(() => {
+    (async () => {
+      const out: Record<string, Payment[]> = {};
+      for (const s of students) {
+        const payRef = collection(db, "registrations", s.id, "payments");
+        const q = fsQuery(payRef, orderBy("processedAt", "desc"));
+        const paySnap = await getDocs(q);
+        out[s.id] = paySnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+      }
+      setPayments(out);
+    })();
+  }, [students]);
 
   /* ---------------- Firestore Actions ---------------- */
   const updateStatus = async (
@@ -323,6 +366,17 @@ const PrincipalDashboard: React.FC = () => {
     navigate("/");
   };
 
+  /* ---------------- Small UI Helpers ---------------- */
+  const getStudentName = (s: Student) =>
+    `${s.firstName ?? s.learnerData?.firstName ?? ""} ${s.lastName ?? s.learnerData?.lastName ?? ""}`.trim() ||
+    "—";
+
+  const getStudentParentEmail = (s: Student) =>
+    s.parentData?.email ?? s.parentEmail ?? "—";
+
+  const getStudentStatus = (s: Student) =>
+    s.status ?? s.applicationStatus ?? "pending";
+
   /* ---------------- Render ---------------- */
   const renderUsersCard = (
     title: string,
@@ -330,9 +384,21 @@ const PrincipalDashboard: React.FC = () => {
     col: "students" | "teacherApplications"
   ) => {
     const filtered = users.filter((u) => {
-      const first = (u as any).learnerData?.firstName || (u as any).firstName || "";
-      const last = (u as any).learnerData?.lastName || (u as any).lastName || "";
-      const email = (u as any).parentData?.email || (u as any).email || "";
+      const first =
+        (u as Student).learnerData?.firstName ||
+        (u as Student).firstName ||
+        (u as TeacherApplication).firstName ||
+        "";
+      const last =
+        (u as Student).learnerData?.lastName ||
+        (u as Student).lastName ||
+        (u as TeacherApplication).lastName ||
+        "";
+      const email =
+        (u as Student).parentData?.email ||
+        (u as Student).parentEmail ||
+        (u as TeacherApplication).email ||
+        "";
       const hay = `${first} ${last} ${email}`.toLowerCase();
       return hay.includes(searchTerm.toLowerCase());
     });
@@ -348,24 +414,28 @@ const PrincipalDashboard: React.FC = () => {
           {displayUsers.length === 0 && <p className="text-sm text-gray-500">No records.</p>}
           <ul className="space-y-3">
             {displayUsers.map((u) => {
-              const isStudent = "learnerData" in u;
+              const isStudent = (u as Student).id && (u as Student).parentId !== undefined;
               const name = isStudent
-                ? `${u.learnerData?.firstName ?? ""} ${u.learnerData?.lastName ?? ""}`.trim()
-                : `${(u as TeacherApplication).firstName ?? ""} ${(u as TeacherApplication).lastName ?? ""}`.trim();
-              const email = isStudent ? u.parentData?.email : (u as TeacherApplication).email;
+                ? getStudentName(u as Student)
+                : `${(u as TeacherApplication).firstName ?? ""} ${(u as TeacherApplication).lastName ?? ""}`.trim() ||
+                  "—";
+              const email = isStudent ? getStudentParentEmail(u as Student) : (u as TeacherApplication).email || "—";
+              const status = isStudent ? getStudentStatus(u as Student) : (u as any).status ?? "pending";
 
               return (
                 <li key={u.id} className="p-3 border rounded bg-gray-50">
                   <div className="mb-3">
-                    <p className="font-medium">{name || "—"}</p>
-                    <p className="text-xs text-gray-500">{email || "—"}</p>
-                    <p className="text-xs text-gray-400">Status: {u.status}</p>
+                    <p className="font-medium">{name}</p>
+                    <p className="text-xs text-gray-500">{email}</p>
+                    <p className="text-xs text-gray-400">Status: {status}</p>
                   </div>
+
                   <div className="flex flex-wrap gap-2">
                     <Button size="sm" variant="outline" onClick={() => openModal(u, col)}>
                       Review Details
                     </Button>
-                    {u.status !== "pending_review" && (
+
+                    {status !== "pending" && (
                       <>
                         <Button
                           size="sm"
@@ -374,13 +444,15 @@ const PrincipalDashboard: React.FC = () => {
                         >
                           Suspend
                         </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => toggleClassActivation(u, col)}
-                        >
-                          {u.classActivated ? "Freeze Class" : "Unfreeze Class"}
-                        </Button>
+                        {"classActivated" in u && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => toggleClassActivation(u as any, col)}
+                          >
+                            {(u as any).classActivated ? "Freeze Class" : "Unfreeze Class"}
+                          </Button>
+                        )}
                       </>
                     )}
                   </div>
@@ -408,10 +480,24 @@ const PrincipalDashboard: React.FC = () => {
           <ul className="space-y-3">
             {filtered.map((p) => (
               <li key={p.id} className="p-3 border rounded bg-gray-50">
-                <div className="mb-2">
-                  <p className="font-medium">{p.name}</p>
-                  <p className="text-xs text-gray-500">{p.email}</p>
+                <div className="mb-2 flex items-center gap-3">
+                  {p.photoURL ? (
+                    <img
+                      src={p.photoURL}
+                      alt={p.name}
+                      className="h-8 w-8 rounded-full object-cover border"
+                    />
+                  ) : (
+                    <div className="h-8 w-8 rounded-full bg-gray-200 flex items-center justify-center text-xs">
+                      {p.name?.charAt(0) ?? "P"}
+                    </div>
+                  )}
+                  <div>
+                    <p className="font-medium">{p.name}</p>
+                    <p className="text-xs text-gray-500">{p.email}</p>
+                  </div>
                 </div>
+
                 <div className="text-xs text-gray-600 mb-2">
                   <p className="font-semibold mb-1">Children:</p>
                   <ul className="list-disc ml-5">
@@ -422,7 +508,8 @@ const PrincipalDashboard: React.FC = () => {
                     ))}
                   </ul>
                 </div>
-                {/* ✅ Start Chat Button */}
+
+                {/* ✅ Start Chat Button (uses parent UID) */}
                 <Button
                   size="sm"
                   className="bg-green-600 hover:bg-green-700 text-white"
@@ -492,7 +579,7 @@ const PrincipalDashboard: React.FC = () => {
               ✕
             </button>
 
-                        <h2 className="text-xl font-bold mb-4">
+            <h2 className="text-xl font-bold mb-4">
               Review{" "}
               {selectedType === "teacherApplications"
                 ? "Teacher Application"
@@ -535,24 +622,23 @@ const PrincipalDashboard: React.FC = () => {
                 <h3 className="text-lg font-semibold mb-3">👨‍🎓 Student Information</h3>
                 <p>
                   <span className="font-medium">Learner:</span>{" "}
-                  {`${selectedItem.learnerData?.firstName || ""} ${
-                    selectedItem.learnerData?.lastName || ""
-                  }`.trim()}
+                  {getStudentName(selectedItem)}
                 </p>
                 <p>
                   <span className="font-medium">Grade:</span>{" "}
-                  {selectedItem.learnerData?.grade || "-"}
+                  {selectedItem.grade ?? selectedItem.learnerData?.grade ?? "-"}
                 </p>
                 <p>
                   <span className="font-medium">Parent:</span>{" "}
-                  {selectedItem.parentData?.name || "-"}
+                  {selectedItem.parentData?.name ?? "(See Parents card)"}
                 </p>
                 <p>
                   <span className="font-medium">Parent Email:</span>{" "}
-                  {selectedItem.parentData?.email || "-"}
+                  {getStudentParentEmail(selectedItem)}
                 </p>
                 <p>
-                  <span className="font-medium">Status:</span> {selectedItem.status}
+                  <span className="font-medium">Status:</span>{" "}
+                  {getStudentStatus(selectedItem)}
                 </p>
               </div>
             )}
@@ -672,13 +758,13 @@ const PrincipalDashboard: React.FC = () => {
       {/* Timetable Manager */}
       <TimetableManager />
 
-      {/* ✅ Floating Chat Window */}
+      {/* ✅ Floating Chat Window – opens when you click “Start Chat” on a parent */}
       {chatRecipient && (
         <div className="fixed bottom-6 right-6 z-50">
           <ChatWidget
             uid={auth.currentUser?.uid || "principal"}
             role="principal"
-            initialRecipient={chatRecipient}
+            initialRecipient={chatRecipient} // parent UID
             forceOpen={true}
             onClose={() => setChatRecipient(null)}
           />
@@ -689,4 +775,3 @@ const PrincipalDashboard: React.FC = () => {
 };
 
 export default PrincipalDashboard;
-
