@@ -21,7 +21,7 @@ import { Input } from "@/components/ui/input";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useNavigate } from "react-router-dom";
 import TimetableManager from "@/lib/TimetableManager";
-import ChatWindow from "@/components/chat/ChatWindow";
+import ChatWidget from "../chat/ChatWidget";
 
 /* ---------------- Types ---------------- */
 interface Student {
@@ -675,7 +675,7 @@ const PrincipalDashboard: React.FC = () => {
       {/* ✅ Floating Chat Window */}
       {chatRecipient && (
         <div className="fixed bottom-6 right-6 z-50">
-          <ChatWindow
+          <ChatWidget
             uid={auth.currentUser?.uid || "principal"}
             role="principal"
             initialRecipient={chatRecipient}
