@@ -38,13 +38,13 @@ export default function LoginForm() {
         userCred = await createUserWithEmailAndPassword(auth, email, password);
         const user = userCred.user;
 
+        // Create parent record (no status)
         await setDoc(doc(db, "parents", user.uid), {
           uid: user.uid,
           name: user.displayName || "",
           email: user.email || "",
           createdAt: serverTimestamp(),
-          status: "pending_registration",
-        });
+        }, { merge: true });
 
         alert("Signup successful! Redirecting to parent dashboard...");
         navigate("/parent-dashboard");
@@ -163,8 +163,7 @@ export default function LoginForm() {
             email: user.email || "",
             photoURL: user.photoURL || "",
             createdAt: serverTimestamp(),
-            status: "pending_registration",
-          });
+          }, { merge: true });
         }
         navigate("/parent-dashboard");
         return;

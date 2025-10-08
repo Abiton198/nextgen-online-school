@@ -11,7 +11,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 
 const ParentRegistration: React.FC = () => {
   const navigate = useNavigate();
-  const { currentUser } = useAuth(); // 🔑 logged-in parent
+  const { user: currentUser } = useAuth(); // simplified from AuthProvider
 
   const [parentName, setParentName] = useState("");
   const [learnerName, setLearnerName] = useState("");
@@ -43,29 +43,26 @@ const ParentRegistration: React.FC = () => {
       const [firstName, ...rest] = learnerName.trim().split(" ");
       const lastName = rest.join(" ") || "-";
 
-      // Save parent record
-   // Save parent record
-await setDoc(
-  parentRef,
-  {
-    uid: currentUser.uid,
-    email: currentUser.email,
-    parentName: parentName || "Unknown",
-    learnerData: {
-      firstName: firstName || "Unknown",
-      lastName,
-      grade: learnerGrade || "-",
-    },
-    applicationStatus: "submitted",
-    agreedToStandards: true,
-    status: "active",              // 👈 mark parent as active
-    createdAt: serverTimestamp(),
-  },
-  { merge: true }
-);
+      // Save parent record (🔑 no status needed)
+      await setDoc(
+        parentRef,
+        {
+          uid: currentUser.uid,
+          email: currentUser.email,
+          parentName: parentName || "Unknown",
+          learnerData: {
+            firstName: firstName || "Unknown",
+            lastName,
+            grade: learnerGrade || "-",
+          },
+          applicationStatus: "submitted",
+          agreedToStandards: true,
+          createdAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
 
-
-      // Create student applicant record
+      // Create student applicant record (still pending)
       const studentRef = doc(db, "students", currentUser.uid);
       await setDoc(studentRef, {
         uid: currentUser.uid,
@@ -74,13 +71,12 @@ await setDoc(
         grade: learnerGrade || "-",
         parentEmail: currentUser.email,
         parentName: parentName || "Unknown",
-        applicationStatus: "pending",
+        applicationStatus: "pending", // 👈 student needs approval
         principalReviewed: false,
         createdAt: serverTimestamp(),
       });
 
       console.log("✅ Parent & student records saved. Redirecting…");
-
       navigate("/parent-dashboard");
     } catch (err) {
       console.error("❌ Error saving registration:", err);
@@ -137,16 +133,16 @@ await setDoc(
           />
         </div>
 
-        {/* Online Class Requirements */}
+        {/* Requirements */}
         <div className="border rounded-lg p-6 bg-blue-50">
           <h3 className="text-lg font-semibold mb-3">Online Class Requirements</h3>
           <ul className="list-disc list-inside text-sm text-gray-700 space-y-1">
             <li>Stable internet connection</li>
             <li>Computer or laptop with a working camera</li>
-            <li>Quiet and controlled background (no disruptions)</li>
-            <li>Headphones or speakers for clear audio</li>
-            <li>Updated browser (Chrome/Firefox/Edge recommended)</li>
-            <li>A dedicated study space free from distractions</li>
+            <li>Quiet and controlled background</li>
+            <li>Headphones or speakers</li>
+            <li>Updated browser (Chrome/Firefox/Edge)</li>
+            <li>A dedicated study space</li>
           </ul>
         </div>
 
@@ -160,8 +156,7 @@ await setDoc(
               onChange={(e) => setDeclarationAccepted(e.target.checked)}
               className="w-4 h-4"
             />
-            I agree to the terms and conditions of the school standards and
-            confirm all information is valid.
+            I agree to the terms and conditions and confirm all information is valid.
           </label>
         </div>
 

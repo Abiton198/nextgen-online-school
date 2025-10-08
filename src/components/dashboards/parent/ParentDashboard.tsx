@@ -10,52 +10,82 @@ import StatusSection from "./sections/StatusSection";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { auth, db } from "@/lib/firebaseConfig";
 import { signOut } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
+import {
+  doc,
+  getDoc,
+  collection,
+  query,
+  where,
+  onSnapshot,
+} from "firebase/firestore";
 import { useNavigate } from "react-router-dom";
 import { LogOut } from "lucide-react";
 import TimetableManager from "@/lib/TimetableManager";
 
 const sections = ["Registration", "Payments", "Settings", "Communications", "Status"];
 
+interface Student {
+  id?: string;
+  firstName: string;
+  lastName: string;
+  grade: string;
+  applicationStatus?: string;
+}
+
 export default function ParentDashboard() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState("Registration");
 
   const [parentName, setParentName] = useState("");
-  const [title, setTitle] = useState(""); // optional
-  const [learner, setLearner] = useState<{ firstName?: string; lastName?: string; grade?: string } | null>(null);
-
+  const [title, setTitle] = useState("");
+  const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
+
   const navigate = useNavigate();
 
   useEffect(() => {
     if (!user?.uid) return;
 
-    const fetchParent = async () => {
+    let unsubscribe: () => void;
+
+    const fetchParentAndStudents = async () => {
       try {
+        // fetch parent doc once
         const parentDoc = await getDoc(doc(db, "parents", user.uid));
-        if (parentDoc.exists()) {
-          const data = parentDoc.data();
-
-          if (data.applicationStatus !== "submitted") {
-            navigate("/register");
-            return;
-          }
-
-          setParentName(data.parentName || "");
-          setTitle(data.title || ""); // optional, may not exist
-          setLearner(data.learnerData || null);
-        } else {
+        if (!parentDoc.exists()) {
           navigate("/register");
+          return;
         }
+
+        const data = parentDoc.data();
+        setParentName(data.parentName || "");
+        setTitle(data.title || "");
+
+        // 👶 set up real-time listener for students
+        const q = query(
+          collection(db, "students"),
+          where("parentId", "==", user.uid)
+        );
+        unsubscribe = onSnapshot(q, (snap) => {
+          const list: Student[] = snap.docs.map((d) => ({
+            id: d.id,
+            ...(d.data() as Student),
+          }));
+          setStudents(list);
+        });
       } catch (err) {
-        console.error("Error fetching parent:", err);
+        console.error("Error fetching dashboard data:", err);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchParent();
+    fetchParentAndStudents();
+
+    // cleanup listener on unmount
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
   }, [user, navigate]);
 
   const handleLogout = async () => {
@@ -90,11 +120,21 @@ export default function ParentDashboard() {
           <h1 className="text-2xl font-bold">
             Welcome {title && `${title} `}{parentName}
           </h1>
-          {learner && (
+
+          {/* Show all children */}
+          {students.length > 0 && (
             <div className="mt-2 text-gray-700">
-              <p>
-                Child: {learner.firstName || "Unknown"} {learner.lastName || ""} – Grade {learner.grade || "-"}
-              </p>
+              <p className="font-semibold">Children:</p>
+              <ul className="list-disc list-inside">
+                {students.map((s) => (
+                  <li key={s.id}>
+                    {s.firstName} {s.lastName} – Grade {s.grade}{" "}
+                    <span className="italic text-sm text-gray-600">
+                      ({s.applicationStatus || "pending"})
+                    </span>
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
         </div>
@@ -131,7 +171,7 @@ export default function ParentDashboard() {
         <CardContent>{renderSection()}</CardContent>
       </Card>
 
-      <TimetableManager/>
+      <TimetableManager />
     </div>
   );
 }
