@@ -11,6 +11,7 @@ import {
   serverTimestamp,
   query as fsQuery,
   orderBy,
+  deleteDoc,
   getDocs,
   getDoc, // ✅ needed to fetch /parents/{parentId}
 } from "firebase/firestore";
@@ -218,50 +219,76 @@ const PrincipalDashboard: React.FC = () => {
     })();
   }, [students]);
 
-  /* ---------------- Firestore Actions ---------------- */
-  const updateStatus = async (
-    col: "students" | "teacherApplications",
-    id: string,
-    updates: Record<string, any>
-  ) => updateDoc(doc(db, col, id), updates);
+/* ---------------- Firestore Actions ---------------- */
+const updateStatus = async (
+  col: "students" | "teacherApplications",
+  id: string,
+  updates: Record<string, any>
+) => updateDoc(doc(db, col, id), updates);
 
-  const approve = async (col: "students" | "teacherApplications", item: Student | TeacherApplication) => {
-    const id = item.id;
+const approve = async (
+  col: "students" | "teacherApplications",
+  item: Student | TeacherApplication
+) => {
+  const id = item.id;
 
-    if (col === "students") {
-      await updateStatus(col, id, {
-        status: "enrolled",
-        principalReviewed: true,
-        reviewedAt: serverTimestamp(),
-      });
-      return;
+  if (col === "students") {
+    await updateStatus(col, id, {
+      status: "enrolled",
+      principalReviewed: true,
+      reviewedAt: serverTimestamp(),
+    });
+    return;
+  }
+
+  if (col === "teacherApplications") {
+    const app = item as TeacherApplication;
+    // ✅ Fallback if uid is missing
+    const uid = app.uid || app.id;
+
+    await updateStatus("teacherApplications", id, {
+      status: "approved",
+      principalReviewed: true,
+      reviewedAt: serverTimestamp(),
+      classActivated: true,
+    });
+
+    if (uid) {
+      // 🔹 Create or update teacher profile
+      await setDoc(
+        doc(db, "teachers", uid),
+        {
+          ...app,
+          uid, // ensure uid exists in teacher profile
+          status: "approved",
+          classActivated: true,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      // ✅ Also ensure role assignment in users collection
+      await setDoc(
+        doc(db, "users", uid),
+        {
+          uid,
+          email: app.email || "",
+          role: "teacher",
+          createdAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
     }
+  }
 
-    if (col === "teacherApplications") {
-      const app = item as TeacherApplication;
-      const uid = app.uid;
+  // 🧹 Optional: Cleanup users if rejected
+  else if (col === "teacherApplications" && (item as any).status === "rejected") {
+    const uid = (item as any).uid || item.id;
+    await deleteDoc(doc(db, "users", uid));
+  }
+};
 
-      await updateStatus("teacherApplications", id, {
-        status: "approved",
-        principalReviewed: true,
-        reviewedAt: serverTimestamp(),
-        classActivated: true,
-      });
 
-      if (uid) {
-        await setDoc(
-          doc(db, "teachers", uid),
-          {
-            ...app,
-            status: "approved",
-            classActivated: true,
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true }
-        );
-      }
-    }
-  };
 
   const reject = async (col: "students" | "teacherApplications", id: string) =>
     updateStatus(col, id, { status: "rejected", principalReviewed: true, reviewedAt: serverTimestamp() });
