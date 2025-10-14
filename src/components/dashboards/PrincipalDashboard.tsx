@@ -786,17 +786,18 @@ const approve = async (
       <TimetableManager />
 
       {/* ✅ Floating Chat Window – opens when you click “Start Chat” on a parent */}
-      {chatRecipient && (
-        <div className="fixed bottom-6 right-6 z-50">
-          <ChatWidget
-            uid={auth.currentUser?.uid || "principal"}
-            role="principal"
-            initialRecipient={chatRecipient} // parent UID
-            forceOpen={true}
-            onClose={() => setChatRecipient(null)}
-          />
-        </div>
-      )}
+      {auth.currentUser && chatRecipient && (
+          <div className="fixed bottom-6 right-6 z-50">
+            <ChatWidget
+              uid={auth.currentUser.uid}                // ✅ principal UID
+              role="principal"
+              initialRecipient={chatRecipient}          // ✅ parent UID
+              forceOpen                                 // auto-open
+              onClose={() => setChatRecipient(null)}    // close resets state
+            />
+          </div>
+        )}
+
     </div>
   );
 };

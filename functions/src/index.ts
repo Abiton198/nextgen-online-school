@@ -1,10 +1,12 @@
 import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
 
+// ✅ Initialize Admin SDK once (safe for multiple imports)
 if (!admin.apps.length) {
   admin.initializeApp();
 }
 
+// ---------- Types ----------
 interface CreateUserData {
   email: string;
   password: string;
@@ -19,7 +21,8 @@ interface DeleteUserData {
 }
 
 /**
- * Logs admin actions in Firestore under /auditLogs
+ * 🔍 Utility: Log all sensitive admin actions to Firestore
+ * This helps principals track user management operations for transparency.
  */
 async function logAudit(
   action: "create" | "delete",
@@ -41,7 +44,8 @@ async function logAudit(
 }
 
 /**
- * Create user (Auth + Firestore + custom claims).
+ * 👤 Callable Function: Create a new user (Auth + Firestore + custom claim)
+ * Restricted to Admin accounts only.
  */
 export const createUserProfile = functions
   .region("us-central1")
@@ -72,20 +76,20 @@ export const createUserProfile = functions
       }
 
       try {
-        // 1. Create Auth user
+        // 1️⃣ Create Auth user
         const userRecord = await admin.auth().createUser({
           email,
           password,
           displayName: name,
         });
 
-        // 2. Set custom claims
+        // 2️⃣ Assign custom claim for quick role-based access (used in Firestore & Storage)
         await admin.auth().setCustomUserClaims(userRecord.uid, { role });
 
-        // 3. Save Firestore profile (✅ always has uid, email, name, role)
+        // 3️⃣ Create Firestore document under correct collection
         await admin
           .firestore()
-          .collection(`${role}s`) // admins, principals, teachers, students, parents
+          .collection(`${role}s`) // e.g. "teachers", "students"
           .doc(userRecord.uid)
           .set({
             uid: userRecord.uid,
@@ -96,7 +100,7 @@ export const createUserProfile = functions
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
           });
 
-        // 4. Audit log
+        // 4️⃣ Record the action in audit log
         await logAudit(
           "create",
           context.auth.uid,
@@ -118,7 +122,8 @@ export const createUserProfile = functions
   );
 
 /**
- * Delete user (Auth + Firestore).
+ * 🗑️ Callable Function: Delete a user (Auth + Firestore cleanup)
+ * Restricted to Admins only.
  */
 export const deleteUser = functions
   .region("us-central1")
@@ -149,13 +154,13 @@ export const deleteUser = functions
       }
 
       try {
-        // 1. Delete Auth account
+        // 1️⃣ Remove user from Firebase Authentication
         await admin.auth().deleteUser(targetUid);
 
-        // 2. Delete Firestore profile
+        // 2️⃣ Delete associated Firestore profile
         await admin.firestore().collection(`${role}s`).doc(targetUid).delete();
 
-        // 3. Audit log
+        // 3️⃣ Log deletion
         await logAudit(
           "delete",
           context.auth.uid,
@@ -174,3 +179,41 @@ export const deleteUser = functions
       }
     }
   );
+
+/**
+ * 🔄 Auto-sync user role between Firestore `/users/{userId}` and Firebase Auth custom claims.
+ * Ensures that both Firestore and Auth-based access (e.g., Storage rules) stay in sync.
+ */
+export const syncUserRoleClaims = functions
+  .region("us-central1")
+  .firestore.document("users/{userId}")
+  .onWrite(async (change, context) => {
+    const userId = context.params.userId;
+    const afterData = change.after.exists ? change.after.data() : null;
+
+    if (!afterData || !afterData.role) {
+      console.log(`ℹ️ User ${userId} has no role field to sync`);
+      return null;
+    }
+
+    const role = afterData.role;
+
+    try {
+      // 1️⃣ Update Firebase Auth custom claim
+      await admin.auth().setCustomUserClaims(userId, { role });
+      console.log(`✅ Synced role "${role}" for user ${userId}`);
+
+      // 2️⃣ Optional: Write confirmation back to Firestore
+      await admin
+        .firestore()
+        .collection("users")
+        .doc(userId)
+        .update({
+          lastRoleSync: admin.firestore.FieldValue.serverTimestamp(),
+        });
+    } catch (err) {
+      console.error(`❌ Failed to sync role for user ${userId}:`, err);
+    }
+
+    return null;
+  });

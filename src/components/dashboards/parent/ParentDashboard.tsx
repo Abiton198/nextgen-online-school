@@ -17,19 +17,27 @@ import {
   query,
   where,
   onSnapshot,
+  addDoc,
+  updateDoc,
 } from "firebase/firestore";
 import { useNavigate } from "react-router-dom";
-import { LogOut } from "lucide-react";
+import { LogOut, ChevronDown, ChevronUp, Save } from "lucide-react";
 import TimetableCard from "../TimetableCard";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
+/* ---------------- Sections ---------------- */
 const sections = ["Registration", "Payments", "Settings", "Communications", "Status"];
 
+/* ---------------- Types ---------------- */
 interface Student {
   id?: string;
   firstName: string;
   lastName: string;
   grade: string;
-  applicationStatus?: string;
+  gender?: string;
+  status?: string;
 }
 
 export default function ParentDashboard() {
@@ -40,12 +48,22 @@ export default function ParentDashboard() {
   const [title, setTitle] = useState("");
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
-
-  // ✅ NEW: Track which child is selected
   const [selectedChildId, setSelectedChildId] = useState<string | null>(null);
+
+  // Collapsible state for registration card
+  const [showRegisterCard, setShowRegisterCard] = useState(false);
+
+  // Form state for new student registration
+  const [newStudent, setNewStudent] = useState({
+    firstName: "",
+    lastName: "",
+    grade: "",
+    gender: "",
+  });
 
   const navigate = useNavigate();
 
+  /* ---------------- Fetch Parent + Children ---------------- */
   useEffect(() => {
     if (!user?.uid) return;
 
@@ -53,7 +71,6 @@ export default function ParentDashboard() {
 
     const fetchParentAndStudents = async () => {
       try {
-        // ✅ fetch parent doc
         const parentDoc = await getDoc(doc(db, "parents", user.uid));
         if (parentDoc.exists()) {
           const data = parentDoc.data();
@@ -61,11 +78,7 @@ export default function ParentDashboard() {
           setTitle(data.title || "");
         }
 
-        // 👶 set up real-time listener for children
-        const q = query(
-          collection(db, "students"),
-          where("parentId", "==", user.uid)
-        );
+        const q = query(collection(db, "students"), where("parentId", "==", user.uid));
         unsubscribe = onSnapshot(q, (snap) => {
           const list: Student[] = snap.docs.map((d) => ({
             id: d.id,
@@ -73,7 +86,6 @@ export default function ParentDashboard() {
           }));
           setStudents(list);
 
-          // ✅ auto-select the first child if none selected
           if (list.length > 0 && !selectedChildId) {
             setSelectedChildId(list[0].id!);
           }
@@ -86,12 +98,55 @@ export default function ParentDashboard() {
     };
 
     fetchParentAndStudents();
-
-    // cleanup listener on unmount
     return () => {
       if (unsubscribe) unsubscribe();
     };
   }, [user, selectedChildId]);
+
+  /* ---------------- Auto-Update Form Fields ---------------- */
+  const handleFieldChange = async (field: string, value: string) => {
+    setNewStudent((prev) => ({ ...prev, [field]: value }));
+
+    // Optional: live auto-save if student doc exists
+    // This creates or updates a "draft" student doc immediately
+    try {
+      const draftRef = collection(db, "students");
+      const draft = {
+        parentId: user?.uid,
+        ...newStudent,
+        [field]: value,
+        status: "draft",
+        createdAt: new Date(),
+      };
+      await addDoc(draftRef, draft);
+    } catch (err) {
+      console.error("Auto-save failed:", err);
+    }
+  };
+
+  /* ---------------- Handle Save / Register ---------------- */
+  const handleRegisterStudent = async () => {
+    if (!newStudent.firstName || !newStudent.lastName || !newStudent.grade) {
+      alert("Please fill all required fields.");
+      return;
+    }
+
+    try {
+      await addDoc(collection(db, "students"), {
+        ...newStudent,
+        parentId: user?.uid,
+        status: "pending",
+        createdAt: new Date(),
+      });
+
+      // Reset form
+      setNewStudent({ firstName: "", lastName: "", grade: "", gender: "" });
+      setShowRegisterCard(false);
+    } catch (err) {
+      console.error("Error registering new student:", err);
+      alert("Registration failed. Try again.");
+    }
+  };
 
   const handleLogout = async () => {
     await signOut(auth);
@@ -116,8 +171,6 @@ export default function ParentDashboard() {
   };
 
   if (loading) return <p className="p-6">Loading dashboard...</p>;
-
-  // find the selected child object
   const selectedChild = students.find((c) => c.id === selectedChildId);
 
   return (
@@ -129,7 +182,7 @@ export default function ParentDashboard() {
             Welcome {title && `${title} `}{parentName}
           </h1>
 
-          {/* Show all children */}
+          {/* Children List */}
           {students.length > 0 && (
             <div className="mt-2 text-gray-700">
               <p className="font-semibold">Children:</p>
@@ -137,8 +190,14 @@ export default function ParentDashboard() {
                 {students.map((s) => (
                   <li key={s.id}>
                     {s.firstName} {s.lastName} – Grade {s.grade}{" "}
-                    <span className="italic text-sm text-gray-600">
-                      ({s.applicationStatus || "pending"})
+                    <span
+                      className={`italic text-sm ${
+                        s.status === "enrolled"
+                          ? "text-green-600"
+                          : "text-gray-600"
+                      }`}
+                    >
+                      ({s.status || "pending"})
                     </span>
                   </li>
                 ))}
@@ -153,6 +212,96 @@ export default function ParentDashboard() {
           <LogOut size={18} /> Logout
         </button>
       </div>
+
+      {/* Collapsible Register New Student Card */}
+      <Card className="border">
+        <CardHeader
+          onClick={() => setShowRegisterCard(!showRegisterCard)}
+          className="flex justify-between items-center cursor-pointer"
+        >
+          <CardTitle className="text-lg font-semibold flex items-center gap-2">
+            Register New Student
+            {showRegisterCard ? (
+              <ChevronUp className="w-4 h-4" />
+            ) : (
+              <ChevronDown className="w-4 h-4" />
+            )}
+          </CardTitle>
+        </CardHeader>
+
+        {showRegisterCard && (
+          <CardContent className="space-y-4 mt-2">
+            {/* First Name */}
+            <div>
+              <label className="block text-sm font-medium">First Name</label>
+              <Input
+                value={newStudent.firstName}
+                onChange={(e) =>
+                  handleFieldChange("firstName", e.target.value)
+                }
+                placeholder="Enter first name"
+              />
+            </div>
+
+            {/* Last Name */}
+            <div>
+              <label className="block text-sm font-medium">Last Name</label>
+              <Input
+                value={newStudent.lastName}
+                onChange={(e) =>
+                  handleFieldChange("lastName", e.target.value)
+                }
+                placeholder="Enter last name"
+              />
+            </div>
+
+            {/* Grade Dropdown */}
+            <div>
+              <label className="block text-sm font-medium">Grade</label>
+              <Select
+                onValueChange={(val) => handleFieldChange("grade", val)}
+                value={newStudent.grade}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select grade" />
+                </SelectTrigger>
+                <SelectContent>
+                  {[...Array(12)].map((_, i) => (
+                    <SelectItem key={i + 1} value={`${i + 1}`}>
+                      Grade {i + 1}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Gender Field */}
+            <div>
+              <label className="block text-sm font-medium">Gender</label>
+              <Select
+                onValueChange={(val) => handleFieldChange("gender", val)}
+                value={newStudent.gender}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select gender" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Male">Male</SelectItem>
+                  <SelectItem value="Female">Female</SelectItem>
+                  <SelectItem value="Other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <Button
+              onClick={handleRegisterStudent}
+              className="bg-blue-600 text-white hover:bg-blue-700 flex items-center gap-2"
+            >
+              <Save className="w-4 h-4" /> Save Student
+            </Button>
+          </CardContent>
+        )}
+      </Card>
 
       {/* Tabs */}
       <div className="flex space-x-4 border-b pb-2">
@@ -179,11 +328,11 @@ export default function ParentDashboard() {
         <CardContent>{renderSection()}</CardContent>
       </Card>
 
-      {/* ✅ Child Selector */}
+      {/* Child Selector */}
       {students.length > 0 && (
         <div className="mt-6">
           <h2 className="text-lg font-semibold mb-2">Select Child:</h2>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             {students.map((s) => (
               <button
                 key={s.id}
@@ -201,7 +350,7 @@ export default function ParentDashboard() {
         </div>
       )}
 
-      {/* ✅ Show timetable only for the selected child */}
+      {/* Timetable for selected child */}
       {selectedChild && (
         <div className="mt-6">
           <h3 className="font-semibold mb-2">

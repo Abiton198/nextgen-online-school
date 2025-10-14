@@ -1,3 +1,5 @@
+"use client";
+
 import { useState, useEffect, useRef } from "react";
 import { db } from "@/lib/firebaseConfig";
 import {
@@ -10,8 +12,10 @@ import {
   doc,
   setDoc,
   getDoc,
+  getDocs,
 } from "firebase/firestore";
 
+/* ----------------- Interfaces ----------------- */
 interface Message {
   id: string;
   sender: string;
@@ -28,6 +32,9 @@ interface ChatWidgetProps {
   onClose?: () => void;
 }
 
+/* ===========================================================
+   CHAT WIDGET
+   =========================================================== */
 export default function ChatWidget({
   role,
   uid,
@@ -36,47 +43,80 @@ export default function ChatWidget({
   onClose,
 }: ChatWidgetProps) {
   const [chatOpen, setChatOpen] = useState(false);
-  const [recipient, setRecipient] = useState(initialRecipient || "principal");
+  const [recipient, setRecipient] = useState<string>("");
   const [recipientName, setRecipientName] = useState<string>("Recipient");
   const [recipientPhoto, setRecipientPhoto] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [isRecipientTyping, setIsRecipientTyping] = useState(false);
-
   const typingTimeout = useRef<any>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
-  const conversationId = [uid, recipient].sort().join("_");
-
-  /* 🔹 Fetch recipient info */
+  /* 🔹 Auto-scroll to bottom on new messages */
   useEffect(() => {
-    if (!recipient) return;
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
-    const fetchRecipientInfo = async () => {
-      try {
-        // 👇 Example: look up recipient in "parents" collection by ID/email
-        const parentDoc = await getDoc(doc(db, "parents", recipient));
-        if (parentDoc.exists()) {
-          const data = parentDoc.data();
-          setRecipientName(data.name || recipient);
-          setRecipientPhoto(data.photoURL || null);
-          return;
+  /* 🔹 Determine the conversation partner */
+  useEffect(() => {
+    const initRecipient = async () => {
+      if (initialRecipient) {
+        // If we already have one (e.g., principal opens chat with parent)
+        setRecipient(initialRecipient);
+        return;
+      }
+
+      if (role === "parent") {
+        // 👇 Find the principal UID dynamically
+        try {
+          const principalSnap = await getDocs(collection(db, "principals"));
+          if (!principalSnap.empty) {
+            setRecipient(principalSnap.docs[0].id); // first principal’s UID
+          } else {
+            console.warn("No principal found in Firestore");
+          }
+        } catch (err) {
+          console.error("Error fetching principal UID:", err);
         }
-
-        // fallback generic
-        setRecipientName(recipient);
-        setRecipientPhoto(null);
-      } catch (err) {
-        console.error("Error fetching recipient info", err);
-        setRecipientName(recipient);
       }
     };
+    initRecipient();
+  }, [role, initialRecipient]);
 
+  /* 🔹 Build conversation ID once both IDs are known */
+  const conversationId =
+    recipient && uid ? [uid, recipient].sort().join("_") : null;
+
+  /* 🔹 Fetch recipient info (name/photo) */
+  useEffect(() => {
+    if (!recipient) return;
+    const fetchRecipientInfo = async () => {
+      try {
+        // Try looking up in parents, teachers, or principals
+        const collectionsToTry = ["parents", "teachers", "principals"];
+        for (const col of collectionsToTry) {
+          const ref = doc(db, col, recipient);
+          const snap = await getDoc(ref);
+          if (snap.exists()) {
+            const data = snap.data();
+            setRecipientName(data.name || data.fullName || "User");
+            setRecipientPhoto(data.photoURL || null);
+            return;
+          }
+        }
+        setRecipientName("User");
+        setRecipientPhoto(null);
+      } catch (err) {
+        console.error("Error fetching recipient info:", err);
+        setRecipientName("User");
+      }
+    };
     fetchRecipientInfo();
   }, [recipient]);
 
   /* 🔹 Subscribe to messages */
   useEffect(() => {
-    if (!recipient) return;
+    if (!conversationId) return;
     const q = query(
       collection(db, "conversations", conversationId, "messages"),
       orderBy("createdAt", "asc")
@@ -86,11 +126,11 @@ export default function ChatWidget({
       setMessages(msgs);
     });
     return () => unsub();
-  }, [conversationId, recipient]);
+  }, [conversationId]);
 
   /* 🔹 Subscribe to typing state */
   useEffect(() => {
-    if (!recipient) return;
+    if (!conversationId || !recipient) return;
     const ref = doc(db, "conversations", conversationId, "typing", recipient);
     const unsub = onSnapshot(ref, (snap) => {
       setIsRecipientTyping(snap.exists() && snap.data().isTyping);
@@ -98,8 +138,9 @@ export default function ChatWidget({
     return () => unsub();
   }, [conversationId, recipient]);
 
-  /* 🔹 Update typing */
+  /* 🔹 Update typing status */
   const updateTyping = async (isTyping: boolean) => {
+    if (!conversationId) return;
     await setDoc(
       doc(db, "conversations", conversationId, "typing", uid),
       { isTyping, updatedAt: serverTimestamp() },
@@ -122,13 +163,16 @@ export default function ChatWidget({
 
   /* 🔹 Send message */
   const sendMessage = async () => {
-    if (!message.trim()) return;
+    if (!conversationId || !message.trim()) return;
+
     await addDoc(collection(db, "conversations", conversationId, "messages"), {
       sender: uid,
       recipient,
       text: message,
       createdAt: serverTimestamp(),
     });
+
+    // Ensure the conversation exists/updates
     await setDoc(
       doc(db, "conversations", conversationId),
       {
@@ -138,11 +182,12 @@ export default function ChatWidget({
       },
       { merge: true }
     );
+
     setMessage("");
     await updateTyping(false);
   };
 
-  /* 🔹 Auto open if forced */
+  /* 🔹 Force chat open if required */
   useEffect(() => {
     if (forceOpen) setChatOpen(true);
   }, [forceOpen]);
@@ -153,6 +198,9 @@ export default function ChatWidget({
     if (!newState && onClose) onClose();
   };
 
+  /* ===========================================================
+     UI
+     =========================================================== */
   return (
     <>
       <div className="fixed bottom-6 right-6">
@@ -166,7 +214,7 @@ export default function ChatWidget({
 
       {chatOpen && (
         <div className="fixed bottom-20 right-6 w-80 bg-white border rounded-lg shadow-lg">
-          {/* ✅ Header with name + photo */}
+          {/* ✅ Header */}
           <div className="flex items-center justify-between p-2 border-b bg-gray-50">
             <div className="flex items-center gap-2">
               {recipientPhoto ? (
@@ -176,9 +224,11 @@ export default function ChatWidget({
                   className="w-6 h-6 rounded-full"
                 />
               ) : (
-                <div className="w-6 h-6 rounded-full bg-gray-300"></div>
+                <div className="w-6 h-6 rounded-full bg-gray-300" />
               )}
-              <span className="text-sm font-semibold">{recipientName}</span>
+              <span className="text-sm font-semibold">
+                {recipientName || "Recipient"}
+              </span>
             </div>
             <button
               className="text-gray-400 hover:text-black text-sm"
@@ -188,8 +238,8 @@ export default function ChatWidget({
             </button>
           </div>
 
-          {/* Messages */}
-          <div className="max-h-48 overflow-y-auto p-2 text-xs">
+          {/* ✅ Messages */}
+          <div className="max-h-60 overflow-y-auto p-2 text-xs">
             {messages.length > 0 ? (
               messages.map((m) => (
                 <div key={m.id} className="mb-1">
@@ -206,6 +256,7 @@ export default function ChatWidget({
             ) : (
               <p className="text-gray-400 text-xs">No messages yet.</p>
             )}
+            <div ref={messagesEndRef} />
           </div>
 
           {/* ✅ Typing Indicator */}
@@ -215,7 +266,7 @@ export default function ChatWidget({
             </p>
           )}
 
-          {/* Input */}
+          {/* ✅ Input */}
           <div className="flex gap-2 p-2 border-t">
             <input
               type="text"
