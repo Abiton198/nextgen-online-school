@@ -2,8 +2,6 @@
   "name": "functions",
   "description": "NextGen Online School Cloud Functions (Gen 1 runtime)",
   "main": "lib/index.js",
-
-
   "scripts": {
     "lint": "echo 'skipping lint'",
     "build": "tsc",
@@ -14,18 +12,9 @@
     "deploy": "firebase deploy --only functions",
     "logs": "firebase functions:log"
   },
-
-
   "engines": {
     "node": "18"
   },
-
-  "dependencies": {
-    "firebase-admin": "^11.11.1",
-    "firebase-functions": "^3.24.0"
-  },
-
- 
   "devDependencies": {
     "@types/node": "^24.7.2",
     "@typescript-eslint/eslint-plugin": "^5.12.0",
@@ -36,6 +25,8 @@
     "firebase-functions-test": "^3.1.0",
     "typescript": "^5.9.3"
   },
-
-  "private": true
+  "private": true,
+  "dependencies": {
+    "firebase-admin": "^13.5.0"
+  }
 }
