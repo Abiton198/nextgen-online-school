@@ -1,7 +1,8 @@
-import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
+import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { onDocumentWritten } from "firebase-functions/v2/firestore";
 
-// ✅ Initialize Admin SDK once (safe for multiple imports)
+// ✅ Initialize Admin SDK once
 if (!admin.apps.length) {
   admin.initializeApp();
 }
@@ -20,10 +21,7 @@ interface DeleteUserData {
   role: "admin" | "principal" | "teacher" | "student" | "parent";
 }
 
-/**
- * 🔍 Utility: Log all sensitive admin actions to Firestore
- * This helps principals track user management operations for transparency.
- */
+// ---------- Utility: Audit Log ----------
 async function logAudit(
   action: "create" | "delete",
   performedBy: string,
@@ -44,176 +42,149 @@ async function logAudit(
 }
 
 /**
- * 👤 Callable Function: Create a new user (Auth + Firestore + custom claim)
- * Restricted to Admin accounts only.
+ * 👤 Create a new user (Auth + Firestore + custom claim)
+ * Restricted to Admins only
  */
-export const createUserProfile = functions
-  .region("us-central1")
-  .https.onCall(
-    async (data: CreateUserData, context: functions.https.CallableContext) => {
-      if (!context.auth) {
-        throw new functions.https.HttpsError(
-          "unauthenticated",
-          "You must be logged in to perform this action."
-        );
-      }
+export const createUserProfile = onCall<CreateUserData>(async (request) => {
+  const data = request.data;
+  const context = request.auth;
 
-      const claims: any = context.auth.token;
-      if (claims.role !== "admin") {
-        throw new functions.https.HttpsError(
-          "permission-denied",
-          "Only admins can create users."
-        );
-      }
+  if (!context) {
+    throw new HttpsError("unauthenticated", "You must be logged in.");
+  }
 
-      const { email, password, name, role, extraData } = data;
+  const roleClaim = context.token?.role;
+  if (roleClaim !== "admin") {
+    throw new HttpsError("permission-denied", "Only admins can create users.");
+  }
 
-      if (!email || !password || !name || !role) {
-        throw new functions.https.HttpsError(
-          "invalid-argument",
-          "email, password, name, and role are required."
-        );
-      }
+  const { email, password, name, role, extraData } = data;
+  if (!email || !password || !name || !role) {
+    throw new HttpsError(
+      "invalid-argument",
+      "email, password, name, and role are required."
+    );
+  }
 
-      try {
-        // 1️⃣ Create Auth user
-        const userRecord = await admin.auth().createUser({
-          email,
-          password,
-          displayName: name,
-        });
+  try {
+    // 1️⃣ Create user in Auth
+    const userRecord = await admin.auth().createUser({
+      email,
+      password,
+      displayName: name,
+    });
 
-        // 2️⃣ Assign custom claim for quick role-based access (used in Firestore & Storage)
-        await admin.auth().setCustomUserClaims(userRecord.uid, { role });
+    // 2️⃣ Assign role claim
+    await admin.auth().setCustomUserClaims(userRecord.uid, { role });
 
-        // 3️⃣ Create Firestore document under correct collection
-        await admin
-          .firestore()
-          .collection(`${role}s`) // e.g. "teachers", "students"
-          .doc(userRecord.uid)
-          .set({
-            uid: userRecord.uid,
-            email,
-            name,
-            role,
-            ...extraData,
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-          });
+    // 3️⃣ Add Firestore profile
+    await admin
+      .firestore()
+      .collection(`${role}s`)
+      .doc(userRecord.uid)
+      .set({
+        uid: userRecord.uid,
+        email,
+        name,
+        role,
+        ...extraData,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
 
-        // 4️⃣ Record the action in audit log
-        await logAudit(
-          "create",
-          context.auth.uid,
-          (context.auth.token as any).email || null,
-          userRecord.uid,
-          role,
-          { email, name }
-        );
+    // 4️⃣ Log action
+    await logAudit(
+      "create",
+      context.uid,
+      context.token.email || null,
+      userRecord.uid,
+      role,
+      { email, name }
+    );
 
-        return { success: true, uid: userRecord.uid };
-      } catch (err: any) {
-        console.error("Create user error:", err);
-        throw new functions.https.HttpsError(
-          "internal",
-          err?.message || "Unknown error"
-        );
-      }
-    }
-  );
+    return { success: true, uid: userRecord.uid };
+  } catch (err: any) {
+    console.error("Create user error:", err);
+    throw new HttpsError("internal", err?.message || "Unknown error");
+  }
+});
 
 /**
- * 🗑️ Callable Function: Delete a user (Auth + Firestore cleanup)
- * Restricted to Admins only.
+ * 🗑️ Delete user (Auth + Firestore cleanup)
+ * Restricted to Admins only
  */
-export const deleteUser = functions
-  .region("us-central1")
-  .https.onCall(
-    async (data: DeleteUserData, context: functions.https.CallableContext) => {
-      if (!context.auth) {
-        throw new functions.https.HttpsError(
-          "unauthenticated",
-          "You must be logged in to call this function."
-        );
-      }
+export const deleteUser = onCall<DeleteUserData>(async (request) => {
+  const data = request.data;
+  const context = request.auth;
 
-      const claims: any = context.auth.token;
-      if (claims.role !== "admin") {
-        throw new functions.https.HttpsError(
-          "permission-denied",
-          "Only admins can delete users."
-        );
-      }
+  if (!context) {
+    throw new HttpsError("unauthenticated", "You must be logged in.");
+  }
 
-      const { targetUid, role } = data;
+  const roleClaim = context.token?.role;
+  if (roleClaim !== "admin") {
+    throw new HttpsError("permission-denied", "Only admins can delete users.");
+  }
 
-      if (!targetUid || !role) {
-        throw new functions.https.HttpsError(
-          "invalid-argument",
-          "targetUid and role are required."
-        );
-      }
+  const { targetUid, role } = data;
+  if (!targetUid || !role) {
+    throw new HttpsError(
+      "invalid-argument",
+      "targetUid and role are required."
+    );
+  }
 
-      try {
-        // 1️⃣ Remove user from Firebase Authentication
-        await admin.auth().deleteUser(targetUid);
+  try {
+    await admin.auth().deleteUser(targetUid);
+    await admin.firestore().collection(`${role}s`).doc(targetUid).delete();
 
-        // 2️⃣ Delete associated Firestore profile
-        await admin.firestore().collection(`${role}s`).doc(targetUid).delete();
+    await logAudit(
+      "delete",
+      context.uid,
+      context.token.email || null,
+      targetUid,
+      role
+    );
 
-        // 3️⃣ Log deletion
-        await logAudit(
-          "delete",
-          context.auth.uid,
-          (context.auth.token as any).email || null,
-          targetUid,
-          role
-        );
-
-        return { success: true, message: `User ${targetUid} deleted.` };
-      } catch (err: any) {
-        console.error("Delete user error:", err);
-        throw new functions.https.HttpsError(
-          "internal",
-          err?.message || "Unknown error"
-        );
-      }
-    }
-  );
+    return { success: true, message: `User ${targetUid} deleted.` };
+  } catch (err: any) {
+    console.error("Delete user error:", err);
+    throw new HttpsError("internal", err?.message || "Unknown error");
+  }
+});
 
 /**
- * 🔄 Auto-sync user role between Firestore `/users/{userId}` and Firebase Auth custom claims.
- * Ensures that both Firestore and Auth-based access (e.g., Storage rules) stay in sync.
+ * 🔄 Sync Firestore `/users/{userId}` role → Auth custom claims
  */
-export const syncUserRoleClaims = functions
-  .region("us-central1")
-  .firestore.document("users/{userId}")
-  .onWrite(async (change, context) => {
-    const userId = context.params.userId;
-    const afterData = change.after.exists ? change.after.data() : null;
+export const syncUserRoleClaims = onDocumentWritten("users/{userId}", async (event) => {
+  const userId = event.params.userId;
+  const afterSnap = event.data?.after;
 
-    if (!afterData || !afterData.role) {
-      console.log(`ℹ️ User ${userId} has no role field to sync`);
-      return null;
-    }
+  if (!afterSnap?.data()) {
+    console.log(`ℹ️ User ${userId} deleted or missing`);
+    return;
+  }
 
-    const role = afterData.role;
+  const afterData = afterSnap.data();
+  if (!afterData) {
+    console.log(`ℹ️ No data found for user ${userId}`);
+    return;
+  }
 
-    try {
-      // 1️⃣ Update Firebase Auth custom claim
-      await admin.auth().setCustomUserClaims(userId, { role });
-      console.log(`✅ Synced role "${role}" for user ${userId}`);
+  const role = afterData.role as string | undefined;
+  if (!role) {
+    console.log(`ℹ️ User ${userId} has no role to sync`);
+    return;
+  }
 
-      // 2️⃣ Optional: Write confirmation back to Firestore
-      await admin
-        .firestore()
-        .collection("users")
-        .doc(userId)
-        .update({
-          lastRoleSync: admin.firestore.FieldValue.serverTimestamp(),
-        });
-    } catch (err) {
-      console.error(`❌ Failed to sync role for user ${userId}:`, err);
-    }
+  try {
+    await admin.auth().setCustomUserClaims(userId, { role });
+    console.log(`✅ Synced role "${role}" for user ${userId}`);
 
-    return null;
-  });
+    await admin.firestore().collection("users").doc(userId).update({
+      lastRoleSync: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (err) {
+    console.error(`❌ Failed to sync role for user ${userId}:`, err);
+  }
+});
+
