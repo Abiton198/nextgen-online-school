@@ -8,6 +8,7 @@
 
 [build.environment]
   NODE_VERSION = "22"
+  SECRETS_SCAN_ENABLED = "false"
 
 [[plugins]]
   package = "@netlify/plugin-functions-install-core"
@@ -16,6 +17,3 @@
   from = "/*"
   to = "/index.html"
   status = 200
-
-[build.environment]
-  SECRETS_SCAN_ENABLED = "false"
