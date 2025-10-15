@@ -162,30 +162,43 @@ export default function ChatWidget({
   };
 
   /* 🔹 Send message */
-  const sendMessage = async () => {
-    if (!conversationId || !message.trim()) return;
+ const sendMessage = async () => {
+  if (!conversationId || !message.trim()) return;
 
-    await addDoc(collection(db, "conversations", conversationId, "messages"), {
-      sender: uid,
-      recipient,
-      text: message,
-      createdAt: serverTimestamp(),
-    });
+  const conversationRef = doc(db, "conversations", conversationId);
 
-    // Ensure the conversation exists/updates
-    await setDoc(
-      doc(db, "conversations", conversationId),
-      {
-        participants: [uid, recipient],
-        lastMessage: message,
-        updatedAt: serverTimestamp(),
-      },
-      { merge: true }
-    );
+  // ✅ Make sure the conversation exists first
+  await setDoc(
+    conversationRef,
+    {
+      participants: [uid, recipient],
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
 
-    setMessage("");
-    await updateTyping(false);
-  };
+  // ✅ Add the message
+  await addDoc(collection(conversationRef, "messages"), {
+    sender: uid,
+    recipient,
+    text: message,
+    createdAt: serverTimestamp(),
+  });
+
+  // ✅ Update metadata
+  await setDoc(
+    conversationRef,
+    {
+      lastMessage: message,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
+
+  setMessage("");
+  await updateTyping(false);
+};
+
 
   /* 🔹 Force chat open if required */
   useEffect(() => {

@@ -43,16 +43,19 @@ const PaymentsSection: React.FC = () => {
 
     try {
       // 1️⃣ Save a pending payment record
-      const paymentRef = await addDoc(collection(db, "payments"), {
-        parentId: user.uid,
-        parentEmail: user.email,
-        regId,
-        purpose,
-        amount: purpose === "registration" ? 1000 : customAmount || null, // example default fee
-        itemName,
-        status: "initiated",
-        createdAt: serverTimestamp(),
-      });
+   const paymentRef = await addDoc(
+  collection(db, "registrations", regId, "payments"),
+  {
+    parentId: user.uid,
+    parentEmail: user.email,
+    regId,
+    purpose,
+    amount: purpose === "registration" ? 1000 : customAmount || null,
+    itemName,
+    status: "initiated",
+    createdAt: serverTimestamp(),
+  }
+);
 
       // 2️⃣ Call your backend to get PayFast redirect URL
       const res = await fetch("/api/payfast-initiate", {
