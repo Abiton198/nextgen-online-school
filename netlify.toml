@@ -5,6 +5,7 @@
 
 [functions]
   node_bundler = "esbuild"
+  included_files = ["!functions/.eslintrc*", "!functions/*.log"]
 
 [build.environment]
   NODE_VERSION = "22"
