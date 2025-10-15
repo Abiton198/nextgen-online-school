@@ -1,13 +1,5 @@
 import type { Handler } from "@netlify/functions";
-import { initializeApp, cert, getApps } from "firebase-admin/app";
-import { getFirestore } from "firebase-admin/firestore";
-
-if (!getApps().length) {
-  initializeApp({
-    credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY || "{}")),
-  });
-}
-const db = getFirestore();
+import crypto from "crypto";
 
 export const handler: Handler = async (event) => {
   if (event.httpMethod !== "POST") {
@@ -15,42 +7,51 @@ export const handler: Handler = async (event) => {
   }
 
   try {
-    const params = new URLSearchParams(event.body || "");
-    const regId = params.get("m_payment_id");
-    const paymentStatus = params.get("payment_status"); // "COMPLETE" | "FAILED" etc.
-    const amount = params.get("amount_gross") || "0";
-    const pfData = Object.fromEntries(params.entries());
+    const { purpose, amount, itemName, regId, parentId, parentEmail, paymentId } = JSON.parse(event.body || "{}");
 
-    if (!regId) {
-      return { statusCode: 400, body: "Missing m_payment_id" };
+    if (!amount || !regId) {
+      return { statusCode: 400, body: JSON.stringify({ error: "Missing amount or regId" }) };
     }
 
-    const regRef = db.collection("registrations").doc(regId);
-    const regSnap = await regRef.get();
-    if (!regSnap.exists) {
-      return { statusCode: 404, body: "Registration not found" };
-    }
+    const isSandbox = process.env.PAYFAST_MODE === "sandbox";
+    const payfastURL = isSandbox
+      ? "https://sandbox.payfast.co.za/eng/process"
+      : "https://www.payfast.co.za/eng/process";
 
-    // ✅ Add payment record
-    const payRef = regRef.collection("payments").doc();
-    await payRef.set({
+    const merchant_id = process.env.PAYFAST_MERCHANT_ID;
+    const merchant_key = process.env.PAYFAST_MERCHANT_KEY;
+    const return_url = `${process.env.SITE_URL}/parent/payments?status=success`;
+    const cancel_url = `${process.env.SITE_URL}/parent/payments?status=cancel`;
+    const notify_url = `${process.env.SITE_URL}/.netlify/functions/payfast-notify`;
+
+    const data = {
+      merchant_id,
+      merchant_key,
+      return_url,
+      cancel_url,
+      notify_url,
+      name_first: "Parent",
+      email_address: parentEmail,
+      m_payment_id: regId, // you can change this to paymentId if you want unique mapping
       amount,
-      paymentStatus,
-      processedAt: new Date(),
-      pfData,
-    });
+      item_name: itemName || purpose,
+    };
 
-    // ✅ Optional quick reference on registration
-    await regRef.update({
-      lastPaymentStatus: paymentStatus,
-      lastPaymentAt: new Date(),
-    });
+    // Generate signature
+    const pfString = Object.entries(data)
+      .map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
+      .join("&");
 
-    console.log("✅ Payment recorded:", regId, paymentStatus);
+    const signature = crypto.createHash("md5").update(pfString).digest("hex");
 
-    return { statusCode: 200, body: "ITN processed" };
+    const redirectUrl = `${payfastURL}?${pfString}&signature=${signature}`;
+
+    return {
+      statusCode: 200,
+      body: JSON.stringify({ redirectUrl }),
+    };
   } catch (err) {
-    console.error("❌ payfast-notify error:", err);
-    return { statusCode: 500, body: "Internal server error" };
+    console.error("❌ PayFast initiate error:", err);
+    return { statusCode: 500, body: JSON.stringify({ error: "Internal Server Error" }) };
   }
 };
