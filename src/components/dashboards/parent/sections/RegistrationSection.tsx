@@ -26,13 +26,14 @@ import { ArrowLeft, X, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { motion, AnimatePresence } from "framer-motion";
 
 interface Student {
   id?: string;
   firstName: string;
   lastName: string;
   grade: string;
-  applicationStatus?: string;
+  status?: string;
 }
 
 export default function RegistrationSection() {
@@ -49,6 +50,7 @@ export default function RegistrationSection() {
   const [lastName, setLastName] = useState("");
   const [grade, setGrade] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [isOpen, setIsOpen] = useState(false);
 
   // 🔎 Real-time fetch students + parent docs
   useEffect(() => {
@@ -156,7 +158,7 @@ export default function RegistrationSection() {
     firstName,
     lastName,
     grade,
-    applicationStatus: "pending",
+    status: "pending",
     principalReviewed: false,
     createdAt: serverTimestamp(),
   });
@@ -214,7 +216,7 @@ export default function RegistrationSection() {
                 <span>
                   {s.firstName} {s.lastName} – Grade {s.grade}{" "}
                   <span className="italic text-sm text-gray-600">
-                    ({s.applicationStatus || "pending"})
+                    ({s.status || "pending"})
                   </span>
                 </span>
                 <Button
@@ -230,57 +232,88 @@ export default function RegistrationSection() {
         )}
       </div>
 
-      {/* ➕ Add / Edit Form */}
-      <div className="border rounded-lg p-4 bg-white shadow">
-        <h3 className="text-lg font-semibold mb-3">
+{/* Form to add student */}
+     <div className="border rounded-lg p-4 bg-white shadow">
+      {/* Header Toggle */}
+      <div
+        className="flex items-center justify-between cursor-pointer"
+        onClick={() => setIsOpen(!isOpen)}
+      >
+        <h3 className="text-lg font-semibold">
           {editingId ? "Edit Student" : "Register New Student"}
         </h3>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <Label>First Name</Label>
-            <Input
-              value={firstName}
-              onChange={(e) => setFirstName(e.target.value)}
-              required
-            />
-          </div>
-          <div>
-            <Label>Last Name</Label>
-            <Input
-              value={lastName}
-              onChange={(e) => setLastName(e.target.value)}
-              required
-            />
-          </div>
-          <div>
-            <Label>Grade</Label>
-            <Input
-              value={grade}
-              onChange={(e) => setGrade(e.target.value)}
-              required
-            />
-          </div>
-          <div className="flex gap-3">
-            <Button type="submit" className="bg-green-600 hover:bg-green-700">
-              {editingId ? "Update Student" : "Register Student"}
-            </Button>
-            {editingId && (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  setFirstName("");
-                  setLastName("");
-                  setGrade("");
-                  setEditingId(null);
-                }}
-              >
-                Cancel
-              </Button>
-            )}
-          </div>
-        </form>
+        <Button
+          type="button"
+          variant="outline"
+          className="text-sm"
+          onClick={() => setIsOpen(!isOpen)}
+        >
+          {isOpen ? "− Close Form" : "+ Open Form"}
+        </Button>
       </div>
+
+      {/* Collapsible Form */}
+      <AnimatePresence initial={false}>
+        {isOpen && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.3 }}
+            className="overflow-hidden mt-4"
+          >
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <Label>First Name</Label>
+                <Input
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  required
+                />
+              </div>
+              <div>
+                <Label>Last Name</Label>
+                <Input
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  required
+                />
+              </div>
+              <div>
+                <Label>Grade</Label>
+                <Input
+                  value={grade}
+                  onChange={(e) => setGrade(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="flex gap-3">
+                <Button
+                  type="submit"
+                  className="bg-green-600 hover:bg-green-700"
+                >
+                  {editingId ? "Update Student" : "Register Student"}
+                </Button>
+                {editingId && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setFirstName("");
+                      setLastName("");
+                      setGrade("");
+                      setEditingId(null);
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                )}
+              </div>
+            </form>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
 
       {/* 📂 Compliance Documents */}
       <div className="mt-6">
