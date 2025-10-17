@@ -22,7 +22,7 @@ export default function LoginForm() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // check for ?unauthorized=true
+  // Check for ?unauthorized=true
   const unauthorized = new URLSearchParams(location.search).get("unauthorized") === "true";
 
   /* -------------------- Handle Login/Signup -------------------- */
@@ -193,6 +193,7 @@ export default function LoginForm() {
             status: "pending_review",
             classActivated: false,
           });
+
           await setDoc(
             doc(db, "users", user.uid),
             {
@@ -243,6 +244,7 @@ export default function LoginForm() {
               email: user.email || "",
               photoURL: user.photoURL || "",
               createdAt: serverTimestamp(),
+              status: "pending_registration",
             },
             { merge: true }
           );
