@@ -22,7 +22,6 @@ export default function LoginForm() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Check for ?unauthorized=true
   const unauthorized = new URLSearchParams(location.search).get("unauthorized") === "true";
 
   /* -------------------- Handle Login/Signup -------------------- */
@@ -51,7 +50,6 @@ export default function LoginForm() {
           { merge: true }
         );
 
-        // 🔑 Role assignment
         await setDoc(
           doc(db, "users", user.uid),
           {
@@ -72,6 +70,11 @@ export default function LoginForm() {
       userCred = await signInWithEmailAndPassword(auth, email, password);
       const user = userCred.user;
 
+      const userRef = doc(db, "users", user.uid);
+      const userSnap = await getDoc(userRef);
+      const userData = userSnap.exists() ? userSnap.data() : {};
+
+      // 🔹 Principal login
       if (role === "principal") {
         const ref = doc(db, "principals", user.uid);
         const snap = await getDoc(ref);
@@ -81,7 +84,7 @@ export default function LoginForm() {
         }
 
         await setDoc(
-          doc(db, "users", user.uid),
+          userRef,
           {
             uid: user.uid,
             email: user.email,
@@ -95,6 +98,7 @@ export default function LoginForm() {
         return;
       }
 
+      // 🔹 Teacher login
       if (role === "teacher") {
         const ref = doc(db, "teachers", user.uid);
         const snap = await getDoc(ref);
@@ -107,7 +111,7 @@ export default function LoginForm() {
 
         const data = snap.data();
         await setDoc(
-          doc(db, "users", user.uid),
+          userRef,
           {
             uid: user.uid,
             email: user.email,
@@ -126,9 +130,24 @@ export default function LoginForm() {
         return;
       }
 
+      // 🔹 Student login (students only)
       if (role === "student") {
+        const ref = doc(db, "students", user.uid);
+        const snap = await getDoc(ref);
+        if (!snap.exists()) {
+          alert("No student record found. Please contact your school.");
+          return;
+        }
+
+        const data = snap.data();
+        if (!data.approvedByPrincipal) {
+          alert("Your account is not yet approved by the principal.");
+          await auth.signOut();
+          return;
+        }
+
         await setDoc(
-          doc(db, "users", user.uid),
+          userRef,
           {
             uid: user.uid,
             email: user.email,
@@ -137,14 +156,14 @@ export default function LoginForm() {
           },
           { merge: true }
         );
-
         navigate("/student-dashboard");
         return;
       }
 
+      // 🔹 Parent login (always goes to parent dashboard)
       if (role === "parent") {
         await setDoc(
-          doc(db, "users", user.uid),
+          userRef,
           {
             uid: user.uid,
             email: user.email,
@@ -153,7 +172,6 @@ export default function LoginForm() {
           },
           { merge: true }
         );
-
         navigate("/parent-dashboard");
         return;
       }
@@ -179,6 +197,9 @@ export default function LoginForm() {
       const result = await signInWithPopup(auth, provider);
       const user = result.user;
 
+      const userRef = doc(db, "users", user.uid);
+
+      // 🔹 Teacher Google login
       if (role === "teacher") {
         const ref = doc(db, "teachers", user.uid);
         const snap = await getDoc(ref);
@@ -194,16 +215,12 @@ export default function LoginForm() {
             classActivated: false,
           });
 
-          await setDoc(
-            doc(db, "users", user.uid),
-            {
-              uid: user.uid,
-              email: user.email,
-              role: "teacher",
-              createdAt: serverTimestamp(),
-            },
-            { merge: true }
-          );
+          await setDoc(userRef, {
+            uid: user.uid,
+            email: user.email,
+            role: "teacher",
+            createdAt: serverTimestamp(),
+          });
 
           alert("Application submitted. Please wait for approval.");
           navigate("/teacher-application");
@@ -211,16 +228,12 @@ export default function LoginForm() {
         }
 
         const data = snap.data();
-        await setDoc(
-          doc(db, "users", user.uid),
-          {
-            uid: user.uid,
-            email: user.email,
-            role: "teacher",
-            createdAt: serverTimestamp(),
-          },
-          { merge: true }
-        );
+        await setDoc(userRef, {
+          uid: user.uid,
+          email: user.email,
+          role: "teacher",
+          createdAt: serverTimestamp(),
+        });
 
         if (data?.status === "approved" && data?.classActivated) {
           navigate("/teacher-dashboard");
@@ -231,27 +244,24 @@ export default function LoginForm() {
         return;
       }
 
+      // 🔹 Parent Google login
       if (role === "parent") {
         const ref = doc(db, "parents", user.uid);
         const snap = await getDoc(ref);
 
         if (!snap.exists()) {
-          await setDoc(
-            ref,
-            {
-              uid: user.uid,
-              name: user.displayName || "",
-              email: user.email || "",
-              photoURL: user.photoURL || "",
-              createdAt: serverTimestamp(),
-              status: "pending_registration",
-            },
-            { merge: true }
-          );
+          await setDoc(ref, {
+            uid: user.uid,
+            name: user.displayName || "",
+            email: user.email || "",
+            photoURL: user.photoURL || "",
+            createdAt: serverTimestamp(),
+            status: "pending_registration",
+          });
         }
 
         await setDoc(
-          doc(db, "users", user.uid),
+          userRef,
           {
             uid: user.uid,
             email: user.email,
@@ -265,9 +275,24 @@ export default function LoginForm() {
         return;
       }
 
+      // 🔹 Student Google login
       if (role === "student") {
+        const ref = doc(db, "students", user.uid);
+        const snap = await getDoc(ref);
+        if (!snap.exists()) {
+          alert("No student record found. Please contact your school.");
+          return;
+        }
+
+        const data = snap.data();
+        if (!data.approvedByPrincipal) {
+          alert("Your account is not yet approved by the principal.");
+          await auth.signOut();
+          return;
+        }
+
         await setDoc(
-          doc(db, "users", user.uid),
+          userRef,
           {
             uid: user.uid,
             email: user.email,
@@ -276,11 +301,11 @@ export default function LoginForm() {
           },
           { merge: true }
         );
-
         navigate("/student-dashboard");
         return;
       }
 
+      // 🔹 Principal Google login
       if (role === "principal") {
         const ref = doc(db, "principals", user.uid);
         const snap = await getDoc(ref);
@@ -290,7 +315,7 @@ export default function LoginForm() {
         }
 
         await setDoc(
-          doc(db, "users", user.uid),
+          userRef,
           {
             uid: user.uid,
             email: user.email,
@@ -323,7 +348,6 @@ export default function LoginForm() {
         ✕
       </button>
 
-      {/* 🚨 Unauthorized banner */}
       {unauthorized && (
         <div className="mb-4 p-3 rounded bg-red-100 border border-red-400 text-red-700 text-center">
           You are not authorized to access that page. Please log in with the correct role.
@@ -332,7 +356,6 @@ export default function LoginForm() {
 
       <h2 className="text-xl font-bold mb-4 text-center">Welcome — Choose Your Role</h2>
 
-      {/* 🧩 Role Selection */}
       <div className="mb-4 flex flex-wrap justify-center gap-2">
         {(["student", "teacher", "parent", "principal"] as const).map((r) => (
           <button
@@ -351,7 +374,6 @@ export default function LoginForm() {
         ))}
       </div>
 
-      {/* 👨‍🏫 Teacher Choice */}
       {role === "teacher" && teacherAction === "none" && (
         <div className="mb-4 border p-3 rounded bg-gray-50">
           <p className="mb-2 font-medium text-center">Are you new or returning?</p>
@@ -372,7 +394,6 @@ export default function LoginForm() {
         </div>
       )}
 
-      {/* 🔐 Login / Signup Form */}
       {(role && (role !== "teacher" || teacherAction === "signin")) && (
         <Card className="p-6 shadow-lg border rounded-2xl bg-white">
           <CardHeader>
@@ -414,7 +435,6 @@ export default function LoginForm() {
               {role === "parent" && isParentSignup ? "Signup" : "Login"}
             </button>
 
-            {/* 👨‍👩‍👧 Parent toggle */}
             {role === "parent" && (
               <p className="text-center text-sm text-gray-600">
                 {isParentSignup ? (
