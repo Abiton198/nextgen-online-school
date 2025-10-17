@@ -211,77 +211,8 @@ export default function ParentDashboard() {
             )}
           </CardTitle>
         </CardHeader>
-
-        {showRegisterCard && (
-          <CardContent className="space-y-4 mt-2">
-            {/* First Name */}
-            <div>
-              <label className="block text-sm font-medium">First Name</label>
-              <Input
-                value={newStudent.firstName}
-                onChange={(e) => handleFieldChange("firstName", e.target.value)}
-                placeholder="Enter first name"
-              />
-            </div>
-
-            {/* Last Name */}
-            <div>
-              <label className="block text-sm font-medium">Last Name</label>
-              <Input
-                value={newStudent.lastName}
-                onChange={(e) => handleFieldChange("lastName", e.target.value)}
-                placeholder="Enter last name"
-              />
-            </div>
-
-            {/* Grade Dropdown */}
-            <div>
-              <label className="block text-sm font-medium">Grade</label>
-              <Select
-                onValueChange={(val) => handleFieldChange("grade", val)}
-                value={newStudent.grade}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select grade" />
-                </SelectTrigger>
-                <SelectContent>
-                  {[...Array(12)].map((_, i) => (
-                    <SelectItem key={i + 1} value={`${i + 1}`}>
-                      Grade {i + 1}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Gender */}
-            <div>
-              <label className="block text-sm font-medium">Gender</label>
-              <Select
-                onValueChange={(val) => handleFieldChange("gender", val)}
-                value={newStudent.gender}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select gender" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Male">Male</SelectItem>
-                  <SelectItem value="Female">Female</SelectItem>
-                  <SelectItem value="Other">Other</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <Button
-              onClick={handleRegisterStudent}
-              className="bg-blue-600 text-white hover:bg-blue-700 flex items-center gap-2"
-            >
-              <Save className="w-4 h-4" /> Save Student
-            </Button>
-          </CardContent>
-        )}
-      </Card>
-
+        </Card>
+       
       {/* Tabs */}
       <div className="flex space-x-4 border-b pb-2">
         {sections.map((s) => (
