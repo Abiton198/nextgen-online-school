@@ -18,7 +18,7 @@ import {
   where,
   onSnapshot,
   addDoc,
-  updateDoc,
+  serverTimestamp,
 } from "firebase/firestore";
 import { useNavigate } from "react-router-dom";
 import { LogOut, ChevronDown, ChevronUp, Save } from "lucide-react";
@@ -50,10 +50,7 @@ export default function ParentDashboard() {
   const [loading, setLoading] = useState(true);
   const [selectedChildId, setSelectedChildId] = useState<string | null>(null);
 
-  // Collapsible state for registration card
   const [showRegisterCard, setShowRegisterCard] = useState(false);
-
-  // Form state for new student registration
   const [newStudent, setNewStudent] = useState({
     firstName: "",
     lastName: "",
@@ -103,28 +100,13 @@ export default function ParentDashboard() {
     };
   }, [user, selectedChildId]);
 
-  /* ---------------- Auto-Update Form Fields ---------------- */
-  const handleFieldChange = async (field: string, value: string) => {
+  /* ---------------- Handle Input Changes ---------------- */
+  const handleFieldChange = (field: string, value: string) => {
+    // ✅ only updates local form state, no Firestore writes
     setNewStudent((prev) => ({ ...prev, [field]: value }));
-
-    // Optional: live auto-save if student doc exists
-    // This creates or updates a "draft" student doc immediately
-    try {
-      const draftRef = collection(db, "students");
-      const draft = {
-        parentId: user?.uid,
-        ...newStudent,
-        [field]: value,
-        status: "draft",
-        createdAt: new Date(),
-      };
-      await addDoc(draftRef, draft);
-    } catch (err) {
-      console.error("Auto-save failed:", err);
-    }
   };
 
-  /* ---------------- Handle Save / Register ---------------- */
+  /* ---------------- Save Student ---------------- */
   const handleRegisterStudent = async () => {
     if (!newStudent.firstName || !newStudent.lastName || !newStudent.grade) {
       alert("Please fill all required fields.");
@@ -136,15 +118,15 @@ export default function ParentDashboard() {
         ...newStudent,
         parentId: user?.uid,
         status: "pending",
-        createdAt: new Date(),
+        createdAt: serverTimestamp(),
       });
 
-      // Reset form
+      alert("Student registered successfully!");
       setNewStudent({ firstName: "", lastName: "", grade: "", gender: "" });
       setShowRegisterCard(false);
     } catch (err) {
       console.error("Error registering new student:", err);
-      alert("Registration failed. Try again.");
+      alert("Registration failed. Please try again.");
     }
   };
 
@@ -205,6 +187,7 @@ export default function ParentDashboard() {
             </div>
           )}
         </div>
+
         <button
           onClick={handleLogout}
           className="flex items-center gap-2 px-3 py-2 bg-red-600 text-white rounded hover:bg-red-700"
@@ -213,7 +196,7 @@ export default function ParentDashboard() {
         </button>
       </div>
 
-      {/* Collapsible Register New Student Card */}
+      {/* ✅ Single Collapsible Register Student Card */}
       <Card className="border">
         <CardHeader
           onClick={() => setShowRegisterCard(!showRegisterCard)}
@@ -236,9 +219,7 @@ export default function ParentDashboard() {
               <label className="block text-sm font-medium">First Name</label>
               <Input
                 value={newStudent.firstName}
-                onChange={(e) =>
-                  handleFieldChange("firstName", e.target.value)
-                }
+                onChange={(e) => handleFieldChange("firstName", e.target.value)}
                 placeholder="Enter first name"
               />
             </div>
@@ -248,9 +229,7 @@ export default function ParentDashboard() {
               <label className="block text-sm font-medium">Last Name</label>
               <Input
                 value={newStudent.lastName}
-                onChange={(e) =>
-                  handleFieldChange("lastName", e.target.value)
-                }
+                onChange={(e) => handleFieldChange("lastName", e.target.value)}
                 placeholder="Enter last name"
               />
             </div>
@@ -275,7 +254,7 @@ export default function ParentDashboard() {
               </Select>
             </div>
 
-            {/* Gender Field */}
+            {/* Gender */}
             <div>
               <label className="block text-sm font-medium">Gender</label>
               <Select
