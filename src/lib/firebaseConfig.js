@@ -21,6 +21,9 @@ const firebaseConfig = {
 // 🔎 Log only in development to check env values
 if (import.meta.env.DEV) {
   console.log("Firebase Config:", firebaseConfig);
+//   console.log("🔍 import.meta.env =", import.meta.env);
+// console.log("🔥 Firebase Config =", firebaseConfig);
+
 }
 
 // ✅ Initialize Firebase

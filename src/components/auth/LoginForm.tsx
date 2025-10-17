@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { auth, db } from "@/lib/firebaseConfig";
+import { auth, db } from "@/lib/firebaseConfig"; // adjust path if needed
 import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
@@ -31,7 +31,6 @@ export default function LoginForm() {
       alert("Please select your role first.");
       return;
     }
-
     try {
       let userCred;
 
@@ -51,7 +50,6 @@ export default function LoginForm() {
           { merge: true }
         );
 
-        // 🔑 Role assignment
         await setDoc(
           doc(db, "users", user.uid),
           {
@@ -193,6 +191,7 @@ export default function LoginForm() {
             status: "pending_review",
             classActivated: false,
           });
+
           await setDoc(
             doc(db, "users", user.uid),
             {
@@ -235,17 +234,14 @@ export default function LoginForm() {
         const snap = await getDoc(ref);
 
         if (!snap.exists()) {
-          await setDoc(
-            ref,
-            {
-              uid: user.uid,
-              name: user.displayName || "",
-              email: user.email || "",
-              photoURL: user.photoURL || "",
-              createdAt: serverTimestamp(),
-            },
-            { merge: true }
-          );
+          await setDoc(ref, {
+            uid: user.uid,
+            name: user.displayName || "",
+            email: user.email || "",
+            photoURL: user.photoURL || "",
+            createdAt: serverTimestamp(),
+            status: "pending_registration",
+          });
         }
 
         await setDoc(
