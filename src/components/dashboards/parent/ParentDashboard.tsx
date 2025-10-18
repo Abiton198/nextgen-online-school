@@ -111,55 +111,43 @@ export default function ParentDashboard() {
   };
 
   /* ---------------- Register + Link Student ---------------- */
-  const handleRegisterStudent = async () => {
-    const { firstName, lastName, grade, gender, email } = newStudent;
-    if (!firstName || !lastName || !grade || !email) {
-      alert("Please fill all required fields (First name, Last name, Grade, Email).");
-      return;
-    }
+ const handleRegisterStudent = async () => {
+  const { firstName, lastName, grade, gender, email } = newStudent;
+  if (!firstName || !lastName || !grade || !email) {
+    alert("Please fill all required fields (First name, Last name, Grade, Email).");
+    return;
+  }
 
-    try {
-      // 1️⃣ Create new student record linked to parent
-      const studentRef = await addDoc(collection(db, "students"), {
-        firstName,
-        lastName,
-        grade,
-        gender,
-        email,
-        parentId: user?.uid,
-        linkedParentEmail: user?.email,
-        status: "pending",
-        approvedByPrincipal: false,
-        createdAt: serverTimestamp(),
-      });
+  try {
+    // 1️⃣ Create new student record linked to parent
+    const studentRef = await addDoc(collection(db, "students"), {
+      firstName,
+      lastName,
+      grade,
+      gender,
+      email,
+      uid: "", // placeholder to link later when student logs in
+      parentId: user?.uid,
+      linkedParentEmail: user?.email,
+      status: "pending",
+      approvedByPrincipal: false,
+      createdAt: serverTimestamp(),
+    });
 
-      // 2️⃣ Link this new student in parent's record
-      await updateDoc(doc(db, "parents", user?.uid), {
-        updatedAt: serverTimestamp(),
-        lastRegisteredChild: studentRef.id,
-      });
+    // 2️⃣ Link this new student in parent's record
+    await updateDoc(doc(db, "parents", user?.uid), {
+      updatedAt: serverTimestamp(),
+      lastRegisteredChild: studentRef.id,
+    });
 
-      // 3️⃣ Also link it in users collection for easier lookups
-      await setDoc(
-        doc(db, "users", studentRef.id),
-        {
-          role: "student",
-          linkedParentId: user?.uid,
-          linkedParentEmail: user?.email,
-          studentId: studentRef.id,
-          createdAt: serverTimestamp(),
-        },
-        { merge: true }
-      );
-
-      alert("Student registered and linked successfully!");
-      setNewStudent({ firstName: "", lastName: "", grade: "", gender: "", email: "" });
-      setShowRegisterCard(false);
-    } catch (err) {
-      console.error("Error registering new student:", err);
-      alert("Registration failed. Please try again.");
-    }
-  };
+    alert("Student registered and linked successfully!");
+    setNewStudent({ firstName: "", lastName: "", grade: "", gender: "", email: "" });
+    setShowRegisterCard(false);
+  } catch (err) {
+    console.error("Error registering new student:", err);
+    alert("Registration failed. Please try again.");
+  }
+};
 
   const handleLogout = async () => {
     await signOut(auth);
