@@ -10,6 +10,7 @@ import {
   query,
   where,
   orderBy,
+  getDocs,
 } from "firebase/firestore";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -25,6 +26,7 @@ interface StudentProfile {
   parentName?: string;
   points?: number;
   lessonsCompleted?: number;
+  email?: string;
 }
 
 interface ClassroomLink {
@@ -48,6 +50,7 @@ const StudentDashboard: React.FC = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
+  const [studentId, setStudentId] = useState<string | null>(null);
   const [profile, setProfile] = useState<StudentProfile | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
 
@@ -57,32 +60,46 @@ const StudentDashboard: React.FC = () => {
 
   /* ---------------- Listen to Student Profile ---------------- */
   useEffect(() => {
-    if (!user?.uid) return;
+    if (!user?.email) return;
     setLoadingProfile(true);
 
-    const unsub = onSnapshot(
-      doc(db, "students", user.uid),
-      (snap) => {
-        setProfile(snap.exists() ? (snap.data() as StudentProfile) : null);
-        setLoadingProfile(false);
-      },
-      () => setLoadingProfile(false)
-    );
+    const q = query(collection(db, "students"), where("email", "==", user.email));
 
-    return () => unsub();
-  }, [user?.uid]);
+    // one-time lookup for Firestore document ID
+    getDocs(q).then((snap) => {
+      if (!snap.empty) {
+        const docSnap = snap.docs[0];
+        setProfile(docSnap.data() as StudentProfile);
+        setStudentId(docSnap.id);
+
+        // realtime listener for updates
+        const unsub = onSnapshot(doc(db, "students", docSnap.id), (s) => {
+          if (s.exists()) {
+            setProfile(s.data() as StudentProfile);
+          } else {
+            setProfile(null);
+          }
+          setLoadingProfile(false);
+        });
+        return unsub;
+      } else {
+        setProfile(null);
+        setLoadingProfile(false);
+      }
+    });
+  }, [user?.email]);
 
   /* ---------------- Load Classroom Links ---------------- */
   useEffect(() => {
-    if (!user?.uid) return;
+    if (!studentId) return;
 
-    const q = collection(db, "students", user.uid, "classrooms");
+    const q = collection(db, "students", studentId, "classrooms");
     const unsub = onSnapshot(q, (snap) =>
       setClassrooms(snap.docs.map((d) => ({ id: d.id, ...(d.data() as ClassroomLink) })))
     );
 
     return () => unsub();
-  }, [user?.uid]);
+  }, [studentId]);
 
   /* ---------------- Load Timetable ---------------- */
   useEffect(() => {
@@ -104,6 +121,7 @@ const StudentDashboard: React.FC = () => {
   if (!user) {
     return <div className="min-h-screen flex items-center justify-center">Please sign in.</div>;
   }
+
   if (loadingProfile) {
     return (
       <div className="min-h-screen flex items-center justify-center text-gray-600">
@@ -111,10 +129,11 @@ const StudentDashboard: React.FC = () => {
       </div>
     );
   }
+
   if (!profile) {
     return (
       <div className="min-h-screen flex items-center justify-center text-red-600">
-        No student profile found.
+        No student profile found. Please contact your school.
       </div>
     );
   }
@@ -164,9 +183,7 @@ const StudentDashboard: React.FC = () => {
             <p className="text-sm text-gray-600">
               Lessons Completed: {profile.lessonsCompleted || 0}
             </p>
-            <p className="text-sm text-gray-600">
-              Points: {profile.points || 0}
-            </p>
+            <p className="text-sm text-gray-600">Points: {profile.points || 0}</p>
           </Card>
         )}
 
@@ -180,11 +197,7 @@ const StudentDashboard: React.FC = () => {
                   <div>
                     <h3 className="font-semibold">{c.subject}</h3>
                   </div>
-                  <a
-                    href={c.link}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
+                  <a href={c.link} target="_blank" rel="noopener noreferrer">
                     <Button className="bg-blue-600 hover:bg-blue-700 text-white">
                       Join Classroom
                     </Button>
@@ -197,7 +210,6 @@ const StudentDashboard: React.FC = () => {
 
         {activeTab === "timetable" && (
           <div className="space-y-3">
-            {/* ✅ Use TimetableCard directly for the student’s grade */}
             <TimetableCard grade={profile.grade!} />
           </div>
         )}
