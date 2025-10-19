@@ -67,7 +67,6 @@ const StudentDashboard: React.FC = () => {
   const [profile, setProfile] = useState<StudentProfile | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
 
-  const [classrooms, setClassrooms] = useState<ClassroomLink[]>([]);
   const [timetable, setTimetable] = useState<TimetableEntry[]>([]);
   const [teacherLinks, setTeacherLinks] = useState<
     Record<string, { googleClassroomLink?: string; zoomLink?: string }>
@@ -91,13 +90,10 @@ const StudentDashboard: React.FC = () => {
         setStudentId(docSnap.id);
         setProfile(docSnap.data() as StudentProfile);
 
-        // Real-time updates for student data
+        // Real-time listener for profile updates
         const unsub = onSnapshot(doc(db, "students", docSnap.id), (s) => {
-          if (s.exists()) {
-            setProfile(s.data() as StudentProfile);
-          } else {
-            setProfile(null);
-          }
+          if (s.exists()) setProfile(s.data() as StudentProfile);
+          else setProfile(null);
           setLoadingProfile(false);
         });
         return unsub;
@@ -109,23 +105,7 @@ const StudentDashboard: React.FC = () => {
   }, [user?.email]);
 
   /* ============================================================
-     🔹 Fetch Classroom Links (Realtime)
-     ============================================================ */
-  useEffect(() => {
-    if (!studentId) return;
-
-    const q = collection(db, "students", studentId, "classrooms");
-    const unsub = onSnapshot(q, (snap) =>
-      setClassrooms(
-        snap.docs.map((d) => ({ id: d.id, ...(d.data() as ClassroomLink) }))
-      )
-    );
-
-    return () => unsub();
-  }, [studentId]);
-
-  /* ============================================================
-     🔹 Fetch Timetable Entries (Realtime) — includes grade normalization
+     🔹 Fetch Timetable Entries (Realtime) + Teacher Links
      ============================================================ */
   useEffect(() => {
     if (!profile?.grade) return;
@@ -146,17 +126,13 @@ const StudentDashboard: React.FC = () => {
         async (snap) => {
           console.log("📘 DEBUG: Timetable snapshot received:", snap.size, "docs");
 
-          if (snap.empty) {
-            console.warn("⚠️ No timetable entries found for grade:", normalizedGrade);
-          }
-
           const entries = snap.docs.map((d) => ({
             id: d.id,
             ...(d.data() as TimetableEntry),
           }));
           setTimetable(entries);
 
-          // Fetch teacher links
+          // 🔹 Collect unique teacher names from timetable
           const teacherNames = Array.from(new Set(entries.map((e) => e.teacherName)));
           const links: Record<
             string,
@@ -164,14 +140,16 @@ const StudentDashboard: React.FC = () => {
           > = {};
 
           for (const name of teacherNames) {
-            const [first, last] = name.split(" ");
+            if (!name) continue;
+            const cleanName = name.replace(/(Mr\.|Ms\.|Mrs\.|Dr\.)/gi, "").trim();
+            const [first, last] = cleanName.split(" ");
             if (!first || !last) continue;
 
             try {
               const tq = query(
                 collection(db, "teachers"),
-                where("firstName", "==", first),
-                where("lastName", "==", last)
+                where("firstName", ">=", first),
+                where("firstName", "<=", first + "\uf8ff")
               );
               const tSnap = await getDocs(tq);
 
@@ -180,15 +158,28 @@ const StudentDashboard: React.FC = () => {
                 continue;
               }
 
-              const data = tSnap.docs[0].data();
+              // Find best match (case-insensitive)
+              const teacherDoc = tSnap.docs.find((d) => {
+                const data = d.data();
+                return (
+                  data.lastName?.toLowerCase().includes(last.toLowerCase()) ||
+                  `${data.firstName} ${data.lastName}`.toLowerCase().includes(cleanName.toLowerCase())
+                );
+              });
+
+              if (!teacherDoc) {
+                console.warn("⚠️ Could not match last name for:", name);
+                continue;
+              }
+
+              const data = teacherDoc.data();
               links[name] = {
                 googleClassroomLink: data.googleClassroomLink,
                 zoomLink: data.zoomLink,
               };
-
-              console.log("📘 DEBUG: Found teacher:", name, "→", links[name]);
-            } catch (teacherErr: any) {
-              console.error("❌ Teacher fetch error for:", name, teacherErr.message);
+              console.log("✅ Stored links for", name, links[name]);
+            } catch (err: any) {
+              console.error("❌ Teacher fetch error for:", name, err.message);
             }
           }
 
@@ -197,9 +188,7 @@ const StudentDashboard: React.FC = () => {
         (error) => {
           console.error("❌ Firestore timetable listener error:", error.message);
           if (error.code === "permission-denied") {
-            console.error("🚫 Permission denied: Check Firestore rules for 'timetable'.");
-          } else if (error.message.includes("index")) {
-            console.warn("⚠️ Missing index: Create index link should appear above ⬆️");
+            console.error("🚫 Permission denied: Check Firestore rules for 'teachers' or 'timetable'.");
           }
         }
       );
@@ -222,7 +211,6 @@ const StudentDashboard: React.FC = () => {
       }))
       .filter((t) => t.datetime > now)
       .sort((a, b) => a.datetime.getTime() - b.datetime.getTime());
-
     return upcoming[0] || null;
   }, [timetable]);
 
@@ -249,12 +237,7 @@ const StudentDashboard: React.FC = () => {
         const hours = Math.floor(diff / (1000 * 60 * 60));
         const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
         const seconds = Math.floor((diff % (1000 * 60)) / 1000);
-
-        const timeStr =
-          hours > 0
-            ? `${hours}h ${minutes}m ${seconds}s`
-            : `${minutes}m ${seconds}s`;
-
+        const timeStr = hours > 0 ? `${hours}h ${minutes}m ${seconds}s` : `${minutes}m ${seconds}s`;
         setCountdown(`⏳ Starts in ${timeStr}`);
       }
     }, 1000);
@@ -263,35 +246,32 @@ const StudentDashboard: React.FC = () => {
   }, [nextClass]);
 
   /* ============================================================
-     🔹 Guards
-     ============================================================ */
-  if (!user) {
-    return <div className="min-h-screen flex items-center justify-center">Please sign in.</div>;
-  }
-
-  if (loadingProfile) {
-    return (
-      <div className="min-h-screen flex items-center justify-center text-gray-600">
-        <Loader2 className="h-6 w-6 animate-spin mr-2" /> Loading profile...
-      </div>
-    );
-  }
-
-  if (!profile) {
-    return (
-      <div className="min-h-screen flex items-center justify-center text-red-600">
-        No student profile found. Please contact your school.
-      </div>
-    );
-  }
-
-  /* ============================================================
      🔹 Logout
      ============================================================ */
   const handleLogout = async () => {
     await logout();
     navigate("/");
   };
+
+  /* ============================================================
+     🔹 Guards
+     ============================================================ */
+  if (!user)
+    return <div className="min-h-screen flex items-center justify-center">Please sign in.</div>;
+
+  if (loadingProfile)
+    return (
+      <div className="min-h-screen flex items-center justify-center text-gray-600">
+        <Loader2 className="h-6 w-6 animate-spin mr-2" /> Loading profile...
+      </div>
+    );
+
+  if (!profile)
+    return (
+      <div className="min-h-screen flex items-center justify-center text-red-600">
+        No student profile found. Please contact your school.
+      </div>
+    );
 
   /* ============================================================
      🔹 UI
@@ -339,70 +319,57 @@ const StudentDashboard: React.FC = () => {
           </Card>
         )}
 
-      {/* 🔹 Classroom Tab (Auto from timetable + teachers) */}
-{activeTab === "classroom" && (
-  <div className="grid gap-4">
-    {timetable.length === 0 ? (
-      <p className="text-gray-600">No classes scheduled yet.</p>
-    ) : (
-      timetable.map((cls) => {
-        const teacher = teacherLinks[cls.teacherName];
-        const classroomLink = teacher?.googleClassroomLink;
-        const zoomLink = teacher?.zoomLink;
+        {/* 🔹 Classroom Tab */}
+        {activeTab === "classroom" && (
+          <div className="grid gap-4">
+            {timetable.length === 0 ? (
+              <p className="text-gray-600">No classes scheduled yet.</p>
+            ) : (
+              timetable.map((cls) => {
+                const teacher = teacherLinks[cls.teacherName];
+                const classroomLink = teacher?.googleClassroomLink;
+                const zoomLink = teacher?.zoomLink;
 
-        return (
-          <Card
-            key={cls.id}
-            className="p-4 flex flex-col md:flex-row justify-between items-start md:items-center"
-          >
-            <div>
-              <h3 className="font-semibold text-blue-800">
-                {cls.subject}
-              </h3>
-              <p className="text-sm text-gray-600">
-                {cls.teacherName} • {cls.grade}
-              </p>
-              <p className="text-xs text-gray-500">
-                {cls.date} • {cls.time} ({cls.duration} mins)
-              </p>
-            </div>
+                return (
+                  <Card
+                    key={cls.id}
+                    className="p-4 flex flex-col md:flex-row justify-between items-start md:items-center"
+                  >
+                    <div>
+                      <h3 className="font-semibold text-blue-800">{cls.subject}</h3>
+                      <p className="text-sm text-gray-600">
+                        {cls.teacherName} • {cls.grade}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {cls.date} • {cls.time} ({cls.duration} mins)
+                      </p>
+                    </div>
 
-            <div className="flex gap-3 mt-3 md:mt-0">
-              {classroomLink && (
-                <a
-                  href={classroomLink}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <Button className="bg-green-600 hover:bg-green-700 text-white text-xs">
-                    Google Classroom
-                  </Button>
-                </a>
-              )}
-              {zoomLink && (
-                <a
-                  href={zoomLink}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <Button className="bg-blue-600 hover:bg-blue-700 text-white text-xs">
-                    Zoom
-                  </Button>
-                </a>
-              )}
-              {!classroomLink && !zoomLink && (
-                <p className="text-xs text-gray-400 italic">
-                  No links available yet.
-                </p>
-              )}
-            </div>
-          </Card>
-        );
-      })
-    )}
-  </div>
-)}
-
+                    <div className="flex gap-3 mt-3 md:mt-0">
+                      {classroomLink && (
+                        <a href={classroomLink} target="_blank" rel="noopener noreferrer">
+                          <Button className="bg-green-600 hover:bg-green-700 text-white text-xs">
+                            Google Classroom
+                          </Button>
+                        </a>
+                      )}
+                      {zoomLink && (
+                        <a href={zoomLink} target="_blank" rel="noopener noreferrer">
+                          <Button className="bg-blue-600 hover:bg-blue-700 text-white text-xs">
+                            Zoom
+                          </Button>
+                        </a>
+                      )}
+                      {!classroomLink && !zoomLink && (
+                        <p className="text-xs text-gray-400 italic">No links available yet.</p>
+                      )}
+                    </div>
+                  </Card>
+                );
+              })
+            )}
+          </div>
+        )}
 
         {/* 🔹 Timetable Tab */}
         {activeTab === "timetable" && (
@@ -431,7 +398,6 @@ const StudentDashboard: React.FC = () => {
                 <p className="text-sm text-gray-700">Teacher: {nextClass.teacherName}</p>
                 <p className="text-sm font-medium mt-1 text-green-700">{countdown}</p>
 
-                {/* 🔗 Links */}
                 <div className="flex gap-3 mt-3">
                   {teacherLinks[nextClass.teacherName]?.googleClassroomLink && (
                     <a
@@ -462,8 +428,6 @@ const StudentDashboard: React.FC = () => {
                 No upcoming classes found for your grade.
               </p>
             )}
-
-            {/* Full Timetable */}
             <TimetableCard grade={normalizeGrade(profile.grade!)} />
           </div>
         )}
