@@ -8,11 +8,17 @@ import {
   deleteDoc,
   doc,
   onSnapshot,
+  query,
+  where,
+  getDocs,
 } from "firebase/firestore";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { motion, AnimatePresence } from "framer-motion";
 
+/* ============================================================
+   🔹 Predefined Time Slots for Class Scheduling
+   ============================================================ */
 const TIME_SLOTS = [
   "07:00 AM",
   "07:45 AM",
@@ -24,6 +30,9 @@ const TIME_SLOTS = [
   "12:00 PM",
 ];
 
+/* ============================================================
+   🔹 Interfaces (Type Definitions)
+   ============================================================ */
 interface Teacher {
   id: string;
   name: string;
@@ -41,6 +50,9 @@ interface TimetableEntry {
   teacherName: string;
 }
 
+/* ============================================================
+   🔹 Main Component
+   ============================================================ */
 const TimetableManager: React.FC = () => {
   const [entries, setEntries] = useState<TimetableEntry[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
@@ -56,30 +68,50 @@ const TimetableManager: React.FC = () => {
     teacherName: "",
   });
 
-  // 🔹 Fetch teachers dynamically
+  /* ============================================================
+     🔹 Fetch Teachers Dynamically (Matches Firestore Structure)
+     ============================================================ */
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "teachers"), (snap) => {
-      const fetched = snap.docs.map((d) => ({
-        id: d.id,
-        ...(d.data() as Omit<Teacher, "id">),
-      }));
+      const fetched = snap.docs.map((d) => {
+        const data = d.data();
+        return {
+          id: d.id,
+          name: `${data.firstName || ""} ${data.lastName || ""}`.trim(),
+          subject: data.subject || "",
+          grade: data.grade || "",
+        };
+      });
+
       setTeachers(fetched);
-      setSubjects([...new Set(fetched.map((t) => t.subject))]);
+
+      // Build unique subject list
+      const uniqueSubjects = [
+        ...new Set(fetched.map((t) => t.subject).filter(Boolean)),
+      ];
+      setSubjects(uniqueSubjects);
     });
+
     return () => unsub();
   }, []);
 
-  // 🔹 Fetch timetable dynamically
+  /* ============================================================
+     🔹 Fetch Timetable Entries Dynamically
+     ============================================================ */
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "timetable"), (snap) => {
       setEntries(
-        snap.docs.map((d) => ({ id: d.id, ...(d.data() as TimetableEntry) }))
+        snap.docs.map(
+          (d) => ({ id: d.id, ...(d.data() as TimetableEntry) })
+        )
       );
     });
     return () => unsub();
   }, []);
 
-  // 🔄 Auto-select teacher when subject changes
+  /* ============================================================
+     🔹 Auto-select Teacher When Subject Changes
+     ============================================================ */
   useEffect(() => {
     if (newEntry.subject) {
       const match = teachers.find((t) => t.subject === newEntry.subject);
@@ -89,17 +121,62 @@ const TimetableManager: React.FC = () => {
     }
   }, [newEntry.subject, teachers]);
 
-  // ➕ Add entry
+  /* ============================================================
+     🔹 Add Entry with Conflict Checks (Grade + Teacher)
+     ============================================================ */
   const addEntry = async () => {
-    if (
-      !newEntry.grade ||
-      !newEntry.subject ||
-      !newEntry.date ||
-      !newEntry.time ||
-      !newEntry.teacherName
-    )
+    const { grade, subject, date, time, teacherName } = newEntry;
+
+    // Basic validation
+    if (!grade || !subject || !date || !time || !teacherName) {
+      alert("Please fill all required fields before saving.");
       return;
-    await addDoc(collection(db, "timetable"), newEntry as TimetableEntry);
+    }
+
+    const timetableRef = collection(db, "timetable");
+
+    /* ---------------------------
+       🧩 1. Check grade-time conflict
+       --------------------------- */
+    const gradeConflictQuery = query(
+      timetableRef,
+      where("grade", "==", grade),
+      where("date", "==", date),
+      where("time", "==", time)
+    );
+    const gradeConflictSnap = await getDocs(gradeConflictQuery);
+
+    if (!gradeConflictSnap.empty) {
+      alert(
+        `⚠️ A class for ${grade} is already scheduled at ${time} on ${date}. Please choose another time slot.`
+      );
+      return;
+    }
+
+    /* ---------------------------
+       🧩 2. Check teacher-time conflict
+       --------------------------- */
+    const teacherConflictQuery = query(
+      timetableRef,
+      where("teacherName", "==", teacherName),
+      where("date", "==", date),
+      where("time", "==", time)
+    );
+    const teacherConflictSnap = await getDocs(teacherConflictQuery);
+
+    if (!teacherConflictSnap.empty) {
+      alert(
+        `⚠️ ${teacherName} is already teaching another class at ${time} on ${date}. Please assign a different time.`
+      );
+      return;
+    }
+
+    /* ---------------------------
+       ✅ 3. Save the new entry
+       --------------------------- */
+    await addDoc(timetableRef, newEntry as TimetableEntry);
+
+    // Reset form after save
     setNewEntry({
       grade: "Grade 8",
       subject: "",
@@ -111,12 +188,19 @@ const TimetableManager: React.FC = () => {
     setIsOpen(false);
   };
 
+  /* ============================================================
+     🔹 Delete Timetable Entry
+     ============================================================ */
   const removeEntry = async (id: string) => {
     await deleteDoc(doc(db, "timetable", id));
   };
 
+  /* ============================================================
+     🔹 Component Render
+     ============================================================ */
   return (
     <Card className="bg-white shadow mt-6">
+      {/* Header Section */}
       <CardHeader className="flex flex-row justify-between items-center">
         <CardTitle>📅 Timetable Manager</CardTitle>
         <Button
@@ -129,7 +213,7 @@ const TimetableManager: React.FC = () => {
       </CardHeader>
 
       <CardContent>
-        {/* Collapsible Form */}
+        {/* Collapsible Form Section */}
         <AnimatePresence initial={false}>
           {isOpen && (
             <motion.div
@@ -140,7 +224,7 @@ const TimetableManager: React.FC = () => {
               className="overflow-hidden mb-6"
             >
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4 mt-3">
-                {/* Grade */}
+                {/* Grade Dropdown */}
                 <select
                   value={newEntry.grade}
                   onChange={(e) =>
@@ -148,17 +232,12 @@ const TimetableManager: React.FC = () => {
                   }
                   className="border p-2 rounded"
                 >
-                  {[
-                   
-                    "Grade 8",
-                    "Grade 9",
-                   
-                  ].map((g) => (
+                  {["Grade 8", "Grade 9"].map((g) => (
                     <option key={g}>{g}</option>
                   ))}
                 </select>
 
-                {/* Subject */}
+                {/* Subject Dropdown */}
                 <select
                   value={newEntry.subject}
                   onChange={(e) =>
@@ -168,11 +247,13 @@ const TimetableManager: React.FC = () => {
                 >
                   <option value="">Select Subject</option>
                   {subjects.map((s) => (
-                    <option key={s}>{s}</option>
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
                   ))}
                 </select>
 
-                {/* Teacher */}
+                {/* Teacher Dropdown */}
                 <select
                   value={newEntry.teacherName}
                   onChange={(e) =>
@@ -187,11 +268,13 @@ const TimetableManager: React.FC = () => {
                         !newEntry.subject || t.subject === newEntry.subject
                     )
                     .map((t) => (
-                      <option key={t.id}>{t.name}</option>
+                      <option key={t.id} value={t.name}>
+                        {t.name} — {t.subject}
+                      </option>
                     ))}
                 </select>
 
-                {/* Date */}
+                {/* Date Picker */}
                 <input
                   type="date"
                   value={newEntry.date}
@@ -201,7 +284,7 @@ const TimetableManager: React.FC = () => {
                   className="border p-2 rounded"
                 />
 
-                {/* Time */}
+                {/* Time Slot Selector */}
                 <select
                   value={newEntry.time}
                   onChange={(e) =>
@@ -215,7 +298,7 @@ const TimetableManager: React.FC = () => {
                   ))}
                 </select>
 
-                {/* Duration */}
+                {/* Duration Input */}
                 <input
                   type="number"
                   placeholder="Duration (min)"
@@ -230,6 +313,7 @@ const TimetableManager: React.FC = () => {
                 />
               </div>
 
+              {/* Save Button */}
               <Button
                 onClick={addEntry}
                 className="bg-blue-600 text-white hover:bg-blue-700"
@@ -240,7 +324,7 @@ const TimetableManager: React.FC = () => {
           )}
         </AnimatePresence>
 
-        {/* Timetable List */}
+        {/* Timetable List Display */}
         <div className="mt-4 space-y-2">
           {entries.map((e) => (
             <div
@@ -255,6 +339,8 @@ const TimetableManager: React.FC = () => {
                   {e.date} {e.time} ({e.duration}m) — {e.teacherName}
                 </p>
               </div>
+
+              {/* Delete Button */}
               <Button
                 variant="destructive"
                 size="sm"
