@@ -42,7 +42,7 @@ interface TimetableEntry {
 }
 
 /* ============================================================
-   🔹 Helper Function: Normalize Grade
+   🔹 Helper Function
    ============================================================ */
 const normalizeGrade = (g?: string) => {
   if (!g) return "";
@@ -63,7 +63,9 @@ const StudentDashboard: React.FC = () => {
   const [teacherLinks, setTeacherLinks] = useState<
     Record<string, { googleClassroomLink?: string; zoomLink?: string }>
   >({});
-  const [activeTab, setActiveTab] = useState<"overview" | "classroom" | "timetable">("overview");
+  const [activeTab, setActiveTab] = useState<
+    "overview" | "classroom" | "timetable"
+  >("overview");
 
   /* ============================================================
      🔹 Fetch Student Profile
@@ -93,7 +95,7 @@ const StudentDashboard: React.FC = () => {
   }, [user?.email]);
 
   /* ============================================================
-     🔹 Fetch Timetable + Teacher Links (by subject)
+     🔹 Fetch Timetable + Teacher Links
      ============================================================ */
   useEffect(() => {
     if (!profile?.grade) return;
@@ -119,21 +121,38 @@ const StudentDashboard: React.FC = () => {
           setTimetable(entries);
           console.log("📘 Timetable snapshot:", entries.length, "entries");
 
-          // 🔹 Fetch teacher links per subject
-          const subjects = Array.from(new Set(entries.map((e) => e.subject)));
+          const subjects = Array.from(new Set(entries.map((e) => e.subject.trim())));
           const links: Record<string, { googleClassroomLink?: string; zoomLink?: string }> = {};
 
           for (const subject of subjects) {
-            try {
-              const tq = query(collection(db, "teachers"), where("subject", "==", subject));
-              const tSnap = await getDocs(tq);
+            const normalized = subject.toLowerCase().trim();
+            console.log("🔍 Looking for teacher with subject:", normalized);
 
-              if (tSnap.empty) {
+            try {
+              // Try both possible field types
+              const tqSingle = query(
+                collection(db, "teachers"),
+                where("subject", "==", subject)
+              );
+              const tqArray = query(
+                collection(db, "teachers"),
+                where("subjects", "array-contains", subject)
+              );
+
+              // Run both and merge results
+              const [snapSingle, snapArray] = await Promise.all([
+                getDocs(tqSingle),
+                getDocs(tqArray),
+              ]);
+
+              const combinedDocs = [...snapSingle.docs, ...snapArray.docs];
+
+              if (combinedDocs.length === 0) {
                 console.warn("⚠️ No teacher found for subject:", subject);
                 continue;
               }
 
-              const data = tSnap.docs[0].data();
+              const data = combinedDocs[0].data();
               links[subject] = {
                 googleClassroomLink: data.googleClassroomLink,
                 zoomLink: data.zoomLink,
@@ -159,7 +178,7 @@ const StudentDashboard: React.FC = () => {
   }, [profile?.grade]);
 
   /* ============================================================
-     🔹 Next Upcoming Class
+     🔹 Next Class
      ============================================================ */
   const nextClass = useMemo(() => {
     const now = new Date();
@@ -193,7 +212,8 @@ const StudentDashboard: React.FC = () => {
         const hours = Math.floor(diff / (1000 * 60 * 60));
         const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
         const seconds = Math.floor((diff % (1000 * 60)) / 1000);
-        const timeStr = hours > 0 ? `${hours}h ${minutes}m ${seconds}s` : `${minutes}m ${seconds}s`;
+        const timeStr =
+          hours > 0 ? `${hours}h ${minutes}m ${seconds}s` : `${minutes}m ${seconds}s`;
         setCountdown(`⏳ Starts in ${timeStr}`);
       }
     }, 1000);
@@ -261,7 +281,7 @@ const StudentDashboard: React.FC = () => {
 
       {/* Main */}
       <div className="max-w-6xl mx-auto w-full flex-grow p-6">
-        {/* 🔹 Overview Tab */}
+        {/* 🔹 Overview */}
         {activeTab === "overview" && (
           <Card className="p-6">
             <h2 className="text-lg font-semibold mb-2">
@@ -275,7 +295,7 @@ const StudentDashboard: React.FC = () => {
           </Card>
         )}
 
-        {/* 🔹 Classroom Tab */}
+        {/* 🔹 Classroom */}
         {activeTab === "classroom" && (
           <div className="space-y-6">
             <h2 className="text-lg font-semibold text-blue-700">🧑‍🏫 My Classrooms</h2>
@@ -343,7 +363,7 @@ const StudentDashboard: React.FC = () => {
           </div>
         )}
 
-        {/* 🔹 Timetable Tab */}
+        {/* 🔹 Timetable */}
         {activeTab === "timetable" && (
           <div className="space-y-4">
             {nextClass ? (
