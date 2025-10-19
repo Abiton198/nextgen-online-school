@@ -295,73 +295,77 @@ const StudentDashboard: React.FC = () => {
           </Card>
         )}
 
-        {/* 🔹 Classroom */}
-        {activeTab === "classroom" && (
-          <div className="space-y-6">
-            <h2 className="text-lg font-semibold text-blue-700">🧑‍🏫 My Classrooms</h2>
-            <p className="text-gray-600 mb-2">
-              Access your subject classrooms and virtual sessions anytime.
-            </p>
+      
+     {/* 🔹 Classroom Tab */}
+{activeTab === "classroom" && (
+  <div className="space-y-6">
+    <h2 className="text-lg font-semibold text-blue-700">🧑‍🏫 My Classrooms</h2>
+    <p className="text-gray-600 mb-2">
+      Access your subject classrooms and virtual sessions.  
+      If a link isn’t available yet, it will appear as “Pending”.
+    </p>
 
-            {timetable.length === 0 ? (
-              <p className="text-gray-500 italic">No subjects or classrooms found.</p>
-            ) : (
-              Array.from(new Map(timetable.map((cls) => [cls.subject, cls])).values()).map(
-                (cls) => {
-                  const teacher = teacherLinks?.[cls.subject];
-                  const classroomLink = teacher?.googleClassroomLink;
-                  const zoomLink = teacher?.zoomLink;
+    {timetable.length === 0 ? (
+      <p className="text-gray-500 italic">No subjects found for your grade.</p>
+    ) : (
+      Array.from(new Map(timetable.map((cls) => [cls.subject, cls])).values()).map((cls) => {
+        const teacher = teacherLinks?.[cls.subject];
+        const classroomLink = teacher?.googleClassroomLink;
+        const zoomLink = teacher?.zoomLink;
+        const hasAnyLink = classroomLink?.trim() || zoomLink?.trim();
 
-                  return (
-                    <Card
-                      key={cls.subject}
-                      className="p-5 border-l-4 border-blue-500 bg-white shadow-sm hover:shadow-md transition flex flex-col sm:flex-row sm:items-center sm:justify-between"
-                    >
-                      <div>
-                        <h3 className="font-semibold text-blue-800 text-lg">{cls.subject}</h3>
-                        <p className="text-sm text-gray-700">
-                          {cls.teacherName} • {cls.grade}
-                        </p>
-                      </div>
+        return (
+          <Card
+            key={cls.subject}
+            className={`p-5 border-l-4 ${
+              hasAnyLink ? "border-blue-500" : "border-gray-300"
+            } bg-white shadow-sm hover:shadow-md transition flex flex-col sm:flex-row sm:items-center sm:justify-between`}
+          >
+            <div>
+              <h3 className="font-semibold text-blue-800 text-lg">{cls.subject}</h3>
+              <p className="text-sm text-gray-700">
+                {cls.teacherName} • {cls.grade}
+              </p>
+            </div>
 
-                      <div className="flex flex-wrap gap-3 mt-3 sm:mt-0">
-                        {classroomLink ? (
-                          <a href={classroomLink} target="_blank" rel="noopener noreferrer">
-                            <Button className="bg-green-600 hover:bg-green-700 text-white text-xs">
-                              Google Classroom
-                            </Button>
-                          </a>
-                        ) : (
-                          <Button
-                            disabled
-                            className="bg-gray-300 text-gray-600 text-xs cursor-not-allowed"
-                          >
-                            Classroom Not Set
-                          </Button>
-                        )}
+            <div className="flex flex-wrap gap-3 mt-3 sm:mt-0">
+              {classroomLink ? (
+                <a href={classroomLink} target="_blank" rel="noopener noreferrer">
+                  <Button className="bg-green-600 hover:bg-green-700 text-white text-xs">
+                    Google Classroom
+                  </Button>
+                </a>
+              ) : (
+                <Button
+                  disabled
+                  className="bg-gray-300 text-gray-600 text-xs cursor-not-allowed"
+                >
+                  Classroom Pending
+                </Button>
+              )}
 
-                        {zoomLink ? (
-                          <a href={zoomLink} target="_blank" rel="noopener noreferrer">
-                            <Button className="bg-blue-600 hover:bg-blue-700 text-white text-xs">
-                              Zoom
-                            </Button>
-                          </a>
-                        ) : (
-                          <Button
-                            disabled
-                            className="bg-gray-300 text-gray-600 text-xs cursor-not-allowed"
-                          >
-                            Zoom Not Set
-                          </Button>
-                        )}
-                      </div>
-                    </Card>
-                  );
-                }
-              )
-            )}
-          </div>
-        )}
+              {zoomLink ? (
+                <a href={zoomLink} target="_blank" rel="noopener noreferrer">
+                  <Button className="bg-blue-600 hover:bg-blue-700 text-white text-xs">
+                    Zoom
+                  </Button>
+                </a>
+              ) : (
+                <Button
+                  disabled
+                  className="bg-gray-300 text-gray-600 text-xs cursor-not-allowed"
+                >
+                  Zoom Pending
+                </Button>
+              )}
+            </div>
+          </Card>
+        );
+      })
+    )}
+  </div>
+)}
+
 
         {/* 🔹 Timetable */}
         {activeTab === "timetable" && (
