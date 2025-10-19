@@ -84,33 +84,40 @@ const TeacherDashboard: React.FC = () => {
     return () => unsub();
   }, [user?.uid]);
 
-  /* ---------------- Fetch Timetable ---------------- */
-  useEffect(() => {
-    if (!profile?.subject || !profile?.lastName) return;
+ 
+ /* ---------------- Fetch Timetable ---------------- */
+useEffect(() => {
+  if (!profile?.subject) return;
 
-    const teacherName = `${profile.firstName || ""} ${profile.lastName}`.trim();
+  const teacherName = `${profile.firstName || ""} ${profile.lastName || ""}`.trim();
+  console.log("📘 Fetching timetable for:", teacherName, "subject:", profile.subject);
 
-    const q = query(
-      collection(db, "timetable"),
-      where("subject", "==", profile.subject),
-      where("teacherName", "==", teacherName),
-      orderBy("date"),
-      orderBy("time")
-    );
+  const q = query(collection(db, "timetable"), orderBy("date"), orderBy("time"));
 
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        const entries = snap.docs.map(
-          (d) => ({ id: d.id, ...(d.data() as TimetableEntry) }) as TimetableEntry
-        );
-        setTimetable(entries);
-      },
-      (error) => console.error("❌ Error fetching teacher timetable:", error.message)
-    );
+  const unsub = onSnapshot(
+    q,
+    (snap) => {
+      const allEntries = snap.docs.map(
+        (d) => ({ id: d.id, ...(d.data() as TimetableEntry) }) as TimetableEntry
+      );
 
-    return () => unsub();
-  }, [profile?.subject, profile?.lastName]);
+      // Filter by teacherName OR subject match
+      const entries = allEntries.filter(
+        (t) =>
+          t.subject?.toLowerCase() === profile.subject?.toLowerCase() ||
+          t.teacherName?.toLowerCase().includes(profile.lastName?.toLowerCase() || "")
+      );
+
+      console.log("✅ Filtered timetable entries:", entries.length);
+      setTimetable(entries);
+    },
+    (error) => {
+      console.error("❌ Error fetching teacher timetable:", error.message);
+    }
+  );
+
+  return () => unsub();
+}, [profile?.subject, profile?.lastName]);
 
   /* ---------------- Group timetable by date ---------------- */
   const groupedTimetable = useMemo(() => {
