@@ -31,25 +31,18 @@ interface StudentProfile {
   email?: string;
 }
 
-interface ClassroomLink {
-  id: string;
-  subject: string;
-  link: string;
-}
-
 interface TimetableEntry {
   id: string;
   grade: string;
   subject: string;
-  date: string; // YYYY-MM-DD
-  time: string; // e.g. "08:00 AM"
+  date: string;
+  time: string;
   duration: number;
   teacherName: string;
 }
 
 /* ============================================================
    🔹 Helper Function: Normalize Grade
-   Converts "8" → "Grade 8" for matching timetable docs
    ============================================================ */
 const normalizeGrade = (g?: string) => {
   if (!g) return "";
@@ -66,31 +59,26 @@ const StudentDashboard: React.FC = () => {
   const [studentId, setStudentId] = useState<string | null>(null);
   const [profile, setProfile] = useState<StudentProfile | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
-
   const [timetable, setTimetable] = useState<TimetableEntry[]>([]);
   const [teacherLinks, setTeacherLinks] = useState<
     Record<string, { googleClassroomLink?: string; zoomLink?: string }>
   >({});
-  const [activeTab, setActiveTab] = useState<
-    "overview" | "classroom" | "timetable"
-  >("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "classroom" | "timetable">("overview");
 
   /* ============================================================
-     🔹 Fetch Student Profile (Realtime)
+     🔹 Fetch Student Profile
      ============================================================ */
   useEffect(() => {
     if (!user?.email) return;
     setLoadingProfile(true);
 
     const q = query(collection(db, "students"), where("email", "==", user.email));
-
     getDocs(q).then((snap) => {
       if (!snap.empty) {
         const docSnap = snap.docs[0];
         setStudentId(docSnap.id);
         setProfile(docSnap.data() as StudentProfile);
 
-        // Real-time listener for profile updates
         const unsub = onSnapshot(doc(db, "students", docSnap.id), (s) => {
           if (s.exists()) setProfile(s.data() as StudentProfile);
           else setProfile(null);
@@ -105,13 +93,13 @@ const StudentDashboard: React.FC = () => {
   }, [user?.email]);
 
   /* ============================================================
-     🔹 Fetch Timetable Entries (Realtime) + Teacher Links
+     🔹 Fetch Timetable + Teacher Links (by subject)
      ============================================================ */
   useEffect(() => {
     if (!profile?.grade) return;
 
     const normalizedGrade = normalizeGrade(profile.grade);
-    console.log("📘 DEBUG: Fetching timetable for normalized grade:", normalizedGrade);
+    console.log("📘 DEBUG: Fetching timetable for grade:", normalizedGrade);
 
     try {
       const qTT = query(
@@ -124,62 +112,36 @@ const StudentDashboard: React.FC = () => {
       const unsubTT = onSnapshot(
         qTT,
         async (snap) => {
-          console.log("📘 DEBUG: Timetable snapshot received:", snap.size, "docs");
-
           const entries = snap.docs.map((d) => ({
             id: d.id,
             ...(d.data() as TimetableEntry),
           }));
           setTimetable(entries);
+          console.log("📘 Timetable snapshot:", entries.length, "entries");
 
-          // 🔹 Collect unique teacher names from timetable
-          const teacherNames = Array.from(new Set(entries.map((e) => e.teacherName)));
-          const links: Record<
-            string,
-            { googleClassroomLink?: string; zoomLink?: string }
-          > = {};
+          // 🔹 Fetch teacher links per subject
+          const subjects = Array.from(new Set(entries.map((e) => e.subject)));
+          const links: Record<string, { googleClassroomLink?: string; zoomLink?: string }> = {};
 
-          for (const name of teacherNames) {
-            if (!name) continue;
-            const cleanName = name.replace(/(Mr\.|Ms\.|Mrs\.|Dr\.)/gi, "").trim();
-            const [first, last] = cleanName.split(" ");
-            if (!first || !last) continue;
-
+          for (const subject of subjects) {
             try {
-              const tq = query(
-                collection(db, "teachers"),
-                where("firstName", ">=", first),
-                where("firstName", "<=", first + "\uf8ff")
-              );
+              const tq = query(collection(db, "teachers"), where("subject", "==", subject));
               const tSnap = await getDocs(tq);
 
               if (tSnap.empty) {
-                console.warn("⚠️ No teacher found for:", name);
+                console.warn("⚠️ No teacher found for subject:", subject);
                 continue;
               }
 
-              // Find best match (case-insensitive)
-              const teacherDoc = tSnap.docs.find((d) => {
-                const data = d.data();
-                return (
-                  data.lastName?.toLowerCase().includes(last.toLowerCase()) ||
-                  `${data.firstName} ${data.lastName}`.toLowerCase().includes(cleanName.toLowerCase())
-                );
-              });
-
-              if (!teacherDoc) {
-                console.warn("⚠️ Could not match last name for:", name);
-                continue;
-              }
-
-              const data = teacherDoc.data();
-              links[name] = {
+              const data = tSnap.docs[0].data();
+              links[subject] = {
                 googleClassroomLink: data.googleClassroomLink,
                 zoomLink: data.zoomLink,
               };
-              console.log("✅ Stored links for", name, links[name]);
+
+              console.log("✅ Found teacher link for", subject, "→", links[subject]);
             } catch (err: any) {
-              console.error("❌ Teacher fetch error for:", name, err.message);
+              console.error("❌ Teacher fetch error for subject:", subject, err.message);
             }
           }
 
@@ -187,9 +149,6 @@ const StudentDashboard: React.FC = () => {
         },
         (error) => {
           console.error("❌ Firestore timetable listener error:", error.message);
-          if (error.code === "permission-denied") {
-            console.error("🚫 Permission denied: Check Firestore rules for 'teachers' or 'timetable'.");
-          }
         }
       );
 
@@ -200,22 +159,19 @@ const StudentDashboard: React.FC = () => {
   }, [profile?.grade]);
 
   /* ============================================================
-     🔹 Compute Next Upcoming Class
+     🔹 Next Upcoming Class
      ============================================================ */
   const nextClass = useMemo(() => {
     const now = new Date();
     const upcoming = timetable
-      .map((t) => ({
-        ...t,
-        datetime: new Date(`${t.date} ${t.time}`),
-      }))
+      .map((t) => ({ ...t, datetime: new Date(`${t.date} ${t.time}`) }))
       .filter((t) => t.datetime > now)
       .sort((a, b) => a.datetime.getTime() - b.datetime.getTime());
     return upcoming[0] || null;
   }, [timetable]);
 
   /* ============================================================
-     🔹 Countdown Timer for Next Class
+     🔹 Countdown Timer
      ============================================================ */
   const [countdown, setCountdown] = useState<string>("");
 
@@ -278,7 +234,7 @@ const StudentDashboard: React.FC = () => {
      ============================================================ */
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      {/* ---------------- Header ---------------- */}
+      {/* Header */}
       <div className="bg-white shadow-sm border-b">
         <div className="max-w-6xl mx-auto px-4 flex justify-between items-center py-4">
           <h1 className="text-xl font-bold">Student Dashboard</h1>
@@ -287,7 +243,7 @@ const StudentDashboard: React.FC = () => {
           </Button>
         </div>
 
-        {/* ---------------- Tabs ---------------- */}
+        {/* Tabs */}
         <div className="flex justify-center space-x-6 border-t bg-gray-100 py-2">
           {["overview", "classroom", "timetable"].map((tab) => (
             <button
@@ -303,7 +259,7 @@ const StudentDashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* ---------------- Main Content ---------------- */}
+      {/* Main */}
       <div className="max-w-6xl mx-auto w-full flex-grow p-6">
         {/* 🔹 Overview Tab */}
         {activeTab === "overview" && (
@@ -320,93 +276,72 @@ const StudentDashboard: React.FC = () => {
         )}
 
         {/* 🔹 Classroom Tab */}
-{activeTab === "classroom" && (
-  <div className="space-y-6">
-    <h2 className="text-lg font-semibold text-blue-700">🧑‍🏫 My Classrooms</h2>
-    <p className="text-gray-600 mb-2">
-      Access your subject classrooms and virtual sessions anytime.
-    </p>
+        {activeTab === "classroom" && (
+          <div className="space-y-6">
+            <h2 className="text-lg font-semibold text-blue-700">🧑‍🏫 My Classrooms</h2>
+            <p className="text-gray-600 mb-2">
+              Access your subject classrooms and virtual sessions anytime.
+            </p>
 
-    {timetable.length === 0 ? (
-      <p className="text-gray-500 italic">No subjects or classrooms found.</p>
-    ) : (
-      // ✅ Group by subject so we don’t repeat entries
-      Array.from(
-        new Map(
-          timetable.map((cls) => [cls.subject, cls]) // unique per subject
-        ).values()
-      ).map((cls) => {
-        const teacher = teacherLinks?.[cls.teacherName];
-        const classroomLink = teacher?.googleClassroomLink;
-        const zoomLink = teacher?.zoomLink;
+            {timetable.length === 0 ? (
+              <p className="text-gray-500 italic">No subjects or classrooms found.</p>
+            ) : (
+              Array.from(new Map(timetable.map((cls) => [cls.subject, cls])).values()).map(
+                (cls) => {
+                  const teacher = teacherLinks?.[cls.subject];
+                  const classroomLink = teacher?.googleClassroomLink;
+                  const zoomLink = teacher?.zoomLink;
 
-        console.log("🧠 DEBUG Classroom:", {
-          subject: cls.subject,
-          teacherName: cls.teacherName,
-          classroomLink,
-          zoomLink,
-        });
+                  return (
+                    <Card
+                      key={cls.subject}
+                      className="p-5 border-l-4 border-blue-500 bg-white shadow-sm hover:shadow-md transition flex flex-col sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div>
+                        <h3 className="font-semibold text-blue-800 text-lg">{cls.subject}</h3>
+                        <p className="text-sm text-gray-700">
+                          {cls.teacherName} • {cls.grade}
+                        </p>
+                      </div>
 
-        return (
-          <Card
-            key={cls.subject}
-            className="p-5 border-l-4 border-blue-500 bg-white shadow-sm hover:shadow-md transition flex flex-col sm:flex-row sm:items-center sm:justify-between"
-          >
-            {/* Subject + Teacher Info */}
-            <div>
-              <h3 className="font-semibold text-blue-800 text-lg">{cls.subject}</h3>
-              <p className="text-sm text-gray-700">
-                {cls.teacherName} • {cls.grade}
-              </p>
-            </div>
+                      <div className="flex flex-wrap gap-3 mt-3 sm:mt-0">
+                        {classroomLink ? (
+                          <a href={classroomLink} target="_blank" rel="noopener noreferrer">
+                            <Button className="bg-green-600 hover:bg-green-700 text-white text-xs">
+                              Google Classroom
+                            </Button>
+                          </a>
+                        ) : (
+                          <Button
+                            disabled
+                            className="bg-gray-300 text-gray-600 text-xs cursor-not-allowed"
+                          >
+                            Classroom Not Set
+                          </Button>
+                        )}
 
-            {/* Buttons */}
-            <div className="flex flex-wrap gap-3 mt-3 sm:mt-0">
-              {classroomLink ? (
-                <a
-                  href={classroomLink}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <Button className="bg-green-600 hover:bg-green-700 text-white text-xs">
-                    Google Classroom
-                  </Button>
-                </a>
-              ) : (
-                <Button
-                  disabled
-                  className="bg-gray-300 text-gray-600 text-xs cursor-not-allowed"
-                >
-                  Classroom Not Set
-                </Button>
-              )}
-
-              {zoomLink ? (
-                <a
-                  href={zoomLink}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <Button className="bg-blue-600 hover:bg-blue-700 text-white text-xs">
-                    Zoom
-                  </Button>
-                </a>
-              ) : (
-                <Button
-                  disabled
-                  className="bg-gray-300 text-gray-600 text-xs cursor-not-allowed"
-                >
-                  Zoom Not Set
-                </Button>
-              )}
-            </div>
-          </Card>
-        );
-      })
-    )}
-  </div>
-)}
-
+                        {zoomLink ? (
+                          <a href={zoomLink} target="_blank" rel="noopener noreferrer">
+                            <Button className="bg-blue-600 hover:bg-blue-700 text-white text-xs">
+                              Zoom
+                            </Button>
+                          </a>
+                        ) : (
+                          <Button
+                            disabled
+                            className="bg-gray-300 text-gray-600 text-xs cursor-not-allowed"
+                          >
+                            Zoom Not Set
+                          </Button>
+                        )}
+                      </div>
+                    </Card>
+                  );
+                }
+              )
+            )}
+          </div>
+        )}
 
         {/* 🔹 Timetable Tab */}
         {activeTab === "timetable" && (
@@ -436,9 +371,9 @@ const StudentDashboard: React.FC = () => {
                 <p className="text-sm font-medium mt-1 text-green-700">{countdown}</p>
 
                 <div className="flex gap-3 mt-3">
-                  {teacherLinks[nextClass.teacherName]?.googleClassroomLink && (
+                  {teacherLinks[nextClass.subject]?.googleClassroomLink && (
                     <a
-                      href={teacherLinks[nextClass.teacherName]?.googleClassroomLink}
+                      href={teacherLinks[nextClass.subject]?.googleClassroomLink}
                       target="_blank"
                       rel="noopener noreferrer"
                     >
@@ -447,9 +382,9 @@ const StudentDashboard: React.FC = () => {
                       </Button>
                     </a>
                   )}
-                  {teacherLinks[nextClass.teacherName]?.zoomLink && (
+                  {teacherLinks[nextClass.subject]?.zoomLink && (
                     <a
-                      href={teacherLinks[nextClass.teacherName]?.zoomLink}
+                      href={teacherLinks[nextClass.subject]?.zoomLink}
                       target="_blank"
                       rel="noopener noreferrer"
                     >
@@ -465,6 +400,7 @@ const StudentDashboard: React.FC = () => {
                 No upcoming classes found for your grade.
               </p>
             )}
+
             <TimetableCard grade={normalizeGrade(profile.grade!)} />
           </div>
         )}
