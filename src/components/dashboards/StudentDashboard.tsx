@@ -114,12 +114,16 @@ const StudentDashboard: React.FC = () => {
     return () => unsub();
   }, [studentId]);
 
+ 
   /* ============================================================
-     🔹 Fetch Timetable Entries (Realtime)
-     ============================================================ */
-  useEffect(() => {
-    if (!profile?.grade) return;
+   🔹 Fetch Timetable Entries (Realtime)
+   ============================================================ */
+useEffect(() => {
+  if (!profile?.grade) return;
 
+  console.log("📘 DEBUG: Fetching timetable for grade:", profile.grade);
+
+  try {
     const qTT = query(
       collection(db, "timetable"),
       where("grade", "==", profile.grade),
@@ -127,44 +131,81 @@ const StudentDashboard: React.FC = () => {
       orderBy("time")
     );
 
-    const unsubTT = onSnapshot(qTT, async (snap) => {
-      const entries = snap.docs.map((d) => ({
-        id: d.id,
-        ...(d.data() as TimetableEntry),
-      }));
-      setTimetable(entries);
+    const unsubTT = onSnapshot(
+      qTT,
+      async (snap) => {
+        console.log("📘 DEBUG: Timetable snapshot received:", snap.size, "docs");
 
-      // Fetch teacher links for each teacher
-      const teacherNames = Array.from(
-        new Set(entries.map((e) => e.teacherName))
-      );
-      const links: Record<
-        string,
-        { googleClassroomLink?: string; zoomLink?: string }
-      > = {};
+        if (snap.empty) {
+          console.warn("⚠️ No timetable entries found for grade:", profile.grade);
+        }
 
-      for (const name of teacherNames) {
-        const [first, last] = name.split(" ");
-        const tq = query(
-          collection(db, "teachers"),
-          where("firstName", "==", first),
-          where("lastName", "==", last)
-        );
-        const tSnap = await getDocs(tq);
-        if (!tSnap.empty) {
-          const data = tSnap.docs[0].data();
-          links[name] = {
-            googleClassroomLink: data.googleClassroomLink,
-            zoomLink: data.zoomLink,
-          };
+        const entries = snap.docs.map((d) => ({
+          id: d.id,
+          ...(d.data() as TimetableEntry),
+        }));
+        setTimetable(entries);
+
+        // Collect unique teacher names
+        const teacherNames = Array.from(new Set(entries.map((e) => e.teacherName)));
+        const links: Record<
+          string,
+          { googleClassroomLink?: string; zoomLink?: string }
+        > = {};
+
+        // 📘 DEBUG: Start fetching teacher links
+        for (const name of teacherNames) {
+          const [first, last] = name.split(" ");
+          if (!first || !last) continue;
+
+          try {
+            const tq = query(
+              collection(db, "teachers"),
+              where("firstName", "==", first),
+              where("lastName", "==", last)
+            );
+            const tSnap = await getDocs(tq);
+
+            if (tSnap.empty) {
+              console.warn("⚠️ No teacher found for:", name);
+              continue;
+            }
+
+            const data = tSnap.docs[0].data();
+            links[name] = {
+              googleClassroomLink: data.googleClassroomLink,
+              zoomLink: data.zoomLink,
+            };
+
+            console.log("📘 DEBUG: Found teacher:", name, "→", links[name]);
+          } catch (teacherErr: any) {
+            console.error("❌ Teacher fetch error for:", name, teacherErr.message);
+          }
+        }
+
+        setTeacherLinks(links);
+      },
+      (error) => {
+        // 📘 Firestore listener error handling
+        console.error("❌ Firestore timetable listener error:", error.message);
+        if (error.code === "permission-denied") {
+          console.error(
+            "🚫 Permission denied: Check your Firestore rules for 'timetable'."
+          );
+        } else if (error.message.includes("index")) {
+          console.warn(
+            "⚠️ Missing index: Firestore will log a link to create it above ⬆️"
+          );
         }
       }
-
-      setTeacherLinks(links);
-    });
+    );
 
     return () => unsubTT();
-  }, [profile?.grade]);
+  } catch (err: any) {
+    console.error("❌ Timetable setup failed:", err.message);
+  }
+}, [profile?.grade]);
+
 
   /* ============================================================
      🔹 Compute Next Upcoming Class
