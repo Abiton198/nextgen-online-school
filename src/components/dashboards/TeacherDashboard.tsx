@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { useAuth } from "../auth/AuthProvider";
 import { db } from "@/lib/firebaseConfig";
 import {
@@ -14,9 +14,16 @@ import {
 } from "firebase/firestore";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Loader2, Settings, X } from "lucide-react";
+import {
+  Loader2,
+  Settings,
+  X,
+  Calendar,
+  Clock,
+  BookOpen,
+  GraduationCap,
+} from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import TimetableCard from "./TimetableCard";
 
 /* ---------------- Types ---------------- */
 interface TeacherProfile {
@@ -33,11 +40,10 @@ interface TimetableEntry {
   id: string;
   grade: string;
   subject: string;
-  day: string;
+  date: string; // YYYY-MM-DD
   time: string;
   duration: number;
   teacherName: string;
-  googleClassroomLink: string;
 }
 
 const TeacherDashboard: React.FC = () => {
@@ -46,7 +52,10 @@ const TeacherDashboard: React.FC = () => {
 
   const [profile, setProfile] = useState<TeacherProfile | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
-  const [activeTab, setActiveTab] = useState<"classroom" | "timetable" | "settings">("classroom");
+  const [activeTab, setActiveTab] = useState<
+    "classroom" | "timetable" | "settings"
+  >("classroom");
+  const [timetable, setTimetable] = useState<TimetableEntry[]>([]);
 
   const [showEditModal, setShowEditModal] = useState(false);
   const [tempZoom, setTempZoom] = useState("");
@@ -66,9 +75,7 @@ const TeacherDashboard: React.FC = () => {
           setProfile(data);
           setTempZoom(data.zoomLink || "");
           setTempClassroom(data.googleClassroomLink || "");
-        } else {
-          setProfile(null);
-        }
+        } else setProfile(null);
         setLoadingProfile(false);
       },
       () => setLoadingProfile(false)
@@ -77,31 +84,43 @@ const TeacherDashboard: React.FC = () => {
     return () => unsub();
   }, [user?.uid]);
 
-  /* ---------------- Guards ---------------- */
-  if (!user) {
-    return <div className="min-h-screen flex items-center justify-center">Please sign in.</div>;
-  }
-  if (loadingProfile) {
-    return (
-      <div className="min-h-screen flex items-center justify-center text-gray-600">
-        <Loader2 className="h-6 w-6 animate-spin mr-2" /> Loading profile...
-      </div>
+  /* ---------------- Fetch Timetable ---------------- */
+  useEffect(() => {
+    if (!profile?.subject || !profile?.lastName) return;
+
+    const teacherName = `${profile.firstName || ""} ${profile.lastName}`.trim();
+
+    const q = query(
+      collection(db, "timetable"),
+      where("subject", "==", profile.subject),
+      where("teacherName", "==", teacherName),
+      orderBy("date"),
+      orderBy("time")
     );
-  }
-  if (!profile) {
-    return (
-      <div className="min-h-screen flex items-center justify-center text-red-600">
-        No teacher profile found. Please complete your application.
-      </div>
+
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const entries = snap.docs.map(
+          (d) => ({ id: d.id, ...(d.data() as TimetableEntry) }) as TimetableEntry
+        );
+        setTimetable(entries);
+      },
+      (error) => console.error("❌ Error fetching teacher timetable:", error.message)
     );
-  }
-  if (profile.status !== "approved" || !profile.classActivated) {
-    return (
-      <div className="min-h-screen flex items-center justify-center text-yellow-600">
-        Your application is {profile.status}. Waiting for class activation.
-      </div>
-    );
-  }
+
+    return () => unsub();
+  }, [profile?.subject, profile?.lastName]);
+
+  /* ---------------- Group timetable by date ---------------- */
+  const groupedTimetable = useMemo(() => {
+    const groups: Record<string, TimetableEntry[]> = {};
+    timetable.forEach((entry) => {
+      if (!groups[entry.date]) groups[entry.date] = [];
+      groups[entry.date].push(entry);
+    });
+    return Object.entries(groups).sort(([a], [b]) => (a > b ? 1 : -1));
+  }, [timetable]);
 
   /* ---------------- Logout ---------------- */
   const handleLogout = async () => {
@@ -127,6 +146,31 @@ const TeacherDashboard: React.FC = () => {
     }
   };
 
+  /* ---------------- Guards ---------------- */
+  if (!user)
+    return <div className="min-h-screen flex items-center justify-center">Please sign in.</div>;
+
+  if (loadingProfile)
+    return (
+      <div className="min-h-screen flex items-center justify-center text-gray-600">
+        <Loader2 className="h-6 w-6 animate-spin mr-2" /> Loading profile...
+      </div>
+    );
+
+  if (!profile)
+    return (
+      <div className="min-h-screen flex items-center justify-center text-red-600">
+        No teacher profile found. Please complete your application.
+      </div>
+    );
+
+  if (profile.status !== "approved" || !profile.classActivated)
+    return (
+      <div className="min-h-screen flex items-center justify-center text-yellow-600">
+        Your application is {profile.status}. Waiting for class activation.
+      </div>
+    );
+
   /* ---------------- UI ---------------- */
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -135,7 +179,7 @@ const TeacherDashboard: React.FC = () => {
         <div className="max-w-6xl mx-auto px-4 flex justify-between items-center py-4">
           <div>
             <h1 className="text-xl font-bold text-blue-700">
-              Welcome Ms. {profile.lastName || profile.firstName}
+              Welcome {profile.firstName} {profile.lastName}
             </h1>
             <p className="text-gray-600 text-sm">
               Subject: <span className="font-medium">{profile.subject}</span>
@@ -151,9 +195,11 @@ const TeacherDashboard: React.FC = () => {
           {["classroom", "timetable", "settings"].map((tab) => (
             <button
               key={tab}
-              onClick={() => setActiveTab(tab as "classroom" | "timetable" | "settings")}
+              onClick={() => setActiveTab(tab as any)}
               className={`px-4 py-2 rounded transition ${
-                activeTab === tab ? "bg-blue-600 text-white" : "text-gray-700 hover:bg-gray-200"
+                activeTab === tab
+                  ? "bg-blue-600 text-white"
+                  : "text-gray-700 hover:bg-gray-200"
               }`}
             >
               {tab.charAt(0).toUpperCase() + tab.slice(1)}
@@ -163,29 +209,32 @@ const TeacherDashboard: React.FC = () => {
       </div>
 
       {/* Main Content */}
-      <div className="max-w-4xl mx-auto w-full flex-grow p-6">
+      <div className="max-w-5xl mx-auto w-full flex-grow p-6">
         {/* CLASSROOM TAB */}
         {activeTab === "classroom" && (
           <Card className="p-6 shadow-sm border bg-white">
             <h2 className="text-lg font-semibold mb-4">🧑‍🏫 Classroom Links</h2>
 
             <div className="space-y-4">
+              {/* Zoom */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between">
                 <div>
                   <p className="font-medium">Zoom Meeting</p>
                   <p className="text-sm text-gray-600">For live classes or virtual sessions.</p>
                 </div>
                 <Button
-                  onClick={() => {
-                    if (profile.zoomLink) window.open(profile.zoomLink, "_blank");
-                    else alert("No Zoom link available.");
-                  }}
+                  onClick={() =>
+                    profile.zoomLink
+                      ? window.open(profile.zoomLink, "_blank")
+                      : alert("No Zoom link available.")
+                  }
                   className="bg-blue-600 hover:bg-blue-700 text-white"
                 >
                   Join Zoom
                 </Button>
               </div>
 
+              {/* Google Classroom */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between">
                 <div>
                   <p className="font-medium">Google Classroom</p>
@@ -194,11 +243,11 @@ const TeacherDashboard: React.FC = () => {
                   </p>
                 </div>
                 <Button
-                  onClick={() => {
-                    if (profile.googleClassroomLink)
-                      window.open(profile.googleClassroomLink, "_blank");
-                    else alert("No Google Classroom link available.");
-                  }}
+                  onClick={() =>
+                    profile.googleClassroomLink
+                      ? window.open(profile.googleClassroomLink, "_blank")
+                      : alert("No Google Classroom link available.")
+                  }
                   className="bg-green-600 hover:bg-green-700 text-white"
                 >
                   Enter Classroom
@@ -210,8 +259,72 @@ const TeacherDashboard: React.FC = () => {
 
         {/* TIMETABLE TAB */}
         {activeTab === "timetable" && (
-          <div className="space-y-3">
-            <TimetableCard grade="all" subject={profile.subject!} />
+          <div className="space-y-6">
+            <h2 className="text-lg font-semibold text-blue-700">
+              🗓️ My Teaching Timetable
+            </h2>
+
+            {groupedTimetable.length === 0 ? (
+              <p className="text-gray-500 italic">No timetable entries found for your subject.</p>
+            ) : (
+              groupedTimetable.map(([date, entries]) => (
+                <div key={date}>
+                  <h3 className="font-semibold text-blue-800 mb-3 flex items-center gap-2">
+                    <Calendar className="w-4 h-4" />{" "}
+                    {new Date(date).toLocaleDateString("en-US", {
+                      weekday: "long",
+                      month: "short",
+                      day: "numeric",
+                    })}
+                  </h3>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {entries.map((entry) => (
+                      <Card
+                        key={entry.id}
+                        className="p-4 border-l-4 border-blue-500 bg-blue-50 shadow-sm hover:shadow-md transition"
+                      >
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-center gap-2 text-blue-800 font-semibold">
+                            <BookOpen className="w-4 h-4" /> {entry.subject}
+                          </div>
+                          <div className="flex items-center gap-2 text-sm text-gray-700">
+                            <GraduationCap className="w-4 h-4" /> {entry.grade}
+                          </div>
+                          <div className="flex items-center gap-2 text-sm text-gray-700">
+                            <Clock className="w-4 h-4" /> {entry.time} ({entry.duration} mins)
+                          </div>
+                        </div>
+
+                        <div className="flex gap-2 mt-3">
+                          {profile.zoomLink && (
+                            <a
+                              href={profile.zoomLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              <Button className="bg-blue-600 hover:bg-blue-700 text-white text-xs">
+                                Zoom
+                              </Button>
+                            </a>
+                          )}
+                          {profile.googleClassroomLink && (
+                            <a
+                              href={profile.googleClassroomLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              <Button className="bg-green-600 hover:bg-green-700 text-white text-xs">
+                                Classroom
+                              </Button>
+                            </a>
+                          )}
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         )}
 
@@ -284,12 +397,11 @@ const TeacherDashboard: React.FC = () => {
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Zoom Link
                 </label>
-                {/* zoom link */}
                 <input
                   type="url"
                   value={tempZoom}
                   onChange={(e) => setTempZoom(e.target.value)}
-                  placeholder="https://us05web.zoom.us/j/8613739793?pwd=Lwj6XbILVUpQbpufriNsFbtk2zE0SZ.1&omn=87576706234"
+                  placeholder="https://zoom.us/j/..."
                   className="w-full border border-gray-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -298,13 +410,11 @@ const TeacherDashboard: React.FC = () => {
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Google Classroom Link
                 </label>
-
-                {/* google classroom link */}
                 <input
                   type="url"
                   value={tempClassroom}
                   onChange={(e) => setTempClassroom(e.target.value)}
-                  placeholder="https://classroom.google.com/c/ODE3OTM5MTUyNTY0"
+                  placeholder="https://classroom.google.com/..."
                   className="w-full border border-gray-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500"
                 />
               </div>
