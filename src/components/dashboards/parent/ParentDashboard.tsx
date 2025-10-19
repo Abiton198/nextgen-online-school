@@ -224,55 +224,8 @@ export default function ParentDashboard() {
             {showRegisterCard ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
           </CardTitle>
         </CardHeader>
-
-        {showRegisterCard && (
-          <CardContent className="space-y-4 mt-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Input
-                placeholder="First Name"
-                value={newStudent.firstName}
-                onChange={(e) => handleFieldChange("firstName", e.target.value)}
-              />
-              <Input
-                placeholder="Last Name"
-                value={newStudent.lastName}
-                onChange={(e) => handleFieldChange("lastName", e.target.value)}
-              />
-              <Input
-                placeholder="Email (student login)"
-                value={newStudent.email}
-                onChange={(e) => handleFieldChange("email", e.target.value)}
-              />
-              <Select onValueChange={(v) => handleFieldChange("grade", v)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select Grade" />
-                </SelectTrigger>
-                <SelectContent>
-                  {["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"].map((g) => (
-                    <SelectItem key={g} value={g}>
-                      Grade {g}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select onValueChange={(v) => handleFieldChange("gender", v)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select Gender" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Male">Male</SelectItem>
-                  <SelectItem value="Female">Female</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <Button className="w-full bg-blue-600 text-white hover:bg-blue-700" onClick={handleRegisterStudent}>
-              Register & Link Student
-            </Button>
-          </CardContent>
-        )}
-      </Card>
-
+</Card>
+      
       {/* Tabs */}
       <div className="flex space-x-4 border-b pb-2">
         {sections.map((s) => (
@@ -319,14 +272,16 @@ export default function ParentDashboard() {
       )}
 
       {/* Timetable for selected child */}
-      {selectedChild && (
-        <div className="mt-6">
-          <h3 className="font-semibold mb-2">
-            Timetable for {selectedChild.firstName} (Grade {selectedChild.grade})
-          </h3>
-          <TimetableCard grade={selectedChild.grade} />
-        </div>
-      )}
-    </div>
+        {selectedChild && (
+          <div className="mt-6">
+            <h3 className="font-semibold mb-2">
+              Timetable for {selectedChild.firstName} (Grade {selectedChild.grade})
+            </h3>
+            {/* Parent view → hide class/zoom links */}
+            <TimetableCard grade={selectedChild.grade} showLinks={false} />
+          </div>
+        )}
+
+            </div>
   );
 }

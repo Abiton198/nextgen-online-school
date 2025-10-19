@@ -35,12 +35,13 @@ interface TeacherLink {
 interface Props {
   grade?: string;     // student’s grade OR parent's child grade
   subject?: string;   // teacher’s subject filter
+  showLinks?: boolean; // 🔹 new: control whether links appear
 }
 
 /* ============================================================
    🔹 TimetableCard Component
    ============================================================ */
-const TimetableCard: React.FC<Props> = ({ grade, subject }) => {
+const TimetableCard: React.FC<Props> = ({ grade, subject, showLinks = true }) => {
   const [entries, setEntries] = useState<TimetableEntry[]>([]);
   const [teacherLinks, setTeacherLinks] = useState<Record<string, TeacherLink>>({});
 
@@ -51,7 +52,6 @@ const TimetableCard: React.FC<Props> = ({ grade, subject }) => {
     if (!grade && !subject) return;
 
     const timetableRef = collection(db, "timetable");
-
     let q;
 
     if (subject && grade === "all") {
@@ -72,7 +72,7 @@ const TimetableCard: React.FC<Props> = ({ grade, subject }) => {
         orderBy("time")
       );
     } else {
-      // 👨‍🎓 Student view → all subjects in their grade
+      // 👨‍🎓 Student/Parent view → all subjects in their grade
       q = query(
         timetableRef,
         where("grade", "==", grade!),
@@ -87,7 +87,6 @@ const TimetableCard: React.FC<Props> = ({ grade, subject }) => {
         ...(d.data() as TimetableEntry),
       }));
 
-      // Sort chronologically
       const sorted = data.sort((a, b) => {
         const dateA = new Date(`${a.date} ${a.time}`);
         const dateB = new Date(`${b.date} ${b.time}`);
@@ -97,15 +96,12 @@ const TimetableCard: React.FC<Props> = ({ grade, subject }) => {
       setEntries(sorted);
 
       // Fetch teacher links (googleClassroomLink + zoomLink)
-      const teacherNames = Array.from(
-        new Set(sorted.map((e) => e.teacherName))
-      );
+      const teacherNames = Array.from(new Set(sorted.map((e) => e.teacherName)));
       if (teacherNames.length > 0) {
         const links: Record<string, TeacherLink> = {};
         const teachersRef = collection(db, "teachers");
 
         for (const name of teacherNames) {
-          // Match by full teacher name
           const [first, last] = name.split(" ");
           const q = query(
             teachersRef,
@@ -175,41 +171,49 @@ const TimetableCard: React.FC<Props> = ({ grade, subject }) => {
                     <span className="font-medium">Grade:</span> {e.grade}
                   </p>
                   <p className="text-sm text-gray-600">
-                    <span className="font-medium">Date:</span>{" "}
-                    {formatDate(e.date)} •{" "}
-                    <span className="font-medium">Time:</span> {e.time} (
-                    {e.duration}m)
+                    <span className="font-medium">Date:</span> {formatDate(e.date)} •{" "}
+                    <span className="font-medium">Time:</span> {e.time} ({e.duration}m)
                   </p>
                   <p className="text-sm text-gray-600">
-                    <span className="font-medium">Teacher:</span>{" "}
-                    {e.teacherName}
+                    <span className="font-medium">Teacher:</span> {e.teacherName}
                   </p>
 
-                  {/* 🔗 Action Buttons */}
-                  <div className="flex gap-3 mt-2">
-                    {linkInfo?.googleClassroomLink && (
-                      <a
-                        href={linkInfo.googleClassroomLink}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        <Button className="bg-green-600 hover:bg-green-700 text-white text-xs">
-                          Google Classroom
+                  {/* 🔗 Action Buttons (hidden for parents) */}
+                  {showLinks && (
+                    <div className="flex gap-3 mt-2">
+                      {linkInfo?.googleClassroomLink ? (
+                        <a
+                          href={linkInfo.googleClassroomLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          <Button className="bg-green-600 hover:bg-green-700 text-white text-xs">
+                            Google Classroom
+                          </Button>
+                        </a>
+                      ) : (
+                        <Button disabled className="bg-gray-300 text-gray-600 text-xs">
+                          Classroom Pending
                         </Button>
-                      </a>
-                    )}
-                    {linkInfo?.zoomLink && (
-                      <a
-                        href={linkInfo.zoomLink}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        <Button className="bg-blue-600 hover:bg-blue-700 text-white text-xs">
-                          Zoom
+                      )}
+
+                      {linkInfo?.zoomLink ? (
+                        <a
+                          href={linkInfo.zoomLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          <Button className="bg-blue-600 hover:bg-blue-700 text-white text-xs">
+                            Zoom
+                          </Button>
+                        </a>
+                      ) : (
+                        <Button disabled className="bg-gray-300 text-gray-600 text-xs">
+                          Zoom Pending
                         </Button>
-                      </a>
-                    )}
-                  </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })}
