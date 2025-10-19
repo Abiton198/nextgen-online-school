@@ -323,21 +323,33 @@ const StudentDashboard: React.FC = () => {
 {activeTab === "classroom" && (
   <div className="space-y-6">
     <h2 className="text-lg font-semibold text-blue-700">🧑‍🏫 My Classrooms</h2>
-    <p className="text-gray-600">
-      Access your subject classrooms and virtual sessions at any time.
+    <p className="text-gray-600 mb-2">
+      Access your subject classrooms and virtual sessions anytime.
     </p>
 
     {timetable.length === 0 ? (
       <p className="text-gray-500 italic">No subjects or classrooms found.</p>
     ) : (
-      timetable.map((cls) => {
+      // ✅ Group by subject so we don’t repeat entries
+      Array.from(
+        new Map(
+          timetable.map((cls) => [cls.subject, cls]) // unique per subject
+        ).values()
+      ).map((cls) => {
         const teacher = teacherLinks?.[cls.teacherName];
         const classroomLink = teacher?.googleClassroomLink;
         const zoomLink = teacher?.zoomLink;
 
+        console.log("🧠 DEBUG Classroom:", {
+          subject: cls.subject,
+          teacherName: cls.teacherName,
+          classroomLink,
+          zoomLink,
+        });
+
         return (
           <Card
-            key={cls.id}
+            key={cls.subject}
             className="p-5 border-l-4 border-blue-500 bg-white shadow-sm hover:shadow-md transition flex flex-col sm:flex-row sm:items-center sm:justify-between"
           >
             {/* Subject + Teacher Info */}
@@ -348,7 +360,7 @@ const StudentDashboard: React.FC = () => {
               </p>
             </div>
 
-            {/* Link Buttons */}
+            {/* Buttons */}
             <div className="flex flex-wrap gap-3 mt-3 sm:mt-0">
               {classroomLink ? (
                 <a
@@ -370,7 +382,11 @@ const StudentDashboard: React.FC = () => {
               )}
 
               {zoomLink ? (
-                <a href={zoomLink} target="_blank" rel="noopener noreferrer">
+                <a
+                  href={zoomLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
                   <Button className="bg-blue-600 hover:bg-blue-700 text-white text-xs">
                     Zoom
                   </Button>
