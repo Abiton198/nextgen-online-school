@@ -48,6 +48,15 @@ interface TimetableEntry {
 }
 
 /* ============================================================
+   🔹 Helper Function: Normalize Grade
+   Converts "8" → "Grade 8" for matching timetable docs
+   ============================================================ */
+const normalizeGrade = (g?: string) => {
+  if (!g) return "";
+  return g.startsWith("Grade") ? g : `Grade ${g}`;
+};
+
+/* ============================================================
    🔹 Student Dashboard Component
    ============================================================ */
 const StudentDashboard: React.FC = () => {
@@ -82,6 +91,7 @@ const StudentDashboard: React.FC = () => {
         setStudentId(docSnap.id);
         setProfile(docSnap.data() as StudentProfile);
 
+        // Real-time updates for student data
         const unsub = onSnapshot(doc(db, "students", docSnap.id), (s) => {
           if (s.exists()) {
             setProfile(s.data() as StudentProfile);
@@ -114,98 +124,91 @@ const StudentDashboard: React.FC = () => {
     return () => unsub();
   }, [studentId]);
 
- 
   /* ============================================================
-   🔹 Fetch Timetable Entries (Realtime)
-   ============================================================ */
-useEffect(() => {
-  if (!profile?.grade) return;
+     🔹 Fetch Timetable Entries (Realtime) — includes grade normalization
+     ============================================================ */
+  useEffect(() => {
+    if (!profile?.grade) return;
 
-  console.log("📘 DEBUG: Fetching timetable for grade:", profile.grade);
+    const normalizedGrade = normalizeGrade(profile.grade);
+    console.log("📘 DEBUG: Fetching timetable for normalized grade:", normalizedGrade);
 
-  try {
-    const qTT = query(
-      collection(db, "timetable"),
-      where("grade", "==", profile.grade),
-      orderBy("date"),
-      orderBy("time")
-    );
+    try {
+      const qTT = query(
+        collection(db, "timetable"),
+        where("grade", "==", normalizedGrade),
+        orderBy("date"),
+        orderBy("time")
+      );
 
-    const unsubTT = onSnapshot(
-      qTT,
-      async (snap) => {
-        console.log("📘 DEBUG: Timetable snapshot received:", snap.size, "docs");
+      const unsubTT = onSnapshot(
+        qTT,
+        async (snap) => {
+          console.log("📘 DEBUG: Timetable snapshot received:", snap.size, "docs");
 
-        if (snap.empty) {
-          console.warn("⚠️ No timetable entries found for grade:", profile.grade);
-        }
+          if (snap.empty) {
+            console.warn("⚠️ No timetable entries found for grade:", normalizedGrade);
+          }
 
-        const entries = snap.docs.map((d) => ({
-          id: d.id,
-          ...(d.data() as TimetableEntry),
-        }));
-        setTimetable(entries);
+          const entries = snap.docs.map((d) => ({
+            id: d.id,
+            ...(d.data() as TimetableEntry),
+          }));
+          setTimetable(entries);
 
-        // Collect unique teacher names
-        const teacherNames = Array.from(new Set(entries.map((e) => e.teacherName)));
-        const links: Record<
-          string,
-          { googleClassroomLink?: string; zoomLink?: string }
-        > = {};
+          // Fetch teacher links
+          const teacherNames = Array.from(new Set(entries.map((e) => e.teacherName)));
+          const links: Record<
+            string,
+            { googleClassroomLink?: string; zoomLink?: string }
+          > = {};
 
-        // 📘 DEBUG: Start fetching teacher links
-        for (const name of teacherNames) {
-          const [first, last] = name.split(" ");
-          if (!first || !last) continue;
+          for (const name of teacherNames) {
+            const [first, last] = name.split(" ");
+            if (!first || !last) continue;
 
-          try {
-            const tq = query(
-              collection(db, "teachers"),
-              where("firstName", "==", first),
-              where("lastName", "==", last)
-            );
-            const tSnap = await getDocs(tq);
+            try {
+              const tq = query(
+                collection(db, "teachers"),
+                where("firstName", "==", first),
+                where("lastName", "==", last)
+              );
+              const tSnap = await getDocs(tq);
 
-            if (tSnap.empty) {
-              console.warn("⚠️ No teacher found for:", name);
-              continue;
+              if (tSnap.empty) {
+                console.warn("⚠️ No teacher found for:", name);
+                continue;
+              }
+
+              const data = tSnap.docs[0].data();
+              links[name] = {
+                googleClassroomLink: data.googleClassroomLink,
+                zoomLink: data.zoomLink,
+              };
+
+              console.log("📘 DEBUG: Found teacher:", name, "→", links[name]);
+            } catch (teacherErr: any) {
+              console.error("❌ Teacher fetch error for:", name, teacherErr.message);
             }
+          }
 
-            const data = tSnap.docs[0].data();
-            links[name] = {
-              googleClassroomLink: data.googleClassroomLink,
-              zoomLink: data.zoomLink,
-            };
-
-            console.log("📘 DEBUG: Found teacher:", name, "→", links[name]);
-          } catch (teacherErr: any) {
-            console.error("❌ Teacher fetch error for:", name, teacherErr.message);
+          setTeacherLinks(links);
+        },
+        (error) => {
+          console.error("❌ Firestore timetable listener error:", error.message);
+          if (error.code === "permission-denied") {
+            console.error("🚫 Permission denied: Check Firestore rules for 'timetable'.");
+          } else if (error.message.includes("index")) {
+            console.warn("⚠️ Missing index: Create index link should appear above ⬆️");
           }
         }
+      );
 
-        setTeacherLinks(links);
-      },
-      (error) => {
-        // 📘 Firestore listener error handling
-        console.error("❌ Firestore timetable listener error:", error.message);
-        if (error.code === "permission-denied") {
-          console.error(
-            "🚫 Permission denied: Check your Firestore rules for 'timetable'."
-          );
-        } else if (error.message.includes("index")) {
-          console.warn(
-            "⚠️ Missing index: Firestore will log a link to create it above ⬆️"
-          );
-        }
-      }
-    );
-
-    return () => unsubTT();
-  } catch (err: any) {
-    console.error("❌ Timetable setup failed:", err.message);
-  }
-}, [profile?.grade]);
-
+      return () => unsubTT();
+    } catch (err: any) {
+      console.error("❌ Timetable setup failed:", err.message);
+    }
+  }, [profile?.grade]);
 
   /* ============================================================
      🔹 Compute Next Upcoming Class
@@ -263,11 +266,7 @@ useEffect(() => {
      🔹 Guards
      ============================================================ */
   if (!user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        Please sign in.
-      </div>
-    );
+    return <div className="min-h-screen flex items-center justify-center">Please sign in.</div>;
   }
 
   if (loadingProfile) {
@@ -303,10 +302,7 @@ useEffect(() => {
       <div className="bg-white shadow-sm border-b">
         <div className="max-w-6xl mx-auto px-4 flex justify-between items-center py-4">
           <h1 className="text-xl font-bold">Student Dashboard</h1>
-          <Button
-            onClick={handleLogout}
-            className="bg-red-600 hover:bg-red-700"
-          >
+          <Button onClick={handleLogout} className="bg-red-600 hover:bg-red-700">
             Logout
           </Button>
         </div>
@@ -318,9 +314,7 @@ useEffect(() => {
               key={tab}
               onClick={() => setActiveTab(tab as any)}
               className={`px-4 py-2 rounded ${
-                activeTab === tab
-                  ? "bg-blue-600 text-white"
-                  : "text-gray-700 hover:bg-gray-200"
+                activeTab === tab ? "bg-blue-600 text-white" : "text-gray-700 hover:bg-gray-200"
               }`}
             >
               {tab.charAt(0).toUpperCase() + tab.slice(1)}
@@ -341,9 +335,7 @@ useEffect(() => {
             <p className="text-sm text-gray-600">
               Lessons Completed: {profile.lessonsCompleted || 0}
             </p>
-            <p className="text-sm text-gray-600">
-              Points: {profile.points || 0}
-            </p>
+            <p className="text-sm text-gray-600">Points: {profile.points || 0}</p>
           </Card>
         )}
 
@@ -354,18 +346,11 @@ useEffect(() => {
               <p className="text-gray-600">No classroom links yet.</p>
             ) : (
               classrooms.map((c) => (
-                <Card
-                  key={c.id}
-                  className="p-4 flex justify-between items-center"
-                >
+                <Card key={c.id} className="p-4 flex justify-between items-center">
                   <div>
                     <h3 className="font-semibold">{c.subject}</h3>
                   </div>
-                  <a
-                    href={c.link}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
+                  <a href={c.link} target="_blank" rel="noopener noreferrer">
                     <Button className="bg-blue-600 hover:bg-blue-700 text-white">
                       Join Classroom
                     </Button>
@@ -379,9 +364,6 @@ useEffect(() => {
         {/* 🔹 Timetable Tab */}
         {activeTab === "timetable" && (
           <div className="space-y-4">
-            {/* ================================
-                ⏰ Next Upcoming Class Section
-               ================================ */}
             {nextClass ? (
               <Card
                 className={`p-5 border-l-4 shadow-sm ${
@@ -403,21 +385,14 @@ useEffect(() => {
                   })}{" "}
                   • {nextClass.time} ({nextClass.duration} mins)
                 </p>
-                <p className="text-sm text-gray-700">
-                  Teacher: {nextClass.teacherName}
-                </p>
-                <p className="text-sm font-medium mt-1 text-green-700">
-                  {countdown}
-                </p>
+                <p className="text-sm text-gray-700">Teacher: {nextClass.teacherName}</p>
+                <p className="text-sm font-medium mt-1 text-green-700">{countdown}</p>
 
                 {/* 🔗 Links */}
                 <div className="flex gap-3 mt-3">
                   {teacherLinks[nextClass.teacherName]?.googleClassroomLink && (
                     <a
-                      href={
-                        teacherLinks[nextClass.teacherName]
-                          ?.googleClassroomLink
-                      }
+                      href={teacherLinks[nextClass.teacherName]?.googleClassroomLink}
                       target="_blank"
                       rel="noopener noreferrer"
                     >
@@ -441,12 +416,12 @@ useEffect(() => {
               </Card>
             ) : (
               <p className="text-gray-500 text-sm italic">
-                No upcoming classes found.
+                No upcoming classes found for your grade.
               </p>
             )}
 
             {/* Full Timetable */}
-            <TimetableCard grade={profile.grade!} />
+            <TimetableCard grade={normalizeGrade(profile.grade!)} />
           </div>
         )}
       </div>
