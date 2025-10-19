@@ -339,27 +339,70 @@ const StudentDashboard: React.FC = () => {
           </Card>
         )}
 
-        {/* 🔹 Classroom Tab */}
-        {activeTab === "classroom" && (
-          <div className="grid gap-4">
-            {classrooms.length === 0 ? (
-              <p className="text-gray-600">No classroom links yet.</p>
-            ) : (
-              classrooms.map((c) => (
-                <Card key={c.id} className="p-4 flex justify-between items-center">
-                  <div>
-                    <h3 className="font-semibold">{c.subject}</h3>
-                  </div>
-                  <a href={c.link} target="_blank" rel="noopener noreferrer">
-                    <Button className="bg-blue-600 hover:bg-blue-700 text-white">
-                      Join Classroom
-                    </Button>
-                  </a>
-                </Card>
-              ))
-            )}
-          </div>
-        )}
+      {/* 🔹 Classroom Tab (Auto from timetable + teachers) */}
+{activeTab === "classroom" && (
+  <div className="grid gap-4">
+    {timetable.length === 0 ? (
+      <p className="text-gray-600">No classes scheduled yet.</p>
+    ) : (
+      timetable.map((cls) => {
+        const teacher = teacherLinks[cls.teacherName];
+        const classroomLink = teacher?.googleClassroomLink;
+        const zoomLink = teacher?.zoomLink;
+
+        return (
+          <Card
+            key={cls.id}
+            className="p-4 flex flex-col md:flex-row justify-between items-start md:items-center"
+          >
+            <div>
+              <h3 className="font-semibold text-blue-800">
+                {cls.subject}
+              </h3>
+              <p className="text-sm text-gray-600">
+                {cls.teacherName} • {cls.grade}
+              </p>
+              <p className="text-xs text-gray-500">
+                {cls.date} • {cls.time} ({cls.duration} mins)
+              </p>
+            </div>
+
+            <div className="flex gap-3 mt-3 md:mt-0">
+              {classroomLink && (
+                <a
+                  href={classroomLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <Button className="bg-green-600 hover:bg-green-700 text-white text-xs">
+                    Google Classroom
+                  </Button>
+                </a>
+              )}
+              {zoomLink && (
+                <a
+                  href={zoomLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <Button className="bg-blue-600 hover:bg-blue-700 text-white text-xs">
+                    Zoom
+                  </Button>
+                </a>
+              )}
+              {!classroomLink && !zoomLink && (
+                <p className="text-xs text-gray-400 italic">
+                  No links available yet.
+                </p>
+              )}
+            </div>
+          </Card>
+        );
+      })
+    )}
+  </div>
+)}
+
 
         {/* 🔹 Timetable Tab */}
         {activeTab === "timetable" && (
