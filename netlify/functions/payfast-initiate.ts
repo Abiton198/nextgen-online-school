@@ -3,14 +3,25 @@ import crypto from "crypto";
 
 export const handler: Handler = async (event) => {
   if (event.httpMethod !== "POST") {
-    return { statusCode: 405, body: "Method not allowed" };
+    return { statusCode: 405, body: "Method Not Allowed" };
   }
 
   try {
-    const { purpose, amount, itemName, regId, parentId, parentEmail, paymentId } = JSON.parse(event.body || "{}");
+    const {
+      purpose,
+      amount,
+      itemName,
+      regId,
+      parentId,
+      parentEmail,
+      paymentId,
+    } = JSON.parse(event.body || "{}");
 
-    if (!amount || !regId) {
-      return { statusCode: 400, body: JSON.stringify({ error: "Missing amount or regId" }) };
+    if (!amount || !regId || !paymentId || !parentEmail) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ error: "Missing required fields" }),
+      };
     }
 
     const isSandbox = process.env.PAYFAST_MODE === "sandbox";
@@ -18,33 +29,46 @@ export const handler: Handler = async (event) => {
       ? "https://sandbox.payfast.co.za/eng/process"
       : "https://www.payfast.co.za/eng/process";
 
-    const merchant_id = process.env.PAYFAST_MERCHANT_ID;
-    const merchant_key = process.env.PAYFAST_MERCHANT_KEY;
-    const return_url = `${process.env.SITE_URL}/parent/payments?status=success`;
-    const cancel_url = `${process.env.SITE_URL}/parent/payments?status=cancel`;
-    const notify_url = `${process.env.SITE_URL}/.netlify/functions/payfast-notify`;
+    const merchant_id = process.env.PAYFAST_MERCHANT_ID!;
+    const merchant_key = process.env.PAYFAST_MERCHANT_KEY!;
+    const passphrase = process.env.PAYFAST_PASSPHRASE || "";
+    const siteUrl = process.env.SITE_URL!;
 
+    // ✅ Include regId + paymentId in redirect URLs
+    const return_url = `${siteUrl}/parent/payments?status=success&regId=${regId}&paymentId=${paymentId}`;
+    const cancel_url = `${siteUrl}/parent/payments?status=cancel&regId=${regId}&paymentId=${paymentId}`;
+    const notify_url = `${siteUrl}/.netlify/functions/payfast-notify`;
+
+    // ✅ Sorted PayFast data (alphabetical keys)
     const data = {
+      amount: Number(amount).toFixed(2),
+      cancel_url,
+      email_address: parentEmail,
+      item_name: itemName || purpose,
+      m_payment_id: paymentId, // ensures 1:1 with Firestore
       merchant_id,
       merchant_key,
-      return_url,
-      cancel_url,
-      notify_url,
       name_first: "Parent",
-      email_address: parentEmail,
-      m_payment_id: regId, // you can change this to paymentId if you want unique mapping
-      amount,
-      item_name: itemName || purpose,
+      notify_url,
+      return_url,
     };
 
-    // Generate signature
-    const pfString = Object.entries(data)
-      .map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
-      .join("&");
+    // ✅ Construct and hash with optional passphrase
+    const params = new URLSearchParams();
+    Object.keys(data)
+      .sort()
+      .forEach((key) => {
+        params.append(key, data[key as keyof typeof data]!.toString());
+      });
 
-    const signature = crypto.createHash("md5").update(pfString).digest("hex");
+    if (passphrase) params.append("passphrase", passphrase);
 
-    const redirectUrl = `${payfastURL}?${pfString}&signature=${signature}`;
+    const signature = crypto
+      .createHash("md5")
+      .update(params.toString())
+      .digest("hex");
+
+    const redirectUrl = `${payfastURL}?${params.toString()}&signature=${signature}`;
 
     return {
       statusCode: 200,
@@ -52,6 +76,9 @@ export const handler: Handler = async (event) => {
     };
   } catch (err) {
     console.error("❌ PayFast initiate error:", err);
-    return { statusCode: 500, body: JSON.stringify({ error: "Internal Server Error" }) };
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: "Internal Server Error" }),
+    };
   }
 };

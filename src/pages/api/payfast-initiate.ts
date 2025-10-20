@@ -1,18 +1,17 @@
-// pages/api/payfast-initiate.ts
 import type { NextApiRequest, NextApiResponse } from "next";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") return res.status(405).end();
 
   try {
-    const { purpose, customAmount, itemName, regId, parent } = req.body;
+    const { purpose, amount, itemName, regId, parentId, parentEmail, paymentId } = req.body;
 
     if (!regId) {
       return res.status(400).json({ error: "Missing registration ID" });
     }
 
-    if (!parent?.email) {
-      return res.status(400).json({ error: "Missing parent info" });
+    if (!parentEmail) {
+      return res.status(400).json({ error: "Missing parent email" });
     }
 
     const defaultAmounts: Record<string, string> = {
@@ -33,8 +32,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const finalAmount =
       ["donation", "event", "other"].includes(purpose)
-        ? Number(customAmount) > 0
-          ? Number(customAmount).toFixed(2)
+        ? Number(amount) > 0
+          ? Number(amount).toFixed(2)
           : defaultAmounts[purpose]
         : defaultAmounts[purpose];
 
@@ -52,18 +51,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return_url: returnUrl,
       cancel_url: cancelUrl,
       notify_url: notifyUrl,
-      m_payment_id: regId,
-      name_first: parent?.firstName || "Parent",
-      name_last: parent?.lastName || "",
-      email_address: parent?.email || "",
+      m_payment_id: paymentId || regId,
+      name_first: parentId || "Parent",
+      email_address: parentEmail,
       amount: finalAmount,
       item_name: finalItemName,
     });
 
     const redirectUrl = `${payfastUrl}?${params.toString()}`;
-    if (!redirectUrl || redirectUrl === "null") {
-      throw new Error("Redirect URL not generated");
-    }
+    if (!redirectUrl) throw new Error("Redirect URL not generated");
 
     return res.status(200).json({ redirectUrl });
   } catch (err: any) {
