@@ -1,20 +1,19 @@
+// netlify/functions/payfast-initiate.ts
 import type { Handler } from "@netlify/functions";
 
 export const handler: Handler = async (event) => {
-  if (event.httpMethod !== "POST") {
-    return { statusCode: 405, body: "Method Not Allowed" };
-  }
-
   try {
-    const { amount, itemName, regId, parentEmail, paymentId } = JSON.parse(event.body || "{}");
+    const body = JSON.parse(event.body || "{}");
+    const { amount, itemName, regId, parentEmail, paymentId } = body;
 
     if (!amount || !regId || !paymentId || !parentEmail) {
       return { statusCode: 400, body: JSON.stringify({ error: "Missing fields" }) };
     }
 
-    const payfastUrl = process.env.PAYFAST_MODE === "sandbox"
-      ? "https://sandbox.payfast.co.za/eng/process"
-      : "https://www.payfast.co.za/eng/process";
+    const payfastUrl =
+      process.env.PAYFAST_MODE === "sandbox"
+        ? "https://sandbox.payfast.co.za/eng/process"
+        : "https://www.payfast.co.za/eng/process";
 
     const params = new URLSearchParams({
       merchant_id: process.env.PAYFAST_MERCHANT_ID!,
@@ -29,17 +28,15 @@ export const handler: Handler = async (event) => {
       item_name: itemName || "Payment",
     });
 
+    const redirectUrl = `${payfastUrl}?${params.toString()}`;
+    console.log("Generated PayFast URL:", redirectUrl);
+
     return {
       statusCode: 200,
-      body: JSON.stringify({
-        redirectUrl: `${payfastUrl}?${params.toString()}`,
-      }),
+      body: JSON.stringify({ redirectUrl }),
     };
-  } catch (err) {
+  } catch (err: any) {
     console.error("PayFast initiate error:", err);
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ error: "Server error" }),
-    };
+    return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
   }
 };
