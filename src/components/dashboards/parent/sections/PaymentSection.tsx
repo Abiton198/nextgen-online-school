@@ -1,20 +1,35 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
-
-const payfastUrl =
-  import.meta.env.VITE_PAYFAST_MODE === "sandbox"
-    ? "https://sandbox.payfast.co.za/eng/process"
-    : "https://www.payfast.co.za/eng/process";
 
 export default function PaymentsSection() {
   const { user } = useAuth();
 
-  // These are automatically injected from Netlify environment variables
+  const [envCheck, setEnvCheck] = useState(false);
+
+  // ✅ Environment vars — must start with VITE_ in Netlify
+  const payfastMode = import.meta.env.VITE_PAYFAST_MODE;
   const merchantId = import.meta.env.VITE_PAYFAST_MERCHANT_ID;
   const merchantKey = import.meta.env.VITE_PAYFAST_MERCHANT_KEY;
   const siteUrl = import.meta.env.VITE_SITE_URL;
+
+  const payfastUrl =
+    payfastMode === "sandbox"
+      ? "https://sandbox.payfast.co.za/eng/process"
+      : "https://www.payfast.co.za/eng/process";
+
+  useEffect(() => {
+    console.log("🧾 PayFast Env Vars:", {
+      payfastMode,
+      merchantId,
+      merchantKey,
+      siteUrl,
+    });
+    setEnvCheck(true);
+  }, []);
+
+  if (!envCheck) return null; // ensures env vars are loaded before render
 
   const [purpose, setPurpose] = useState("registration");
   const [customAmount, setCustomAmount] = useState("");
@@ -25,7 +40,6 @@ export default function PaymentsSection() {
       ? "1000.00"
       : (Number(customAmount) || 0).toFixed(2);
 
-  // Dynamic URLs
   const returnUrl = `${siteUrl}/parent/payments?status=success`;
   const cancelUrl = `${siteUrl}/parent/payments?status=cancel`;
   const notifyUrl = `${siteUrl}/.netlify/functions/payfast-notify`;
@@ -52,7 +66,7 @@ export default function PaymentsSection() {
         <input type="hidden" name="item_name" value={itemName} />
         <input type="hidden" name="amount" value={amount} />
 
-        {/* Payment Purpose */}
+        {/* Purpose */}
         <div>
           <label className="block mb-1 font-medium">Payment Purpose</label>
           <select
