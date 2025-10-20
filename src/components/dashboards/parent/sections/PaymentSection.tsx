@@ -10,8 +10,8 @@ import { Button } from "@/components/ui/button";
 const PaymentsSection: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-
   const location = useLocation();
+
   const searchParams = new URLSearchParams(location.search);
   const regId = searchParams.get("regId");
 
@@ -24,7 +24,7 @@ const PaymentsSection: React.FC = () => {
     message: "",
   });
 
-  // Show status if redirected back
+  // 🎯 Handle redirect feedback
   useEffect(() => {
     const status = searchParams.get("status");
     if (status === "success") {
@@ -42,41 +42,42 @@ const PaymentsSection: React.FC = () => {
     setAlert({ type: null, message: "" });
 
     try {
-      // 1️⃣ Save a pending payment record
-   const paymentRef = await addDoc(
-  collection(db, "registrations", regId, "payments"),
-  {
-    parentId: user.uid,
-    parentEmail: user.email,
-    regId,
-    purpose,
-    amount: purpose === "registration" ? 1000 : customAmount || null,
-    itemName,
-    status: "initiated",
-    createdAt: serverTimestamp(),
-  }
-);
+      // 1️⃣ Save pending payment to Firestore
+      const paymentRef = await addDoc(collection(db, "registrations", regId, "payments"), {
+        parentId: user.uid,
+        parentEmail: user.email,
+        regId,
+        purpose,
+        amount: purpose === "registration" ? 1000 : customAmount || null,
+        itemName,
+        status: "initiated",
+        createdAt: serverTimestamp(),
+      });
 
-      // 2️⃣ Call your backend to get PayFast redirect URL
-      const res = await fetch("/api/payfast-initiate", {
+      // 2️⃣ Request redirect URL from backend
+      const res = await fetch("/.netlify/functions/payfast-initiate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           purpose,
-          amount: customAmount,
+          amount: customAmount || 1000,
           itemName,
           regId,
           parentId: user.uid,
           parentEmail: user.email,
-          paymentId: paymentRef.id, // so backend can update this record
+          paymentId: paymentRef.id, // match Firestore doc
         }),
       });
 
       if (!res.ok) throw new Error("Failed to initiate payment");
 
       const { redirectUrl } = await res.json();
+      if (!redirectUrl) throw new Error("No redirect URL returned from backend");
+
+      // ✅ Redirect to PayFast
       window.location.href = redirectUrl;
     } catch (err: any) {
+      console.error("Payment error:", err);
       setAlert({ type: "error", message: `⚠️ ${err.message}` });
     } finally {
       setLoading(false);
@@ -90,7 +91,9 @@ const PaymentsSection: React.FC = () => {
       {alert.type && (
         <div
           className={`p-3 mb-4 rounded ${
-            alert.type === "success" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+            alert.type === "success"
+              ? "bg-green-100 text-green-700"
+              : "bg-red-100 text-red-700"
           }`}
         >
           {alert.message}
@@ -114,7 +117,7 @@ const PaymentsSection: React.FC = () => {
           </select>
         </div>
 
-        {/* Amount for donation/event/other */}
+        {/* Amount */}
         {(purpose === "donation" || purpose === "event" || purpose === "other") && (
           <div>
             <label className="block mb-1 font-medium">Amount (ZAR)</label>
