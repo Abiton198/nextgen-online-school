@@ -1,29 +1,30 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { collection, query, where, getDocs } from "firebase/firestore";
-import { db } from "@/lib/firebase"; // make sure this points to your Firestore init
+import { db } from "@/lib/firebase"; // ensure this points to your initialized Firestore
 
 export default function PaymentsSection() {
   const { user } = useAuth();
 
-  // ✅ Env variables (using VITE_ for frontend access)
+  // ✅ Environment variables (must use VITE_ prefix)
   const payfastMode = import.meta.env.VITE_PAYFAST_MODE;
   const merchantId = import.meta.env.VITE_PAYFAST_MERCHANT_ID;
   const merchantKey = import.meta.env.VITE_PAYFAST_MERCHANT_KEY;
   const siteUrl = import.meta.env.VITE_SITE_URL;
 
-  // ✅ Correct endpoint
+  // ✅ Determine correct PayFast endpoint
   const payfastUrl =
     payfastMode === "live"
       ? "https://www.payfast.co.za/eng/process"
       : "https://sandbox.payfast.co.za/eng/process";
 
+  // 🧠 Local state
   const [students, setStudents] = useState([]);
   const [selectedStudent, setSelectedStudent] = useState("");
   const [purpose, setPurpose] = useState("registration");
   const [customAmount, setCustomAmount] = useState("");
 
-  // 🔍 Load students linked to this parent
+  // 🔍 Fetch students linked to this parent
   useEffect(() => {
     if (!user?.uid) return;
 
@@ -49,19 +50,30 @@ export default function PaymentsSection() {
   const amount =
     purpose === "registration"
       ? "1000.00"
+      : purpose === "fees"
+      ? "2500.00" // ✅ fixed tuition fee, change as needed
       : (Number(customAmount) || 0).toFixed(2);
 
-  // 🎯 Build item name for PayFast
-  const selected =
-    students.find((s) => s.id === selectedStudent) || {};
-  const itemName = selected.firstName
-    ? `${selected.firstName} ${selected.lastName} - Grade ${selected.grade} | ${purpose}`
+  // 🎯 Selected student data
+  const selected = students.find((s) => s.id === selectedStudent) || {};
+
+  // 🧾 Build item name for PayFast
+  const first =
+    selected.firstName || selected.firstname || selected.name || "";
+  const last = selected.lastName || selected.lastname || "";
+  const itemName = first
+    ? `${first} ${last} - Grade ${selected.grade} | ${purpose}`
     : "Payment";
 
   // 🔗 Return URLs
   const returnUrl = `${siteUrl}/parent/payments?status=success`;
   const cancelUrl = `${siteUrl}/parent/payments?status=cancel`;
   const notifyUrl = `${siteUrl}/.netlify/functions/payfast-notify`;
+
+  // 🧠 Debug (see in browser console)
+  console.log("🧾 Selected student:", selected);
+  console.log("📚 All students:", students);
+  console.log("💰 Computed amount:", amount);
 
   return (
     <div className="p-6 border rounded-lg shadow bg-white">
@@ -73,7 +85,7 @@ export default function PaymentsSection() {
         target="_top"
         className="space-y-4"
       >
-        {/* Hidden PayFast required fields */}
+        {/* 🔒 PayFast required hidden fields */}
         <input type="hidden" name="merchant_id" value={merchantId} />
         <input type="hidden" name="merchant_key" value={merchantKey} />
         <input type="hidden" name="return_url" value={returnUrl} />
@@ -91,12 +103,8 @@ export default function PaymentsSection() {
           value={user?.email || "parent@example.com"}
         />
 
-        {/* Use student ID as m_payment_id */}
-        <input
-          type="hidden"
-          name="m_payment_id"
-          value={selectedStudent || ""}
-        />
+        {/* Use student ID as unique PayFast payment reference */}
+        <input type="hidden" name="m_payment_id" value={selectedStudent || ""} />
         <input type="hidden" name="item_name" value={itemName} />
         <input type="hidden" name="amount" value={amount} />
 
@@ -109,11 +117,15 @@ export default function PaymentsSection() {
             className="border rounded p-2 w-full"
           >
             <option value="">-- Choose student --</option>
-            {students.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.firstName} {s.lastName} - Grade {s.grade}
-              </option>
-            ))}
+            {students.map((s) => {
+              const first = s.firstName || s.firstname || s.name || "";
+              const last = s.lastName || s.lastname || "";
+              return (
+                <option key={s.id} value={s.id}>
+                  {first} {last} - Grade {s.grade || ""}
+                </option>
+              );
+            })}
           </select>
         </div>
 
@@ -133,7 +145,7 @@ export default function PaymentsSection() {
           </select>
         </div>
 
-        {/* 💸 Custom amount for flexible types */}
+        {/* 💸 Custom amount (only for flexible payment types) */}
         {(purpose === "donation" ||
           purpose === "event" ||
           purpose === "other") && (
@@ -151,13 +163,12 @@ export default function PaymentsSection() {
           </div>
         )}
 
-        {/* 💰 Summary preview */}
+        {/* 💰 Payment summary */}
         {selectedStudent && (
           <div className="bg-gray-50 p-3 rounded border text-sm text-gray-700">
             Paying for:{" "}
             <strong>
-              {selected.firstName} {selected.lastName} (Grade{" "}
-              {selected.grade})
+              {first} {last} (Grade {selected.grade})
             </strong>
             <br />
             Purpose: <strong>{purpose}</strong>
