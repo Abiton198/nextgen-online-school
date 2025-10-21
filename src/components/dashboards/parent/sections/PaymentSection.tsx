@@ -1,131 +1,85 @@
-"use client";
-
 import React, { useState, useEffect } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { db } from "@/lib/firebaseConfig";
 import { collection, query, where, getDocs } from "firebase/firestore";
+import { db } from "@/lib/firebase"; // make sure this points to your Firestore init
 
 export default function PaymentsSection() {
   const { user } = useAuth();
 
-  // 🔹 Environment Variables
+  // ✅ Env variables (using VITE_ for frontend access)
   const payfastMode = import.meta.env.VITE_PAYFAST_MODE;
   const merchantId = import.meta.env.VITE_PAYFAST_MERCHANT_ID;
   const merchantKey = import.meta.env.VITE_PAYFAST_MERCHANT_KEY;
   const siteUrl = import.meta.env.VITE_SITE_URL;
 
+  // ✅ Correct endpoint
   const payfastUrl =
     payfastMode === "live"
       ? "https://www.payfast.co.za/eng/process"
       : "https://sandbox.payfast.co.za/eng/process";
 
-  // 🔹 State
-  const [students, setStudents] = useState<any[]>([]);
-  const [selectedStudent, setSelectedStudent] = useState<any>(null);
+  const [students, setStudents] = useState([]);
+  const [selectedStudent, setSelectedStudent] = useState("");
   const [purpose, setPurpose] = useState("registration");
   const [customAmount, setCustomAmount] = useState("");
-  const [loading, setLoading] = useState(true);
 
-  // 🔹 Fetch all students for this parent
+  // 🔍 Load students linked to this parent
   useEffect(() => {
-    if (!user) return;
+    if (!user?.uid) return;
 
-    const fetchStudents = async () => {
+    const loadStudents = async () => {
       try {
         const q = query(
           collection(db, "students"),
           where("parentId", "==", user.uid)
         );
         const snap = await getDocs(q);
-        if (!snap.empty) {
-          const data = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-          setStudents(data);
-          setSelectedStudent(data[0]); // default to first student
-        }
+        const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        setStudents(list);
+        console.log("📚 Found students:", list);
       } catch (err) {
-        console.error("Error fetching students:", err);
-      } finally {
-        setLoading(false);
+        console.error("❌ Error loading students:", err);
       }
     };
 
-    fetchStudents();
-  }, [user]);
+    loadStudents();
+  }, [user?.uid]);
 
-  // 🔹 Compute amount
+  // 💰 Compute amount
   const amount =
     purpose === "registration"
       ? "1000.00"
       : (Number(customAmount) || 0).toFixed(2);
 
-  // 🔹 Compute item name (includes student info)
-  const itemName = selectedStudent
-    ? `${selectedStudent.fullName || "Student"} - Grade ${
-        selectedStudent.grade || "N/A"
-      } | ${purpose.toUpperCase()}`
-    : purpose.toUpperCase();
+  // 🎯 Build item name for PayFast
+  const selected =
+    students.find((s) => s.id === selectedStudent) || {};
+  const itemName = selected.firstName
+    ? `${selected.firstName} ${selected.lastName} - Grade ${selected.grade} | ${purpose}`
+    : "Payment";
 
-  // 🔹 URLs for redirect/notify
+  // 🔗 Return URLs
   const returnUrl = `${siteUrl}/parent/payments?status=success`;
   const cancelUrl = `${siteUrl}/parent/payments?status=cancel`;
   const notifyUrl = `${siteUrl}/.netlify/functions/payfast-notify`;
 
-  // 🔹 Loading state
-  if (loading) {
-    return <div className="p-6">Loading student info...</div>;
-  }
-
-  if (students.length === 0) {
-    return (
-      <div className="p-6">
-        <p>No students found for this account.</p>
-      </div>
-    );
-  }
-
   return (
     <div className="p-6 border rounded-lg shadow bg-white">
-      <h2 className="text-xl font-semibold mb-4">Payments</h2>
+      <h2 className="text-xl font-semibold mb-4">💳 Student Payments</h2>
 
-      {/* Student Selector */}
-      <div className="mb-4">
-        <label className="block mb-1 font-medium">Select Student</label>
-        <select
-          value={selectedStudent?.id || ""}
-          onChange={(e) =>
-            setSelectedStudent(
-              students.find((s) => s.id === e.target.value) || null
-            )
-          }
-          className="border rounded p-2 w-full"
-        >
-          {students.map((student) => (
-            <option key={student.id} value={student.id}>
-              {student.fullName} - Grade {student.grade}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {/* Student Info */}
-      {selectedStudent && (
-        <div className="mb-4 p-3 bg-gray-50 border rounded">
-          <p>
-            <strong>Student:</strong> {selectedStudent.fullName}
-          </p>
-          <p>
-            <strong>Grade:</strong> {selectedStudent.grade}
-          </p>
-        </div>
-      )}
-
-      <form action={payfastUrl} method="post" target="_top" className="space-y-4">
+      <form
+        action={payfastUrl}
+        method="post"
+        target="_top"
+        className="space-y-4"
+      >
         {/* Hidden PayFast required fields */}
         <input type="hidden" name="merchant_id" value={merchantId} />
         <input type="hidden" name="merchant_key" value={merchantKey} />
         <input type="hidden" name="return_url" value={returnUrl} />
         <input type="hidden" name="cancel_url" value={cancelUrl} />
         <input type="hidden" name="notify_url" value={notifyUrl} />
+
         <input
           type="hidden"
           name="name_first"
@@ -136,15 +90,34 @@ export default function PaymentsSection() {
           name="email_address"
           value={user?.email || "parent@example.com"}
         />
+
+        {/* Use student ID as m_payment_id */}
         <input
           type="hidden"
           name="m_payment_id"
-          value={selectedStudent?.id || user?.uid || "guest"}
+          value={selectedStudent || ""}
         />
         <input type="hidden" name="item_name" value={itemName} />
         <input type="hidden" name="amount" value={amount} />
 
-        {/* Purpose */}
+        {/* 👨‍🎓 Student selector */}
+        <div>
+          <label className="block mb-1 font-medium">Select Student</label>
+          <select
+            value={selectedStudent}
+            onChange={(e) => setSelectedStudent(e.target.value)}
+            className="border rounded p-2 w-full"
+          >
+            <option value="">-- Choose student --</option>
+            {students.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.firstName} {s.lastName} - Grade {s.grade}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* 🧾 Purpose selector */}
         <div>
           <label className="block mb-1 font-medium">Payment Purpose</label>
           <select
@@ -160,7 +133,7 @@ export default function PaymentsSection() {
           </select>
         </div>
 
-        {/* Custom amount for donation/event/other */}
+        {/* 💸 Custom amount for flexible types */}
         {(purpose === "donation" ||
           purpose === "event" ||
           purpose === "other") && (
@@ -178,17 +151,28 @@ export default function PaymentsSection() {
           </div>
         )}
 
-        {/* Display amount */}
-        <div className="bg-gray-100 p-3 rounded text-lg">
-          <strong>Amount to Pay:</strong> R {amount}
-        </div>
+        {/* 💰 Summary preview */}
+        {selectedStudent && (
+          <div className="bg-gray-50 p-3 rounded border text-sm text-gray-700">
+            Paying for:{" "}
+            <strong>
+              {selected.firstName} {selected.lastName} (Grade{" "}
+              {selected.grade})
+            </strong>
+            <br />
+            Purpose: <strong>{purpose}</strong>
+            <br />
+            Amount: <strong>R{amount}</strong>
+          </div>
+        )}
 
-        {/* Submit */}
+        {/* 🚀 Submit */}
         <button
           type="submit"
-          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded w-full"
+          disabled={!selectedStudent}
+          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded w-full disabled:opacity-60"
         >
-          💳 Pay for {selectedStudent?.fullName || "Student"}
+          Proceed to PayFast
         </button>
       </form>
     </div>
