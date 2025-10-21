@@ -28,6 +28,7 @@ import PrincipalDashboard from "@/components/dashboards/PrincipalDashboard";
 // Parent Sections
 import PaymentsSection from "@/components/dashboards/parent/sections/PaymentSection";
 import StatusSection from "@/components/dashboards/parent/sections/StatusSection";
+import ParentDashboardLayout from "./components/ParentDashboardLayout";
 
 // Public Pages
 import AboutUs from "@/components/AboutUs";
@@ -74,9 +75,13 @@ const App: React.FC = () => {
                 <Route path="/about/teaching-staff" element={<TeachingStaff />} />
                 <Route path="/about/accreditation" element={<Accreditation />} />
 
-                {/* 👨‍👩‍👧 Parent Dashboard Sections */}
-                <Route path="/payments" element={<PaymentsSection />} />
-                <Route path="/status" element={<StatusSection />} />
+
+
+        {/* 👨‍👩‍👧 Parent Dashboard routes */}
+        <Route path="/parent" element={<ParentDashboardLayout />}>
+          <Route path="payments" element={<PaymentsSection />} />
+          <Route path="status" element={<StatusSection />} />
+        </Route>
 
                 {/* 🔐 Authentication Pages */}
                 <Route path="/login" element={<LoginForm />} />
