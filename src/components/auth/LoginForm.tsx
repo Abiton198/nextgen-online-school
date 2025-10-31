@@ -210,124 +210,129 @@ export default function LoginForm() {
     }
   };
 
+ 
   /* -------------------- Google Login -------------------- */
-  const handleGoogleLogin = async () => {
-    if (!role) {
-      alert("Please select your role before using Google login.");
+const handleGoogleLogin = async () => {
+  if (!role) {
+    alert("Please select your role before using Google login.");
+    return;
+  }
+
+  try {
+    const provider = new GoogleAuthProvider();
+
+    // 👇 This line forces Google to always show the account chooser
+    provider.setCustomParameters({ prompt: "select_account" });
+
+    const result = await signInWithPopup(auth, provider);
+    const user = result.user;
+    const userRef = doc(db, "users", user.uid);
+
+    /* ---------- Student Google Login ---------- */
+    if (role === "student") {
+      let studentDoc = null;
+
+      // Find by UID or email or linkedParentEmail
+      let q = query(collection(db, "students"), where("uid", "==", user.uid));
+      let querySnap = await getDocs(q);
+
+      if (querySnap.empty) {
+        q = query(collection(db, "students"), where("email", "==", user.email));
+        querySnap = await getDocs(q);
+      }
+
+      if (querySnap.empty) {
+        q = query(collection(db, "students"), where("linkedParentEmail", "==", user.email));
+        querySnap = await getDocs(q);
+      }
+
+      if (!querySnap.empty) studentDoc = querySnap.docs[0];
+
+      if (!studentDoc) {
+        alert("No linked student record found. Contact your parent or school.");
+        await auth.signOut();
+        return;
+      }
+
+      const data = studentDoc.data();
+
+      if (!data.approvedByPrincipal && data.status !== "enrolled") {
+        alert("Your account is not yet approved by the principal.");
+        await auth.signOut();
+        return;
+      }
+
+      await setDoc(
+        userRef,
+        {
+          uid: user.uid,
+          email: user.email,
+          role: "student",
+          linkedParentId: data.parentId || null,
+          linkedParentEmail: data.linkedParentEmail || null,
+          linkedStudentId: studentDoc.id,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      await updateDoc(doc(db, "students", studentDoc.id), {
+        uid: user.uid,
+        email: user.email,
+        lastLogin: serverTimestamp(),
+      });
+
+      navigate("/student-dashboard");
       return;
     }
 
-    try {
-      const provider = new GoogleAuthProvider();
-      const result = await signInWithPopup(auth, provider);
-      const user = result.user;
-      const userRef = doc(db, "users", user.uid);
+    /* ---------- Parent Google Login ---------- */
+    if (role === "parent") {
+      const ref = doc(db, "parents", user.uid);
+      const snap = await getDoc(ref);
 
-      /* ---------- Student Google Login ---------- */
-      if (role === "student") {
-        let studentDoc = null;
-
-        // Find by UID or email or linkedParentEmail
-        let q = query(collection(db, "students"), where("uid", "==", user.uid));
-        let querySnap = await getDocs(q);
-
-        if (querySnap.empty) {
-          q = query(collection(db, "students"), where("email", "==", user.email));
-          querySnap = await getDocs(q);
-        }
-
-        if (querySnap.empty) {
-          q = query(collection(db, "students"), where("linkedParentEmail", "==", user.email));
-          querySnap = await getDocs(q);
-        }
-
-        if (!querySnap.empty) studentDoc = querySnap.docs[0];
-
-        if (!studentDoc) {
-          alert("No linked student record found. Contact your parent or school.");
-          await auth.signOut();
-          return;
-        }
-
-        const data = studentDoc.data();
-
-        if (!data.approvedByPrincipal && data.status !== "enrolled") {
-          alert("Your account is not yet approved by the principal.");
-          await auth.signOut();
-          return;
-        }
-
-        await setDoc(
-          userRef,
-          {
-            uid: user.uid,
-            email: user.email,
-            role: "student",
-            linkedParentId: data.parentId || null,
-            linkedParentEmail: data.linkedParentEmail || null,
-            linkedStudentId: studentDoc.id,
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true }
-        );
-
-        await updateDoc(doc(db, "students", studentDoc.id), {
+      if (!snap.exists()) {
+        await setDoc(ref, {
           uid: user.uid,
-          email: user.email,
-          lastLogin: serverTimestamp(),
+          name: user.displayName || "",
+          email: user.email || "",
+          photoURL: user.photoURL || "",
+          createdAt: serverTimestamp(),
+          status: "active",
         });
-
-        navigate("/student-dashboard");
-        return;
       }
 
-      /* ---------- Parent Google Login ---------- */
-      if (role === "parent") {
-        const ref = doc(db, "parents", user.uid);
-        const snap = await getDoc(ref);
+      await setDoc(
+        userRef,
+        { uid: user.uid, email: user.email, role: "parent", createdAt: serverTimestamp() },
+        { merge: true }
+      );
 
-        if (!snap.exists()) {
-          await setDoc(ref, {
-            uid: user.uid,
-            name: user.displayName || "",
-            email: user.email || "",
-            photoURL: user.photoURL || "",
-            createdAt: serverTimestamp(),
-            status: "active",
-          });
-        }
-
-        await setDoc(
-          userRef,
-          { uid: user.uid, email: user.email, role: "parent", createdAt: serverTimestamp() },
-          { merge: true }
-        );
-
-        navigate("/parent-dashboard");
-        return;
-      }
-
-      /* ---------- Teacher / Principal Logic (same as before) ---------- */
-      if (role === "teacher" || role === "principal") {
-        const ref = doc(db, `${role}s`, user.uid);
-        const snap = await getDoc(ref);
-        if (!snap.exists()) {
-          alert(`Access denied. No ${role} record found.`);
-          return;
-        }
-        await setDoc(
-          userRef,
-          { uid: user.uid, email: user.email, role, createdAt: serverTimestamp() },
-          { merge: true }
-        );
-        navigate(`/${role}-dashboard`);
-        return;
-      }
-    } catch (err) {
-      console.error("Google login error:", err);
-      alert("Google login failed. Please try again.");
+      navigate("/parent-dashboard");
+      return;
     }
-  };
+
+    /* ---------- Teacher / Principal ---------- */
+    if (role === "teacher" || role === "principal") {
+      const ref = doc(db, `${role}s`, user.uid);
+      const snap = await getDoc(ref);
+      if (!snap.exists()) {
+        alert(`Access denied. No ${role} record found.`);
+        return;
+      }
+      await setDoc(
+        userRef,
+        { uid: user.uid, email: user.email, role, createdAt: serverTimestamp() },
+        { merge: true }
+      );
+      navigate(`/${role}-dashboard`);
+      return;
+    }
+  } catch (err) {
+    console.error("Google login error:", err);
+    alert("Google login failed. Please try again.");
+  }
+};
 
   const handleClose = () => navigate("/");
 

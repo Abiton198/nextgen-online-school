@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { collection, query, where, getDocs } from "firebase/firestore";
-import { db } from "@/lib/firebase"; // ensure this points to your initialized Firestore
+import { db } from "@/lib/firebaseConfig"; 
 
 export default function PaymentsSection() {
   const { user } = useAuth();
@@ -23,36 +23,41 @@ export default function PaymentsSection() {
   const [selectedStudent, setSelectedStudent] = useState("");
   const [purpose, setPurpose] = useState("registration");
   const [customAmount, setCustomAmount] = useState("");
+  const amount = (Number(customAmount) || 0).toFixed(2); //chose own amount on payment
+
 
   // 🔍 Fetch students linked to this parent
-  useEffect(() => {
-    if (!user?.uid) return;
+ useEffect(() => {
+  if (!user?.uid && !user?.email) return;
 
-    const loadStudents = async () => {
-      try {
-        const q = query(
-          collection(db, "students"),
-          where("parentId", "==", user.uid)
-        );
-        const snap = await getDocs(q);
-        const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        setStudents(list);
-        console.log("📚 Found students:", list);
-      } catch (err) {
-        console.error("❌ Error loading students:", err);
+  const loadStudents = async () => {
+    try {
+      // Try by parentId first
+      let q = query(collection(db, "students"), where("parentId", "==", user.uid));
+      let snap = await getDocs(q);
+
+      // If none found, try linkedParentId or linkedParentEmail
+      if (snap.empty) {
+        q = query(collection(db, "students"), where("linkedParentId", "==", user.uid));
+        snap = await getDocs(q);
       }
-    };
 
-    loadStudents();
-  }, [user?.uid]);
+      if (snap.empty) {
+        q = query(collection(db, "students"), where("linkedParentEmail", "==", user.email));
+        snap = await getDocs(q);
+      }
 
-  // 💰 Compute amount
-  const amount =
-    purpose === "registration"
-      ? "1000.00"
-      : purpose === "fees"
-      ? "2500.00" // ✅ fixed tuition fee, change as needed
-      : (Number(customAmount) || 0).toFixed(2);
+      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      setStudents(list);
+      console.log("📚 Found students:", list);
+    } catch (err) {
+      console.error("❌ Error loading students:", err);
+    }
+  };
+
+  loadStudents();
+}, [user?.uid, user?.email]);
+
 
   // 🎯 Selected student data
   const selected = students.find((s) => s.id === selectedStudent) || {};
@@ -147,20 +152,22 @@ export default function PaymentsSection() {
 
         {/* 💸 Custom amount (only for flexible payment types) */}
         {(purpose === "donation" ||
+        purpose === "fees" ||
+        purpose === "registration" ||
           purpose === "event" ||
           purpose === "other") && (
-          <div>
-            <label className="block mb-1 font-medium">Amount (ZAR)</label>
-            <input
-              type="number"
-              min="1"
-              step="0.01"
-              value={customAmount}
-              onChange={(e) => setCustomAmount(e.target.value)}
-              className="border rounded p-2 w-full"
-              placeholder="Enter amount"
-            />
-          </div>
+                  <div>
+          <label className="block mb-1 font-medium">Amount (ZAR)</label>
+          <input
+            type="number"
+            min="1"
+            step="0.01"
+            value={customAmount}
+            onChange={(e) => setCustomAmount(e.target.value)}
+            className="border rounded p-2 w-full"
+            placeholder="Enter amount (e.g. 2500)"
+          />
+        </div>
         )}
 
         {/* 💰 Payment summary */}
