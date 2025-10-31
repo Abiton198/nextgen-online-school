@@ -13,9 +13,12 @@ import {
   setDoc,
   getDoc,
   getDocs,
+  where,
 } from "firebase/firestore";
 
-/* ----------------- Interfaces ----------------- */
+/* ===========================================================
+   INTERFACES
+   =========================================================== */
 interface Message {
   id: string;
   sender: string;
@@ -27,7 +30,8 @@ interface Message {
 interface ChatWidgetProps {
   role: "parent" | "teacher" | "principal";
   uid: string;
-  initialRecipient?: string;
+  initialRecipient?: string;     // e.g., parent opens chat with teacher
+  subject?: string;              // for teacher-parent subject-specific chat
   forceOpen?: boolean;
   onClose?: () => void;
 }
@@ -39,6 +43,7 @@ export default function ChatWidget({
   role,
   uid,
   initialRecipient,
+  subject,
   forceOpen,
   onClose,
 }: ChatWidgetProps) {
@@ -49,96 +54,131 @@ export default function ChatWidget({
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [isRecipientTyping, setIsRecipientTyping] = useState(false);
+  const [loading, setLoading] = useState(true);
+
   const typingTimeout = useRef<any>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
-  /* 🔹 Auto-scroll to bottom on new messages */
+  /* ──────────────────────────────────────────────────────
+     AUTO-SCROLL TO BOTTOM
+     ────────────────────────────────────────────────────── */
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  /* 🔹 Determine the conversation partner */
+  /* ──────────────────────────────────────────────────────
+     DETERMINE RECIPIENT (Principal, Teacher, Parent)
+     ────────────────────────────────────────────────────── */
   useEffect(() => {
     const initRecipient = async () => {
       if (initialRecipient) {
-        // If we already have one (e.g., principal opens chat with parent)
         setRecipient(initialRecipient);
         return;
       }
 
-      if (role === "parent") {
-        // 👇 Find the principal UID dynamically
-        try {
-          const principalSnap = await getDocs(collection(db, "principals"));
+      try {
+        if (role === "parent") {
+          // Parent → Principal
+          const principalSnap = await getDocs(
+            query(collection(db, "principals"), where("active", "==", true))
+          );
           if (!principalSnap.empty) {
-            setRecipient(principalSnap.docs[0].id); // first principal’s UID
-          } else {
-            console.warn("No principal found in Firestore");
+            setRecipient(principalSnap.docs[0].id);
           }
-        } catch (err) {
-          console.error("Error fetching principal UID:", err);
+        } else if (role === "teacher" || role === "principal") {
+          // Teacher/Principal → Find parent via subject enrollment
+          if (subject) {
+            const studentsSnap = await getDocs(
+              query(
+                collection(db, "students"),
+                where("subjects", "array-contains", subject)
+              )
+            );
+            if (!studentsSnap.empty) {
+              const parentId = studentsSnap.docs[0].data().parentId;
+              setRecipient(parentId);
+            }
+          }
         }
+      } catch (err) {
+        console.error("Error finding recipient:", err);
+      } finally {
+        setLoading(false);
       }
     };
+
     initRecipient();
-  }, [role, initialRecipient]);
+  }, [role, initialRecipient, subject]);
 
-  /* 🔹 Build conversation ID once both IDs are known */
+  /* ──────────────────────────────────────────────────────
+     BUILD CONVERSATION ID (sorted for consistency)
+     ────────────────────────────────────────────────────── */
   const conversationId =
-    recipient && uid ? [uid, recipient].sort().join("_") : null;
+    uid && recipient ? [uid, recipient].sort().join("_") : null;
 
-  /* 🔹 Fetch recipient info (name/photo) */
+  /* ──────────────────────────────────────────────────────
+     FETCH RECIPIENT INFO (Name + Photo)
+     ────────────────────────────────────────────────────── */
   useEffect(() => {
     if (!recipient) return;
+
     const fetchRecipientInfo = async () => {
-      try {
-        // Try looking up in parents, teachers, or principals
-        const collectionsToTry = ["parents", "teachers", "principals"];
-        for (const col of collectionsToTry) {
-          const ref = doc(db, col, recipient);
-          const snap = await getDoc(ref);
-          if (snap.exists()) {
-            const data = snap.data();
-            setRecipientName(data.name || data.fullName || "User");
-            setRecipientPhoto(data.photoURL || null);
-            return;
-          }
+      const collections = ["parents", "teachers", "principals"];
+      for (const col of collections) {
+        const ref = doc(db, col, recipient);
+        const snap = await getDoc(ref);
+        if (snap.exists()) {
+          const data = snap.data();
+          setRecipientName(data.name || data.fullName || "User");
+          setRecipientPhoto(data.photoURL || null);
+          return;
         }
-        setRecipientName("User");
-        setRecipientPhoto(null);
-      } catch (err) {
-        console.error("Error fetching recipient info:", err);
-        setRecipientName("User");
       }
+      setRecipientName("User");
     };
+
     fetchRecipientInfo();
   }, [recipient]);
 
-  /* 🔹 Subscribe to messages */
+  /* ──────────────────────────────────────────────────────
+     SUBSCRIBE TO MESSAGES (Real-Time)
+     ────────────────────────────────────────────────────── */
   useEffect(() => {
     if (!conversationId) return;
+
     const q = query(
       collection(db, "conversations", conversationId, "messages"),
       orderBy("createdAt", "asc")
     );
+
     const unsub = onSnapshot(q, (snap) => {
       const msgs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Message));
       setMessages(msgs);
+    }, (err) => {
+      console.error("Message listen failed:", err);
     });
+
     return () => unsub();
   }, [conversationId]);
 
-  /* 🔹 Subscribe to typing state */
+  /* ──────────────────────────────────────────────────────
+     TYPING INDICATOR (Real-Time)
+     ────────────────────────────────────────────────────── */
   useEffect(() => {
     if (!conversationId || !recipient) return;
-    const ref = doc(db, "conversations", conversationId, "typing", recipient);
-    const unsub = onSnapshot(ref, (snap) => {
-      setIsRecipientTyping(snap.exists() && snap.data().isTyping);
+
+    const typingRef = doc(db, "conversations", conversationId, "typing", recipient);
+    const unsub = onSnapshot(typingRef, (snap) => {
+      const data = snap.data();
+      setIsRecipientTyping(data?.isTyping === true);
     });
+
     return () => unsub();
   }, [conversationId, recipient]);
 
-  /* 🔹 Update typing status */
+  /* ──────────────────────────────────────────────────────
+     UPDATE TYPING STATUS
+     ────────────────────────────────────────────────────── */
   const updateTyping = async (isTyping: boolean) => {
     if (!conversationId) return;
     await setDoc(
@@ -150,57 +190,55 @@ export default function ChatWidget({
 
   const handleTyping = (val: string) => {
     setMessage(val);
-    if (!typingTimeout.current) {
-      updateTyping(true);
-    } else {
-      clearTimeout(typingTimeout.current);
-    }
+    if (!typingTimeout.current) updateTyping(true);
+
+    clearTimeout(typingTimeout.current);
     typingTimeout.current = setTimeout(() => {
       updateTyping(false);
       typingTimeout.current = null;
-    }, 2000);
+    }, 1500);
   };
 
-  /* 🔹 Send message */
- const sendMessage = async () => {
-  if (!conversationId || !message.trim()) return;
+  /* ──────────────────────────────────────────────────────
+     SEND MESSAGE (with metadata)
+     ────────────────────────────────────────────────────── */
+  const sendMessage = async () => {
+    if (!conversationId || !message.trim() || !recipient) return;
 
-  const conversationRef = doc(db, "conversations", conversationId);
+    const convRef = doc(db, "conversations", conversationId);
 
-  // ✅ Make sure the conversation exists first
-  await setDoc(
-    conversationRef,
-    {
-      participants: [uid, recipient],
-      updatedAt: serverTimestamp(),
-    },
-    { merge: true }
-  );
+    try {
+      // Ensure conversation exists
+      await setDoc(
+        convRef,
+        {
+          participants: [uid, recipient],
+          subject: subject || null,
+          lastMessage: message,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
 
-  // ✅ Add the message
-  await addDoc(collection(conversationRef, "messages"), {
-    sender: uid,
-    recipient,
-    text: message,
-    createdAt: serverTimestamp(),
-  });
+      // Add message
+      await addDoc(collection(convRef, "messages"), {
+        sender: uid,
+        recipient,
+        text: message.trim(),
+        createdAt: serverTimestamp(),
+      });
 
-  // ✅ Update metadata
-  await setDoc(
-    conversationRef,
-    {
-      lastMessage: message,
-      updatedAt: serverTimestamp(),
-    },
-    { merge: true }
-  );
+      setMessage("");
+      updateTyping(false);
+    } catch (err) {
+      console.error("Send failed:", err);
+      alert("Failed to send message.");
+    }
+  };
 
-  setMessage("");
-  await updateTyping(false);
-};
-
-
-  /* 🔹 Force chat open if required */
+  /* ──────────────────────────────────────────────────────
+     FORCE OPEN
+     ────────────────────────────────────────────────────── */
   useEffect(() => {
     if (forceOpen) setChatOpen(true);
   }, [forceOpen]);
@@ -211,86 +249,111 @@ export default function ChatWidget({
     if (!newState && onClose) onClose();
   };
 
+  /* ──────────────────────────────────────────────────────
+     LOADING STATE
+     ────────────────────────────────────────────────────── */
+  if (loading) {
+    return (
+      <div className="fixed bottom-6 right-6">
+        <button className="bg-gray-400 text-white rounded-full p-4 shadow-lg animate-pulse">
+          Loading...
+        </button>
+      </div>
+    );
+  }
+
   /* ===========================================================
-     UI
+     UI RENDER
      =========================================================== */
   return (
     <>
-      <div className="fixed bottom-6 right-6">
+      {/* Floating Button */}
+      <div className="fixed bottom-6 right-6 z-50">
         <button
           onClick={toggleChat}
-          className="bg-green-600 text-white rounded-full p-4 shadow-lg hover:bg-green-700"
+          className="bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-full p-4 shadow-xl hover:from-green-600 hover:to-emerald-700 transition transform hover:scale-110"
         >
-          💬
+          Chat
         </button>
       </div>
 
-      {chatOpen && (
-        <div className="fixed bottom-20 right-6 w-80 bg-white border rounded-lg shadow-lg">
-          {/* ✅ Header */}
-          <div className="flex items-center justify-between p-2 border-b bg-gray-50">
+      {/* Chat Window */}
+      {chatOpen && conversationId && (
+        <div className="fixed bottom-20 right-6 w-80 bg-white border-2 border-gray-200 rounded-xl shadow-2xl overflow-hidden z-50">
+          {/* Header */}
+          <div className="flex items-center justify-between p-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white">
             <div className="flex items-center gap-2">
               {recipientPhoto ? (
-                <img
-                  src={recipientPhoto}
-                  alt={recipientName}
-                  className="w-6 h-6 rounded-full"
-                />
+                <img src={recipientPhoto} alt="" className="w-8 h-8 rounded-full" />
               ) : (
-                <div className="w-6 h-6 rounded-full bg-gray-300" />
+                <div className="w-8 h-8 rounded-full bg-white/30 flex items-center justify-center text-xs font-bold">
+                  {recipientName[0]}
+                </div>
               )}
-              <span className="text-sm font-semibold">
-                {recipientName || "Recipient"}
-              </span>
+              <div>
+                <p className="font-bold text-sm">{recipientName}</p>
+                {subject && <p className="text-xs opacity-90">{subject}</p>}
+              </div>
             </div>
-            <button
-              className="text-gray-400 hover:text-black text-sm"
-              onClick={toggleChat}
-            >
-              ✕
+            <button onClick={toggleChat} className="text-white hover:opacity-70">
+              Close
             </button>
           </div>
 
-          {/* ✅ Messages */}
-          <div className="max-h-60 overflow-y-auto p-2 text-xs">
-            {messages.length > 0 ? (
+          {/* Messages */}
+          <div className="h-64 overflow-y-auto p-3 space-y-2 bg-gray-50">
+            {messages.length === 0 ? (
+              <p className="text-center text-gray-400 text-xs">Start the conversation!</p>
+            ) : (
               messages.map((m) => (
-                <div key={m.id} className="mb-1">
-                  <span
-                    className={`font-medium ${
-                      m.sender === uid ? "text-blue-600" : "text-gray-700"
+                <div
+                  key={m.id}
+                  className={`flex ${m.sender === uid ? "justify-end" : "justify-start"}`}
+                >
+                  <div
+                    className={`max-w-xs px-3 py-2 rounded-lg text-sm ${
+                      m.sender === uid
+                        ? "bg-blue-600 text-white"
+                        : "bg-white border text-gray-800"
                     }`}
                   >
-                    {m.sender === uid ? "You" : recipientName}:
-                  </span>{" "}
-                  {m.text}
+                    {m.text}
+                    {m.createdAt && (
+                      <p className="text-xs opacity-70 mt-1">
+                        {new Date(m.createdAt.toDate()).toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </p>
+                    )}
+                  </div>
                 </div>
               ))
-            ) : (
-              <p className="text-gray-400 text-xs">No messages yet.</p>
             )}
             <div ref={messagesEndRef} />
           </div>
 
-          {/* ✅ Typing Indicator */}
+          {/* Typing Indicator */}
           {isRecipientTyping && (
-            <p className="text-xs text-green-600 px-2 mb-1">
-              ✍️ {recipientName} is typing…
+            <p className="text-xs text-green-600 px-3 py-1 italic">
+              {recipientName} is typing...
             </p>
           )}
 
-          {/* ✅ Input */}
-          <div className="flex gap-2 p-2 border-t">
+          {/* Input */}
+          <div className="flex gap-2 p-3 border-t bg-white">
             <input
               type="text"
-              placeholder="Type message..."
+              placeholder="Type a message..."
               value={message}
               onChange={(e) => handleTyping(e.target.value)}
-              className="flex-1 border rounded p-1 text-sm"
+              onKeyDown={(e) => e.key === "Enter" && sendMessage()}
+              className="flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
             <button
               onClick={sendMessage}
-              className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700"
+              disabled={!message.trim()}
+              className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:from-indigo-600 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
             >
               Send
             </button>

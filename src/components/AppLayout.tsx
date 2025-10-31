@@ -98,7 +98,7 @@ const AppContent: React.FC = () => {
               href="/about"
               className="mt-3 inline-block text-sm font-medium text-yellow-300 hover:text-yellow-400 transition"
             >
-              Learn more about our school
+              Learn more about our program
             </a>
           </div>
 

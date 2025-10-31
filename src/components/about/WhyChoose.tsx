@@ -87,7 +87,7 @@ const WhyChoose: React.FC = () => {
           <div className="p-6 bg-white rounded-xl shadow-lg hover:shadow-xl transition border-l-4 border-pink-500">
             <h2 className="text-xl font-bold text-pink-700 mb-2">Personal Attention</h2>
             <p className="text-gray-700">
-              <strong>Max 15 students per class</strong> — your child isn’t lost in the crowd. 
+              <strong>Max 20 students per class</strong> — your child isn’t lost in the crowd. 
               Teachers know their strengths, weaknesses, and goals.
             </p>
           </div>
@@ -119,7 +119,7 @@ const WhyChoose: React.FC = () => {
             <p className="text-xs text-gray-600">Parent Rating</p>
           </div>
           <div className="text-center">
-            <p className="text-3xl font-bold text-teal-600">15</p>
+            <p className="text-3xl font-bold text-teal-600">20</p>
             <p className="text-xs text-gray-600">Max Students/Class</p>
           </div>
         </div>

@@ -513,13 +513,14 @@ const PrincipalDashboard: React.FC = () => {
 
       {auth.currentUser && chatRecipient && (
         <div className="fixed bottom-6 right-6 z-50">
-          <ChatWidget
-            uid={auth.currentUser.uid}
-            role="principal"
-            initialRecipient={chatRecipient}
-            forceOpen
-            onClose={() => setChatRecipient(null)}
-          />
+       
+        <ChatWidget
+          uid={auth.currentUser?.uid || ""}
+          role="principal"
+          initialRecipient={chatRecipient}
+          forceOpen={true}
+          onClose={() => setChatRecipient(null)}
+        />
         </div>
       )}
     </div>

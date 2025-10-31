@@ -358,7 +358,7 @@ const handleGoogleLogin = async () => {
 
       {/* Role selection */}
       <div className="mb-4 flex flex-wrap justify-center gap-2">
-        {(["student", "teacher", "parent", "principal"] as const).map((r) => (
+        {(["student", "teacher", "parent", "admin"] as const).map((r) => (
           <button
             key={r}
             onClick={() => {

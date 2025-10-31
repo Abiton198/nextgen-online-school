@@ -7,194 +7,240 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowLeft, X, CheckCircle, XCircle, Clock } from "lucide-react";
+import { ArrowLeft, X, CheckCircle, XCircle, Clock, BookOpen, Globe } from "lucide-react";
 
-interface Registration {
+interface Student {
   id: string;
-  learnerData: {
-    firstName: string;
-    lastName: string;
-    grade: string;
-  };
-  status:
-    | "pending"
-    | "payment_pending"
-    | "payment_failed"
-    | "awaiting_approval"
-    | "approved"
-    | "rejected"
-    | "enrolled";
-  paymentReceived: boolean;
+  firstName: string;
+  lastName: string;
+  grade: string;
+  curriculum: "CAPS" | "Cambridge";
+  subjects: string[];
+  status: "pending" | "enrolled";
+  principalReviewed?: boolean;
+  paymentReceived?: boolean;
 }
 
 export default function StatusSection() {
   const { user } = useAuth();
-  const [registrations, setRegistrations] = useState<Registration[]>([]);
+  const [students, setStudents] = useState<Student[]>([]);
+  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
+  // ──────────────────────────────────────────────────────────
+  // FETCH STUDENTS FROM `students` COLLECTION
+  // ──────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!user) return;
+    if (!user?.uid) return;
 
-    const fetchData = async () => {
-      const q = query(
-        collection(db, "registrations"),
-        where("parentId", "==", user.uid)
-      );
-      const snap = await getDocs(q);
+    const fetchStudents = async () => {
+      try {
+        const q = query(
+          collection(db, "students"),
+          where("parentId", "==", user.uid)
+        );
+        const snap = await getDocs(q);
 
-      const list: Registration[] = snap.docs.map((doc) => ({
-        id: doc.id,
-        learnerData: doc.data().learnerData || {
-          firstName: "",
-          lastName: "",
-          grade: "",
-        },
-        status: (doc.data().status as Registration["status"]) || "pending",
-        paymentReceived: doc.data().paymentReceived || false,
-      }));
-      setRegistrations(list);
+        const list: Student[] = snap.docs.map((doc) => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            firstName: data.firstName || "",
+            lastName: data.lastName || "",
+            grade: data.grade || "",
+            curriculum: data.curriculum || "CAPS",
+            subjects: data.subjects || [],
+            status: data.status || "pending",
+            principalReviewed: data.principalReviewed || false,
+            paymentReceived: data.paymentReceived || false,
+          };
+        });
+
+        setStudents(list);
+      } catch (err) {
+        console.error("Error fetching students:", err);
+      } finally {
+        setLoading(false);
+      }
     };
 
-    fetchData();
+    fetchStudents();
   }, [user]);
 
-  // Badge colors
-  const getStatusColor = (status: Registration["status"]) => {
-    switch (status) {
-      case "pending":
-        return "bg-yellow-100 text-yellow-800";
-      case "payment_pending":
-        return "bg-orange-100 text-orange-800";
-      case "payment_failed":
-        return "bg-red-100 text-red-800";
-      case "awaiting_approval":
-        return "bg-blue-100 text-blue-800";
-      case "approved":
-        return "bg-green-100 text-green-800";
-      case "rejected":
-        return "bg-red-200 text-red-900";
-      case "enrolled":
-        return "bg-green-200 text-green-900";
-      default:
-        return "bg-gray-100 text-gray-800";
+  // ──────────────────────────────────────────────────────────
+  // STATUS BADGE COLOR
+  // ──────────────────────────────────────────────────────────
+  const getStatusBadge = (student: Student) => {
+    const { status, principalReviewed, paymentReceived } = student;
+
+    if (status === "enrolled") {
+      return (
+        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-green-100 text-green-800">
+          <CheckCircle size={14} /> Enrolled
+        </span>
+      );
     }
+
+    if (!paymentReceived) {
+      return (
+        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-orange-100 text-orange-800">
+          <Clock size={14} /> Payment Pending
+        </span>
+      );
+    }
+
+    if (!principalReviewed) {
+      return (
+        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-800">
+          <Clock size={14} /> Awaiting Approval
+        </span>
+      );
+    }
+
+    if (principalReviewed && paymentReceived && status !== "enrolled") {
+      return (
+        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-yellow-100 text-yellow-800">
+          <Clock size={14} /> Processing
+        </span>
+      );
+    }
+
+    return (
+      <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-800">
+        Pending
+      </span>
+    );
   };
 
-  // Action button logic
-  const getActionButton = (reg: Registration) => {
-    if (!reg.paymentReceived && reg.status !== "enrolled") {
+  // ──────────────────────────────────────────────────────────
+  // ACTION BUTTON
+  // ──────────────────────────────────────────────────────────
+  const getActionButton = (student: Student) => {
+    if (student.status === "enrolled") {
       return (
-        <Button size="sm" className="bg-orange-600 hover:bg-orange-700">
-          <Link to={`/payments?regId=${reg.id}`}>Proceed to Payment</Link>
+        <Button size="sm" className="bg-green-600 hover:bg-green-700">
+          <Link to={`/student-portal/${student.id}`}>Access Portal</Link>
         </Button>
       );
     }
 
-    switch (reg.status) {
-      case "awaiting_approval":
-        return (
-          <Button size="sm" disabled className="bg-blue-400 text-white">
-            Awaiting Principal Approval
-          </Button>
-        );
-      case "approved":
-        return (
-          <Button size="sm" disabled className="bg-green-500 text-white">
-            Approved – Enrollment Processing
-          </Button>
-        );
-      case "rejected":
-        return (
-          <Button size="sm" disabled className="bg-red-500 text-white">
-            Application Rejected
-          </Button>
-        );
-      case "enrolled":
-        return (
-          <Button size="sm" className="bg-green-600 hover:bg-green-700">
-            <Link to={`/registration/${reg.id}`}>View Enrollment</Link>
-          </Button>
-        );
-      default:
-        return null;
+    if (!student.paymentReceived) {
+      return (
+        <Button size="sm" className="bg-orange-600 hover:bg-orange-700">
+          <Link to={`/payments?studentId=${student.id}`}>Pay Now</Link>
+        </Button>
+      );
     }
+
+    if (!student.principalReviewed) {
+      return (
+        <Button size="sm" disabled className="bg-blue-500 text-white cursor-not-allowed">
+          Awaiting Principal Review
+        </Button>
+      );
+    }
+
+    return (
+      <Button size="sm" disabled className="bg-gray-400 text-white cursor-not-allowed">
+        In Progress
+      </Button>
+    );
   };
 
-  // Timeline steps
-  const renderTimeline = (reg: Registration) => {
+  // ──────────────────────────────────────────────────────────
+  // TIMELINE STEPS (Updated Flow)
+  // ──────────────────────────────────────────────────────────
+  const renderTimeline = (student: Student) => {
     const steps = [
       {
-        key: "registration",
         label: "Registration Submitted",
-        active: true,
         done: true,
+        icon: <CheckCircle className="w-5 h-5 text-green-600" />,
       },
       {
-        key: "payment",
-        label: "Payment Completed",
-        active: reg.paymentReceived,
-        done: reg.paymentReceived,
+        label: "Payment",
+        done: student.paymentReceived,
+        active: !student.paymentReceived,
+        icon: student.paymentReceived ? (
+          <CheckCircle className="w-5 h-5 text-green-600" />
+        ) : (
+          <Clock className="w-5 h-5 text-yellow-600 animate-pulse" />
+        ),
       },
       {
-        key: "approval",
-        label: "Principal Approval",
-        active: reg.status === "approved" || reg.status === "awaiting_approval",
-        done: reg.status === "approved" || reg.status === "enrolled",
-        rejected: reg.status === "rejected",
+        label: "Principal Review",
+        done: student.principalReviewed,
+        active: student.paymentReceived && !student.principalReviewed,
+        rejected: false,
+        icon: student.principalReviewed ? (
+          <CheckCircle className="w-5 h-5 text-green-600" />
+        ) : student.paymentReceived ? (
+          <Clock className="w-5 h-5 text-yellow-600 animate-pulse" />
+        ) : (
+          <div className="w-5 h-5 rounded-full border border-gray-400"></div>
+        ),
       },
       {
-        key: "enrolled",
-        label: "Enrolled",
-        active: reg.status === "enrolled",
-        done: reg.status === "enrolled",
+        label: "Enrollment Complete",
+        done: student.status === "enrolled",
+        active: student.principalReviewed && !student.paymentReceived
+          ? false
+          : student.principalReviewed && student.paymentReceived && student.status !== "enrolled",
+        icon: student.status === "enrolled" ? (
+          <CheckCircle className="w-5 h-5 text-green-600" />
+        ) : student.principalReviewed && student.paymentReceived ? (
+          <Clock className="w-5 h-5 text-yellow-600 animate-pulse" />
+        ) : (
+          <div className="w-5 h-5 rounded-full border border-gray-400"></div>
+        ),
       },
     ];
 
     return (
-      <div className="mt-3">
-        <ol className="flex flex-col gap-2 text-sm">
-          {steps.map((step, idx) => (
-            <li key={idx} className="flex items-center gap-2">
-              {step.rejected ? (
-                <XCircle className="w-5 h-5 text-red-500" />
-              ) : step.done ? (
-                <CheckCircle className="w-5 h-5 text-green-500" />
-              ) : step.active ? (
-                <Clock className="w-5 h-5 text-yellow-500 animate-pulse" />
-              ) : (
-                <div className="w-5 h-5 rounded-full border border-gray-400"></div>
-              )}
-              <span
-                className={
-                  step.rejected
-                    ? "text-red-600 font-medium"
-                    : step.done
-                    ? "text-green-700"
-                    : step.active
-                    ? "text-yellow-700"
-                    : "text-gray-500"
-                }
-              >
-                {step.label}
-              </span>
-            </li>
-          ))}
-        </ol>
-      </div>
+      <ol className="mt-3 space-y-2 text-sm">
+        {steps.map((step, idx) => (
+          <li
+            key={idx}
+            className={`flex items-center gap-2 ${
+              step.done
+                ? "text-green-700"
+                : step.active
+                ? "text-yellow-700 font-medium"
+                : "text-gray-500"
+            }`}
+          >
+            {step.icon}
+            <span>{step.label}</span>
+          </li>
+        ))}
+      </ol>
     );
   };
 
+  // ──────────────────────────────────────────────────────────
+  // LOADING STATE
+  // ──────────────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div className="p-6 text-center">
+        <p className="text-gray-600">Loading enrollment status...</p>
+      </div>
+    );
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // MAIN RENDER
+  // ──────────────────────────────────────────────────────────
   return (
-    <div>
-      {/* Top bar with navigation */}
-      <div className="flex justify-between items-center mb-4">
+    <div className="p-4 max-w-4xl mx-auto space-y-6">
+      {/* ── Navigation ── */}
+      <div className="sticky top-0 z-10 bg-white border-b flex justify-between items-center px-2 py-3 mb-4">
         <button
           onClick={() => navigate(-1)}
           className="flex items-center gap-1 text-gray-600 hover:text-black"
         >
           <ArrowLeft size={18} /> Back
         </button>
-
         <button
           onClick={() => navigate("/parent-dashboard")}
           className="text-gray-600 hover:text-red-600"
@@ -203,49 +249,78 @@ export default function StatusSection() {
         </button>
       </div>
 
-      <h2 className="text-lg font-semibold mb-4">
-        Overview of your registrations:
+      {/* ── Header ── */}
+      <h2 className="text-xl font-bold text-gray-800">
+        Enrollment Status
       </h2>
 
-      {registrations.length === 0 ? (
-        <p className="text-gray-600">No registrations found.</p>
+      {/* ── No Students ── */}
+      {students.length === 0 ? (
+        <Card className="p-6 text-center text-gray-600">
+          <p>No students registered yet.</p>
+          <Button className="mt-4" asChild>
+            <Link to="/register">Register Now</Link>
+          </Button>
+        </Card>
       ) : (
-        <div className="space-y-6">
-          {registrations.map((reg) => (
+        <div className="space-y-5">
+          {students.map((student) => (
             <Card
-              key={reg.id}
-              className="p-4 border rounded-lg shadow-sm space-y-3"
+              key={student.id}
+              className="p-5 border rounded-lg shadow-sm hover:shadow-md transition-shadow"
             >
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium">
-                    {reg.learnerData.firstName} {reg.learnerData.lastName} –{" "}
-                    Grade {reg.learnerData.grade}
-                  </p>
-                  <span
-                    className={`inline-block mt-1 px-2 py-1 rounded text-xs font-semibold ${getStatusColor(
-                      reg.status
-                    )}`}
-                  >
-                    {!reg.paymentReceived
-                      ? "Payment Not Made"
-                      : reg.status === "awaiting_approval"
-                      ? "Awaiting Principal Approval"
-                      : reg.status === "approved"
-                      ? "Approved by Principal"
-                      : reg.status === "rejected"
-                      ? "Rejected"
-                      : reg.status === "enrolled"
-                      ? "Enrolled"
-                      : "Pending"}
-                  </span>
+              {/* Student Header */}
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {/* Curriculum Badge */}
+                    <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-bold text-white bg-gradient-to-r from-indigo-600 to-purple-600 rounded-full">
+                      {student.curriculum === "CAPS" ? (
+                        <BookOpen size={12} />
+                      ) : (
+                        <Globe size={12} />
+                      )}
+                      {student.curriculum}
+                    </span>
+
+                    {/* Name & Grade */}
+                    <p className="font-semibold text-lg">
+                      {student.firstName} {student.lastName}
+                      <span className="text-sm font-normal text-gray-600 ml-2">
+                        – {student.grade}
+                      </span>
+                    </p>
+                  </div>
+
+                  {/* Status Badge */}
+                  <div className="mt-2">{getStatusBadge(student)}</div>
                 </div>
 
-                <div>{getActionButton(reg)}</div>
+                {/* Action Button */}
+                <div>{getActionButton(student)}</div>
               </div>
 
-              {/* 🔹 Timeline view */}
-              {renderTimeline(reg)}
+              {/* Subjects */}
+              {student.subjects && student.subjects.length > 0 && (
+                <div className="mt-3">
+                  <p className="text-sm font-medium text-gray-700 mb-1">Selected Subjects:</p>
+                  <div className="flex flex-wrap gap-1">
+                    {student.subjects.map((sub) => (
+                      <span
+                        key={sub}
+                        className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-indigo-700 bg-indigo-100 rounded-full"
+                      >
+                        {sub}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Timeline */}
+              <div className="mt-4 border-t pt-3">
+                {renderTimeline(student)}
+              </div>
             </Card>
           ))}
         </div>

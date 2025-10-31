@@ -44,12 +44,12 @@ const TeachingStaff: React.FC = () => {
             <div className="flex items-center mb-4">
               <div className="bg-pink-200 border-2 border-dashed rounded-xl w-16 h-16 mr-4" />
               <div>
-                <h3 className="font-bold text-pink-700">Dr. Thandi Mokoena</h3>
+                <h3 className="font-bold text-pink-700">Mr. Chibwe</h3>
                 <p className="text-sm text-gray-600">Physical Sciences & Chemistry</p>
               </div>
             </div>
             <p className="text-sm text-gray-700">
-              18 years exp • 92% A-symbol rate • PhD in Chemistry (UCT)
+              18 years exp • 92% A-symbol rate • BA in Chemistry (UZ)
             </p>
             <div className="flex mt-2">
               {[1, 2, 3, 4, 5].map((i) => (
@@ -144,12 +144,12 @@ const TeachingStaff: React.FC = () => {
             <div className="flex items-center mb-4">
               <div className="bg-teal-200 border-2 border-dashed rounded-xl w-16 h-16 mr-4" />
               <div>
-                <h3 className="font-bold text-teal-700">Ms. Sarah Kim</h3>
+                <h3 className="font-bold text-teal-700">Mr. A </h3>
                 <p className="text-sm text-gray-600">Computer Science & Coding</p>
               </div>
             </div>
             <p className="text-sm text-gray-700">
-              10 years exp • Google Certified • 100+ apps built with students
+              5 years exp • Google Certified • 100+ apps built with students
             </p>
             <div className="flex mt-2">
               {[1, 2, 3, 4, 5].map((i) => (
