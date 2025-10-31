@@ -10,9 +10,9 @@ import PrincipalDashboard from "./dashboards/PrincipalDashboard";
 import AdminDashboard from "./dashboards/AdminDashboard";
 
 // Logos
-import logo from "../img/logo.png";           // NextGen Logo
-import dbeLogo from "../img/dbe.png";         // DBE Logo
-import cambridgeLogo from "../img/cambridge.png"; // CAMBRIDGE LOGO 
+import logo from "../img/logo.png";
+import dbeLogo from "../img/dbe.png";
+import cambridgeLogo from "../img/cambridge.png";
 import ZoomableImage from "@/lib/ZoomableImage";
 
 const AppContent: React.FC = () => {
@@ -47,14 +47,11 @@ const AppContent: React.FC = () => {
 
         {/* TOP LOGO BAR — Cambridge in Center */}
         <div className="absolute top-4 left-0 right-0 flex justify-between items-center px-6 z-20">
-          {/* Left: NextGen */}
           <ZoomableImage
             src={logo}
             alt="NextGen Independent Online School"
             className="h-14 w-auto drop-shadow-lg"
           />
-
-          {/* Center: Cambridge */}
           <div className="absolute left-1/2 transform -translate-x-1/2">
             <ZoomableImage
               src={cambridgeLogo}
@@ -62,8 +59,6 @@ const AppContent: React.FC = () => {
               className="h-16 w-auto drop-shadow-2xl"
             />
           </div>
-
-          {/* Right: DBE */}
           <ZoomableImage
             src={dbeLogo}
             alt="Department of Basic Education"
@@ -74,8 +69,7 @@ const AppContent: React.FC = () => {
         {/* Main Content */}
         <div className="relative z-10 flex flex-col items-center justify-center min-h-screen px-6 text-center text-white pt-20">
           <h1 className="text-4xl md:text-6xl font-bold mb-4 leading-tight drop-shadow-lg">
-            REMOTE Learning Support {" "}
-            <span className="block text-yellow-300">Online Portal</span>
+            REMOTE Learning Support <span className="block text-yellow-300">Online Portal</span>
           </h1>
 
           <p className="text-lg md:text-xl max-w-2xl mb-10 text-blue-100 drop-shadow-md">
@@ -107,6 +101,54 @@ const AppContent: React.FC = () => {
               Learn more about our school
             </a>
           </div>
+
+          {/* NEW: Flickering Slanted CTA Button */}
+          <motion.div
+            className="mt-12 mb-8"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.5 }}
+          >
+            <motion.a
+              href="/login"
+              className="relative inline-block group"
+              whileHover={{ scale: 1.08 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              {/* Slanted Background */}
+              <div
+                className="absolute inset-0 bg-gradient-to-r from-red-600 to-orange-600 rounded-lg transform -skew-x-12 shadow-2xl"
+                style={{ filter: "brightness(1.1)" }}
+              />
+              <div
+                className="absolute inset-0 bg-gradient-to-r from-yellow-500 to-pink-500 rounded-lg transform -skew-x-12 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+              />
+
+              {/* Flicker Glow */}
+              <motion.div
+                className="absolute -inset-1 bg-white rounded-lg opacity-0"
+                animate={{
+                  opacity: [0, 0.8, 0],
+                }}
+                transition={{
+                  duration: 1.5,
+                  repeat: Infinity,
+                  repeatDelay: 3,
+                }}
+              />
+
+              {/* Button Text */}
+              <div className="relative px-8 py-4 bg-gradient-to-r from-red-500 to-orange-500 rounded-lg transform skew-x-12 font-bold text-white text-lg tracking-wider shadow-xl flex items-center gap-3">
+                <span>Classes Start 05 Jan 2026</span>
+                <motion.span
+                  animate={{ x: [0, 4, 0] }}
+                  transition={{ duration: 0.6, repeat: Infinity }}
+                >
+                  →
+                </motion.span>
+              </div>
+            </motion.a>
+          </motion.div>
         </div>
 
         {/* Login Modal */}
@@ -145,7 +187,7 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // Logged-in Dashboards (Role-based)
+  // Logged-in Dashboards
   switch (user.role) {
     case "parent":
       return <ParentDashboard />;
