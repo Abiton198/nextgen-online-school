@@ -7,51 +7,63 @@ const LearningPlatform: React.FC = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-100 to-purple-200 px-6 py-12">
       <div className="max-w-5xl mx-auto space-y-8">
+        {/* Banner */}
+        <div className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white p-6 rounded-2xl shadow-lg text-center">
+          <h2 className="text-2xl font-bold mb-2">
+            Online Extra Lessons 2026 – Registrations Open!
+          </h2>
+          <p className="text-lg mb-4 max-w-3xl mx-auto">
+            <strong>Affordable, reliable support</strong> for Grade 10–12 (CAPS) & Cambridge Form 3–6. 
+            Starts <strong>5 January 2026</strong> with highly rated teachers.
+          </p>
+          <Link
+            to="/login"
+            className="inline-block bg-yellow-400 text-indigo-900 font-bold px-6 py-2 rounded-full hover:bg-yellow-300 transition shadow-md"
+          >
+            Register Now →
+          </Link>
+        </div>
+
         {/* Heading */}
         <h1 className="text-4xl font-bold text-purple-700 text-center">
           Our Learning Platform
         </h1>
         <p className="text-center text-lg text-gray-700 max-w-3xl mx-auto">
-          At <strong>NextGen Independent Online School</strong>, technology is the 
-          bridge between our learners, teachers, and parents.  
-          We combine the global power of <strong>Google Classroom</strong> with 
-          <strong> custom-built dashboards</strong> to create an engaging, transparent, 
-          and future-ready learning environment.
+          At <strong>NextGen Independent Online School</strong>, our platform powers 
+          <strong>after-school extra lessons</strong> — blending <strong>Google Classroom & Zoom</strong> 
+          with <strong>custom dashboards</strong> for seamless, goal-oriented support in CAPS and Cambridge curricula.
         </p>
 
         {/* Google Classroom Section */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="p-6 rounded-xl bg-white shadow-lg">
             <h2 className="text-2xl font-semibold text-purple-600 mb-3">
-              How Google Classroom Works with Us
+              How Our Platform Works for Extra Lessons
             </h2>
             <ul className="list-disc list-inside space-y-2 text-gray-700">
               <li>
-                Learners log in daily to access <strong>assignments, study material, and virtual lessons</strong>.
+                Learners join <strong>live after-school sessions</strong> (Mon–Thu, 4–6 PM) via Zoom, integrated with Google Classroom.
               </li>
               <li>
-                Teachers share lesson resources, mark assignments, and provide <strong>instant feedback</strong>.
+                Teachers deliver <strong>targeted support</strong>, share resources, assign practice, and give instant feedback.
               </li>
               <li>
-                Classes are structured with <strong>CAPS-aligned content</strong> plus advanced STEM modules 
-                like Robotics, AI, and Coding.
+                Content follows <strong>prescribed CAPS & Cambridge syllabi</strong>, focusing on exam prep, past papers, and weak areas.
               </li>
               <li>
-                Learners enjoy <strong>24/7 access</strong> to past lessons, resources, and recordings for revision.
+                <strong>24/7 access</strong> to recordings, notes, quizzes, and forums for flexible revision.
               </li>
               <li>
-                Parents can monitor their child’s progress and feedback directly through the portal.
+                Parents track attendance, progress, and teacher notes in real time.
               </li>
             </ul>
           </div>
 
           <div className="p-6 rounded-xl bg-gradient-to-tr from-purple-600 to-purple-400 text-white shadow-lg">
-            <h2 className="text-2xl font-semibold mb-3">Why This Matters</h2>
+            <h2 className="text-2xl font-semibold mb-3">Why This Matters for Parents</h2>
             <p className="text-lg">
-              Unlike ordinary online schools, our platform doesn’t just digitize 
-              textbooks — it builds a <strong>living, interactive learning journey</strong>.  
-              Learners don’t get lost in isolation; they are guided step by step with 
-              structured schedules, reminders, and interactive sessions.
+              Our platform transforms extra lessons into a <strong>reliable, interactive boost</strong> — 
+              not just homework help, but <strong>goal-oriented guidance</strong> from experienced teachers to improve grades and confidence.
             </p>
           </div>
         </div>
@@ -67,9 +79,8 @@ const LearningPlatform: React.FC = () => {
             <div className="p-4 bg-indigo-50 rounded-lg shadow hover:shadow-md transition">
               <h3 className="text-xl font-semibold text-indigo-700 mb-2">🎓 Student Dashboard</h3>
               <p className="text-gray-700 text-sm">
-                Students manage classes, access Google Classroom links, see 
-                <strong>timetables</strong>, view <strong>leaderboards</strong>, 
-                and track <strong>assignments & attendance</strong>.
+                Access live sessions, replays, assignments, <strong>progress trackers</strong>, 
+                and chat with teachers for personalized help.
               </p>
             </div>
 
@@ -77,9 +88,8 @@ const LearningPlatform: React.FC = () => {
             <div className="p-4 bg-indigo-50 rounded-lg shadow hover:shadow-md transition">
               <h3 className="text-xl font-semibold text-indigo-700 mb-2">👩‍🏫 Teacher Dashboard</h3>
               <p className="text-gray-700 text-sm">
-                Teachers upload lesson material, manage <strong>timetables</strong>, 
-                award or deduct points, and monitor student engagement — all 
-                synced with Google Classroom.
+                Highly rated experts manage groups, share targeted resources, 
+                track individual progress, and provide <strong>1-on-1 feedback</strong>.
               </p>
             </div>
 
@@ -87,9 +97,8 @@ const LearningPlatform: React.FC = () => {
             <div className="p-4 bg-indigo-50 rounded-lg shadow hover:shadow-md transition">
               <h3 className="text-xl font-semibold text-indigo-700 mb-2">👨‍👩‍👧 Parent Dashboard</h3>
               <p className="text-gray-700 text-sm">
-                Parents can track <strong>payments</strong>, monitor 
-                <strong>progress & attendance</strong>, receive instant 
-                communications, and ensure their child is on the right path.
+                Monitor <strong>attendance, grades, reports</strong>, and payments — 
+                with alerts for upcoming tests and improvements.
               </p>
             </div>
           </div>
@@ -98,14 +107,14 @@ const LearningPlatform: React.FC = () => {
         {/* Call to Action */}
         <div className="text-center mt-10">
           <p className="text-lg font-semibold text-purple-800">
-            🚀 With NextGen, every learner has a <strong>360° support system</strong> —
-            the future of education is not only online, it’s connected.
+            🚀 Join our platform for <strong>affordable extra support</strong> — 
+            empowering your child with the tools for success in 2026.
           </p>
           <Link
             to="/login"
             className="inline-block mt-6 bg-purple-600 text-white px-6 py-3 rounded-lg shadow hover:bg-purple-700 transition"
           >
-            Enrol Now
+            Register for 2026 Extra Lessons
           </Link>
         </div>
 

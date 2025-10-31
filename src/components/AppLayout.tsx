@@ -9,16 +9,17 @@ import TeacherDashboard from "./dashboards/TeacherDashboard";
 import PrincipalDashboard from "./dashboards/PrincipalDashboard";
 import AdminDashboard from "./dashboards/AdminDashboard";
 
-// ✅ Logos
-import logo from "../img/logo.png";       // NextGen Logo
-import dbeLogo from "../img/dbe.png";     // DBE Logo
+// Logos
+import logo from "../img/logo.png";           // NextGen Logo
+import dbeLogo from "../img/dbe.png";         // DBE Logo
+import cambridgeLogo from "../img/cambridge.png"; // CAMBRIDGE LOGO 
 import ZoomableImage from "@/lib/ZoomableImage";
 
 const AppContent: React.FC = () => {
   const { user, loading } = useAuth();
   const [showLoginModal, setShowLoginModal] = useState(false);
 
-  // ⏳ Loading Screen
+  // Loading Screen
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-600 via-purple-600 to-indigo-800 text-white">
@@ -30,7 +31,7 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // 🚪 Home / Landing Page
+  // Home / Landing Page
   if (!user) {
     return (
       <div className="relative min-h-screen bg-gradient-to-br from-blue-600 via-purple-600 to-indigo-800 overflow-hidden">
@@ -39,38 +40,50 @@ const AppContent: React.FC = () => {
           className="absolute inset-0 bg-cover bg-center opacity-40"
           style={{
             backgroundImage:
-              "url(https://d64gsuwffb70l.cloudfront.net/68c31a777600b687984e53d0_1757616805155_a5c804bd.webp)",
+              "ur[](https://d64gsuwffb70l.cloudfront.net/68c31a777600b687984e53d0_1757616805155_a5c804bd.webp)",
           }}
         />
         <div className="absolute inset-0 bg-gradient-to-br from-blue-900/60 via-purple-900/60 to-indigo-900/60"></div>
 
-        {/* 🔥 Top Logos Bar */}
+        {/* TOP LOGO BAR — Cambridge in Center */}
         <div className="absolute top-4 left-0 right-0 flex justify-between items-center px-6 z-20">
-        
-        {/* zoomable image */}
-          <ZoomableImage 
-            src={logo} 
-            alt="NextGen Logo" 
-            className="h-14 w-auto drop-shadow-lg" 
+          {/* Left: NextGen */}
+          <ZoomableImage
+            src={logo}
+            alt="NextGen Independent Online School"
+            className="h-14 w-auto drop-shadow-lg"
           />
-        
-          <img src={dbeLogo} alt="DBE Logo" className="h-14 w-auto drop-shadow-lg" />
+
+          {/* Center: Cambridge */}
+          <div className="absolute left-1/2 transform -translate-x-1/2">
+            <ZoomableImage
+              src={cambridgeLogo}
+              alt="Cambridge Assessment International Education"
+              className="h-16 w-auto drop-shadow-2xl"
+            />
+          </div>
+
+          {/* Right: DBE */}
+          <ZoomableImage
+            src={dbeLogo}
+            alt="Department of Basic Education"
+            className="h-14 w-auto drop-shadow-lg"
+          />
         </div>
 
-        {/* Content */}
-        <div className="relative z-10 flex flex-col items-center justify-center min-h-screen px-6 text-center text-white">
+        {/* Main Content */}
+        <div className="relative z-10 flex flex-col items-center justify-center min-h-screen px-6 text-center text-white pt-20">
           <h1 className="text-4xl md:text-6xl font-bold mb-4 leading-tight drop-shadow-lg">
-            NextGen Independent Online{" "}
-            <span className="block text-yellow-300">School Portal</span>
+            REMOTE Learning Support {" "}
+            <span className="block text-yellow-300">Online Portal</span>
           </h1>
 
           <p className="text-lg md:text-xl max-w-2xl mb-10 text-blue-100 drop-shadow-md">
-            “A New Age STEM High School — CAPS-Aligned, Future-Ready, and
-            inspiring the next generation in Mathematics, Medicine, Technology,
-            and Innovation.”
+            “Your child’s <strong>extra edge</strong> for 2026 — CAPS & Cambridge-aligned, 
+            teacher-led, results-driven support in <strong>Science, Arts, and Commerce</strong>.”
           </p>
 
-          {/* ✨ Login Trigger Button */}
+          {/* Login Trigger Button */}
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.97 }}
@@ -84,19 +97,19 @@ const AppContent: React.FC = () => {
           {/* Info Footer */}
           <div className="mt-8 max-w-md">
             <p className="text-sm md:text-base text-blue-100 drop-shadow-sm">
-              Convenient, connected, and career-focused — an integrated online
-              school experience built for modern learning and future pathways.
+              Affordable, reliable, and exam-focused — after-school online support 
+              that boosts grades, builds confidence, and opens university doors.
             </p>
             <a
               href="/about"
               className="mt-3 inline-block text-sm font-medium text-yellow-300 hover:text-yellow-400 transition"
             >
-              Learn more about our school →
+              Learn more about our school
             </a>
           </div>
         </div>
 
-        {/* 🪟 Login Modal */}
+        {/* Login Modal */}
         <AnimatePresence>
           {showLoginModal && (
             <motion.div
@@ -116,7 +129,7 @@ const AppContent: React.FC = () => {
                   onClick={() => setShowLoginModal(false)}
                   className="absolute top-3 right-3 text-gray-500 hover:text-gray-700 text-xl"
                 >
-                  ✕
+                  Close
                 </button>
 
                 <h2 className="text-2xl font-semibold text-center mb-4 text-blue-700">
@@ -132,7 +145,7 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // 🧭 Logged-in Dashboards (Role-based)
+  // Logged-in Dashboards (Role-based)
   switch (user.role) {
     case "parent":
       return <ParentDashboard />;
@@ -147,7 +160,7 @@ const AppContent: React.FC = () => {
   }
 };
 
-// 🧱 App Layout Wrapper
+// App Layout Wrapper
 const AppLayout: React.FC = () => {
   const [showAdminPrompt, setShowAdminPrompt] = useState(false);
 
@@ -166,7 +179,7 @@ const AppLayout: React.FC = () => {
           </button>
         </footer>
 
-        {/* 🔐 Admin Access Confirmation */}
+        {/* Admin Access Confirmation */}
         <AnimatePresence>
           {showAdminPrompt && (
             <motion.div

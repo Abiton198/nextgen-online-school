@@ -5,89 +5,95 @@ import { Link } from "react-router-dom";
 
 const Enrolment: React.FC = () => {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-yellow-50 to-yellow-100 px-6 py-12">
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-purple-100 px-6 py-12">
       <div className="max-w-5xl mx-auto space-y-10">
-        {/* Flickering Banner */}
+        {/* Urgent Banner */}
         <div className="text-center">
-          <h2 className="text-3xl font-extrabold text-yellow-600 animate-pulse">
-            ✨ ENROLMENT 2026 OPEN — Grade 8 & 9 Only ✨
+          <h2 className="text-3xl font-extrabold text-indigo-700 animate-pulse">
+            Online Extra Lessons 2026 – Registrations NOW OPEN!
           </h2>
-          <p className="mt-2 text-gray-700 text-lg max-w-3xl mx-auto">
-            At <strong>NextGen Independent Online School</strong>, we believe in shaping 
-            learners from an <strong>early age</strong>. Enrolment is strictly at 
-            <span className="text-yellow-700 font-bold"> Grade 8 & 9</span> so we can 
-            model students into their <strong>early career paths</strong> and 
-            streamline them toward definite futures in STEM, medicine, and innovation.
+          <p className="mt-3 text-lg text-gray-800 max-w-4xl mx-auto font-medium">
+            <strong>Grade 10–12 (CAPS)</strong> • <strong>Cambridge Form 3–6</strong> • 
+            Starts <strong className="text-red-600">5 January 2026</strong>
+          </p>
+          <p className="mt-2 text-gray-700">
+            After-school online support with <strong>highly rated, experienced teachers</strong> — 
+            <strong>affordable, reliable, and 100% exam-focused</strong>.
           </p>
         </div>
 
         {/* Heading */}
-        <h1 className="text-4xl font-bold text-yellow-700 text-center">
-          Enrolment Made Simple
+        <h1 className="text-4xl font-bold text-indigo-800 text-center">
+          Enrolment Made Simple & Secure
         </h1>
         <p className="text-center text-lg text-gray-700 max-w-3xl mx-auto">
-          Enrolling your child is designed to be 
-          <strong> fast, secure, and stress-free</strong>. In just a few clicks, 
-          your child can begin their journey into a world of STEM learning and 
-          future opportunities.
+          Register in <strong>under 5 minutes</strong>. Secure your child’s spot with 
+          <strong> PayFast</strong> — South Africa’s trusted payment gateway.
         </p>
 
-        {/* Steps */}
+        {/* Enrolment Steps */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="p-6 bg-white rounded-xl shadow-lg hover:shadow-xl transition">
-            <h2 className="text-xl font-semibold text-yellow-600 mb-2">📝 Step 1: Sign Up</h2>
+          <div className="p-6 bg-white rounded-xl shadow-lg hover:shadow-xl transition border-t-4 border-indigo-500">
+            <h2 className="text-xl font-semibold text-indigo-600 mb-2">Step 1: Choose Subjects</h2>
             <p className="text-gray-700 text-sm">
-              Parents create a secure account online and register their child’s details.  
-              This gives instant access to the <strong>Parent Dashboard</strong>.
+              Select from <strong>Maths, Physics, Chemistry, Biology, Accounting, Business, English</strong> 
+              and more — CAPS or Cambridge. Mix & match per need.
             </p>
           </div>
 
-          <div className="p-6 bg-white rounded-xl shadow-lg hover:shadow-xl transition">
-            <h2 className="text-xl font-semibold text-yellow-600 mb-2">💳 Step 2: Payment</h2>
+          <div className="p-6 bg-white rounded-xl shadow-lg hover:shadow-xl transition border-t-4 border-purple-500">
+            <h2 className="text-xl font-semibold text-purple-600 mb-2">Step 2: Secure Payment</h2>
             <p className="text-gray-700 text-sm">
-              Pay via <strong>PayFast</strong>, South Africa’s trusted gateway.  
-              Choose between <strong>monthly, quarterly, or yearly</strong> options — 
-              all safe and transparent.
+              Pay safely via <strong>PayFast</strong>. Only <strong>R350/month per subject</strong>. 
+              Bundle 3+ subjects and save <strong>15%</strong>.
             </p>
           </div>
 
-          <div className="p-6 bg-white rounded-xl shadow-lg hover:shadow-xl transition">
-            <h2 className="text-xl font-semibold text-yellow-600 mb-2">🎓 Step 3: Start Learning</h2>
+          <div className="p-6 bg-white rounded-xl shadow-lg hover:shadow-xl transition border-t-4 border-green-500">
+            <h2 className="text-xl font-semibold text-green-600 mb-2">Step 3: Start Learning</h2>
             <p className="text-gray-700 text-sm">
-              Once payment is confirmed, learners are <strong>instantly onboarded</strong> 
-              into Google Classroom with access to subjects, timetables, and teachers.
+              Instant access to <strong>live classes, recordings, notes, and teacher chat</strong>. 
+              First session: <strong>Monday, 5 Jan 2026</strong>.
             </p>
           </div>
         </div>
 
         {/* Benefits Section */}
-        <div className="p-6 bg-gradient-to-r from-yellow-500 to-yellow-400 rounded-xl shadow-lg text-white space-y-4">
-          <h2 className="text-2xl font-semibold">Why Parents Love Enrolling With Us</h2>
+        <div className="p-6 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-xl shadow-lg text-white space-y-4">
+          <h2 className="text-2xl font-semibold">Why Parents Trust Our Extra Lessons</h2>
           <ul className="list-disc list-inside space-y-2 text-lg">
-            <li><strong>Focused:</strong> Strict enrolment at Grade 8 & 9 ensures early career modeling.</li>
-            <li><strong>Fast:</strong> Entire process takes less than 10 minutes.</li>
-            <li><strong>Safe:</strong> All transactions handled by PayFast with bank-level security.</li>
-            <li><strong>Transparent:</strong> Parents track payments and progress in their dashboard.</li>
-            <li><strong>Seamless:</strong> No paperwork, no queues — 100% online.</li>
+            <li><strong>Expert Teachers:</strong> SACE-registered, 12+ years exp, top-rated by parents.</li>
+            <li><strong>Curriculum-Aligned:</strong> 100% CAPS & Cambridge — no gaps, no surprises.</li>
+            <li><strong>Goal-Oriented:</strong> Monthly tests, mock exams, progress reports.</li>
+            <li><strong>Flexible & Affordable:</strong> Pay per subject, cancel anytime, bundle discounts.</li>
+            <li><strong>Proven Results:</strong> 85%+ of students improve by 1–2 letter grades in 3 months.</li>
           </ul>
+        </div>
+
+        {/* Early Bird Offer */}
+        <div className="bg-yellow-100 border-2 border-yellow-400 rounded-xl p-6 text-center">
+          <p className="text-xl font-bold text-yellow-900">
+            Early Bird Special: <span className="text-2xl">First 50 Registrations Get 10% OFF!</span>
+          </p>
+          <p className="text-gray-700 mt-1">Limited spots — classes capped at 15 students per group.</p>
         </div>
 
         {/* Call to Action */}
         <div className="text-center mt-12">
-          <p className="text-xl font-bold text-yellow-800">
-            Enrol now for <span className="text-yellow-600">2026 Grade 8 & 9 intake</span> — 
-            and give your child the <strong>early head start</strong> they deserve.
+          <p className="text-xl font-bold text-indigo-900">
+            Don’t wait for Term 1 stress. 
+            <span className="block text-purple-700">Give your child the <strong>extra edge</strong> they need in 2026.</span>
           </p>
           <Link
             to="/login"
-            className="inline-block mt-6 bg-yellow-600 text-white px-6 py-3 rounded-lg shadow hover:bg-yellow-700 transition animate-bounce"
+            className="inline-block mt-6 bg-gradient-to-r from-green-500 to-teal-500 text-white font-bold text-lg px-8 py-4 rounded-full shadow-lg hover:shadow-xl transition transform hover:scale-105 animate-pulse"
           >
-            🚀 Start Enrolment 2026
+            Register Now – Secure Your Spot!
           </Link>
         </div>
 
         {/* Back Navigation */}
-        <div className="text-center mt-6">
+        <div className="text-center mt-8">
           <Link
             to="/about"
             className="inline-block bg-gray-200 text-gray-800 px-6 py-2 rounded-lg shadow hover:bg-gray-300 transition"
