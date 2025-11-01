@@ -17,13 +17,22 @@ import {
 } from "firebase/firestore";
 import { getStorage, ref, listAll, getDownloadURL } from "firebase/storage";
 
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardContent,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useNavigate } from "react-router-dom";
 import TimetableManager from "@/lib/TimetableManager";
 import ChatWidget from "../chat/ChatWidget";
+import { Search, Clock, Users, DollarSign, CheckCircle, XCircle, AlertCircle } from "lucide-react";
 
 /* ---------------- Types ---------------- */
 interface Student {
@@ -33,38 +42,23 @@ interface Student {
   grade?: string;
   parentEmail?: string;
   parentId?: string;
-  learnerData?: {
-    firstName?: string;
-    lastName?: string;
-    grade?: string;
-  };
-  parentData?: {
-    name?: string;
-    email?: string;
-  };
-  applicationStatus?: "pending" | "enrolled" | "rejected" | "suspended";
-  status?: string;
+  subjects?: string[];
+  status?: "pending" | "enrolled" | "rejected" | "suspended";
   principalReviewed?: boolean;
   createdAt?: any;
   reviewedAt?: any;
   classActivated?: boolean;
 }
 
-interface TeacherApplication {
+interface Teacher {
   id: string;
   uid?: string;
   firstName?: string;
   lastName?: string;
   email?: string;
-  [key: string]: any;
-}
-
-interface ParentDoc {
-  uid: string;
-  name: string;
-  email: string;
-  photoURL?: string | null;
-  createdAt?: any;
+  subjects?: string[];
+  status?: "pending" | "approved" | "rejected";
+  classActivated?: boolean;
 }
 
 interface ParentAgg {
@@ -72,67 +66,41 @@ interface ParentAgg {
   name: string;
   email: string;
   photoURL?: string | null;
-  children: { name: string; grade: string; status: string }[];
+  children: { id: string; name: string; grade: string; status: string; paid: boolean }[];
 }
 
 interface Payment {
   id: string;
   amount?: string;
-  paymentStatus?: string;
+  paymentStatus?: "paid" | "pending" | "failed";
   processedAt?: any;
 }
 
 /* ---------------- Main Component ---------------- */
 const PrincipalDashboard: React.FC = () => {
   const [students, setStudents] = useState<Student[]>([]);
-  const [teachers, setTeachers] = useState<TeacherApplication[]>([]);
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [parents, setParents] = useState<ParentAgg[]>([]);
   const [payments, setPayments] = useState<Record<string, Payment[]>>({});
   const [searchTerm, setSearchTerm] = useState("");
-  const [filter, setFilter] = useState<"all" | "failed" | "latest">("all");
+  const [gradeFilter, setGradeFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
   const [time, setTime] = useState(new Date());
 
   const principalName = auth.currentUser?.displayName || "Principal";
-  const schoolName = "Springfield Online School";
+  const schoolName = "Nextgen Online Support School";
   const { logout } = useAuth();
   const navigate = useNavigate();
 
   /* ---------------- Modal State ---------------- */
   const [selectedItem, setSelectedItem] = useState<any>(null);
-  const [selectedType, setSelectedType] = useState<
-    "teacherApplications" | "students" | "parents" | null
-  >(null);
+  const [selectedType, setSelectedType] = useState<"teacher" | "student" | "parent" | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [documents, setDocuments] = useState<Record<string, { name: string; url: string }[]>>({});
-  const [activeTab, setActiveTab] = useState<"Details" | "Documents">("Details");
+  const [activeTab, setActiveTab] = useState<"Details" | "Documents" | "Payments">("Details");
 
   /* ---------------- Chat State ---------------- */
   const [chatRecipient, setChatRecipient] = useState<string | null>(null);
-
-  /* ---------------- Utilities ---------------- */
-  const openModal = async (item: any, type: "teacherApplications" | "students" | "parents") => {
-    setSelectedItem(item);
-    setSelectedType(type);
-    setShowModal(true);
-    setActiveTab("Details");
-
-    if (type === "teacherApplications") {
-      const docs = await fetchDocuments(type, item.id, item.uid);
-      setDocuments(docs);
-    } else if (type === "students") {
-      const docs = await fetchDocuments("registrations", item.id);
-      setDocuments(docs);
-    } else {
-      setDocuments({});
-    }
-  };
-
-  const closeModal = () => {
-    setSelectedItem(null);
-    setSelectedType(null);
-    setShowModal(false);
-    setDocuments({});
-  };
 
   /* ---------------- Live Clock ---------------- */
   useEffect(() => {
@@ -147,6 +115,7 @@ const PrincipalDashboard: React.FC = () => {
       setStudents(list);
 
       const parentMap: Record<string, ParentAgg> = {};
+      const paymentMap: Record<string, Payment[]> = {};
 
       for (const s of list) {
         const parentId = s.parentId;
@@ -154,44 +123,40 @@ const PrincipalDashboard: React.FC = () => {
 
         if (!parentMap[parentId]) {
           const pDoc = await getDoc(doc(db, "parents", parentId));
-          if (pDoc.exists()) {
-            const pData = pDoc.data() as ParentDoc;
-            parentMap[parentId] = {
-              id: parentId,
-              name: pData.name || "(Unknown Parent)",
-              email: pData.email || s.parentEmail || "",
-              photoURL: pData.photoURL || null,
-              children: [],
-            };
-          } else {
-            parentMap[parentId] = {
-              id: parentId,
-              name: s.parentData?.name || "(Unknown Parent)",
-              email: s.parentData?.email || s.parentEmail || "",
-              photoURL: null,
-              children: [],
-            };
-          }
+          const pData = pDoc.exists() ? pDoc.data() : {};
+          parentMap[parentId] = {
+            id: parentId,
+            name: pData.name || "(Unknown)",
+            email: pData.email || s.parentEmail || "",
+            photoURL: pData.photoURL || null,
+            children: [],
+          };
         }
 
-        const childName =
-          `${s.firstName ?? s.learnerData?.firstName ?? ""} ${s.lastName ?? s.learnerData?.lastName ?? ""}`.trim() ||
-          "(Unnamed)";
-        const childGrade = s.grade ?? s.learnerData?.grade ?? "-";
-        const childStatus = s.status ?? s.applicationStatus ?? "pending";
+        const childName = `${s.firstName || ""} ${s.lastName || ""}`.trim() || "(Unnamed)";
+        const childStatus = s.status || "pending";
+        const hasPaid = payments[s.id]?.some(p => p.paymentStatus === "paid") || false;
 
         parentMap[parentId].children.push({
+          id: s.id,
           name: childName,
-          grade: String(childGrade),
+          grade: s.grade || "-",
           status: childStatus,
+          paid: hasPaid,
         });
+
+        // Fetch payments
+        const payRef = collection(db, "registrations", s.id, "payments");
+        const paySnap = await getDocs(fsQuery(payRef, orderBy("processedAt", "desc")));
+        paymentMap[s.id] = paySnap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
       }
 
+      setPayments(paymentMap);
       setParents(Object.values(parentMap));
     });
 
     const unsubTeachers = onSnapshot(collection(db, "teacherApplications"), (snap) => {
-      setTeachers(snap.docs.map((d) => ({ id: d.id, ...(d.data() as TeacherApplication) })));
+      setTeachers(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Teacher) })));
     });
 
     return () => {
@@ -200,20 +165,6 @@ const PrincipalDashboard: React.FC = () => {
     };
   }, []);
 
-  /* ---------------- Payment History ---------------- */
-  useEffect(() => {
-    (async () => {
-      const out: Record<string, Payment[]> = {};
-      for (const s of students) {
-        const payRef = collection(db, "registrations", s.id, "payments");
-        const q = fsQuery(payRef, orderBy("processedAt", "desc"));
-        const paySnap = await getDocs(q);
-        out[s.id] = paySnap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
-      }
-      setPayments(out);
-    })();
-  }, [students]);
-
   /* ---------------- Firestore Actions ---------------- */
   const updateStatus = async (
     col: "students" | "teacherApplications",
@@ -221,80 +172,28 @@ const PrincipalDashboard: React.FC = () => {
     updates: Record<string, any>
   ) => updateDoc(doc(db, col, id), updates);
 
-  // ✅ Unified approval flow with parent-student link
-  const approve = async (
-    col: "students" | "teacherApplications",
-    item: Student | TeacherApplication
-  ) => {
+  const approve = async (col: "students" | "teacherApplications", item: any) => {
     const id = item.id;
 
-    // --- Student Approval ---
     if (col === "students") {
       await updateStatus(col, id, {
         status: "enrolled",
         principalReviewed: true,
         reviewedAt: serverTimestamp(),
       });
-
-      // Link student to parent user account
-      const studentDoc = await getDoc(doc(db, "students", id));
-      if (studentDoc.exists()) {
-        const s = studentDoc.data() as Student;
-        if (s.parentId) {
-          await setDoc(
-            doc(db, "users", s.parentId),
-            {
-              uid: s.parentId,
-              role: "student",
-              email: s.parentEmail || "",
-              linkedStudentId: id,
-              approvedByPrincipal: true,
-              updatedAt: serverTimestamp(),
-            },
-            { merge: true }
-          );
-        }
-      }
-
-      return;
     }
 
-    // --- Teacher Approval ---
     if (col === "teacherApplications") {
-      const app = item as TeacherApplication;
-      const uid = app.uid || app.id;
-
-      await updateStatus("teacherApplications", id, {
+      const uid = item.uid || id;
+      await updateStatus(col, id, {
         status: "approved",
         principalReviewed: true,
         reviewedAt: serverTimestamp(),
         classActivated: true,
       });
 
-      if (uid) {
-        await setDoc(
-          doc(db, "teachers", uid),
-          {
-            ...app,
-            uid,
-            status: "approved",
-            classActivated: true,
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true }
-        );
-
-        await setDoc(
-          doc(db, "users", uid),
-          {
-            uid,
-            email: app.email || "",
-            role: "teacher",
-            createdAt: serverTimestamp(),
-          },
-          { merge: true }
-        );
-      }
+      await setDoc(doc(db, "teachers", uid), { ...item, uid, status: "approved" }, { merge: true });
+      await setDoc(doc(db, "users", uid), { uid, role: "teacher" }, { merge: true });
     }
   };
 
@@ -304,83 +203,80 @@ const PrincipalDashboard: React.FC = () => {
   const suspend = (col: "students" | "teacherApplications", id: string) =>
     updateStatus(col, id, { status: "suspended", suspendedAt: serverTimestamp() });
 
-  const toggleClassActivation = async (
-    item: Student | TeacherApplication,
-    col: "students" | "teacherApplications"
-  ) => {
+  const toggleClassActivation = async (item: any, col: "students" | "teacherApplications") => {
     const next = !item.classActivated;
     await updateStatus(col, item.id, { classActivated: next });
-
-    if (col === "teacherApplications") {
-      const t = item as TeacherApplication;
-      if (t.uid) {
-        await setDoc(
-          doc(db, "teachers", t.uid),
-          { classActivated: next, updatedAt: serverTimestamp() },
-          { merge: true }
-        );
-      }
-    }
   };
 
   /* ---------------- Fetch Documents ---------------- */
-  const fetchDocuments = async (
-    col: "registrations" | "teacherApplications",
-    id: string,
-    uid?: string
-  ): Promise<Record<string, { name: string; url: string }[]>> => {
+  const fetchDocuments = async (col: "registrations" | "teacherApplications", id: string, uid?: string) => {
     const storage = getStorage();
+    const rootRef = col === "teacherApplications" && uid
+      ? ref(storage, `teacherApplications/${id}/${uid}/documents`)
+      : ref(storage, `${col}/${id}/documents`);
 
-    const getAllFiles = async (folderRef: any): Promise<Record<string, { name: string; url: string }[]>> => {
-      const result = await listAll(folderRef);
-      const grouped: Record<string, { name: string; url: string }[]> = {};
+    const result = await listAll(rootRef);
+    const files: { name: string; url: string }[] = [];
 
-      if (result.items.length > 0) {
-        const folderName = folderRef.name || "root";
-        grouped[folderName] = await Promise.all(
-          result.items.map(async (item: any) => ({
-            name: item.name,
-            url: await getDownloadURL(item),
-          }))
-        );
-      }
+    for (const item of result.items) {
+      const url = await getDownloadURL(item);
+      files.push({ name: item.name, url });
+    }
 
-      for (const subRef of result.prefixes) {
-        const subFiles = await getAllFiles(subRef);
-        Object.entries(subFiles).forEach(([folder, files]) => {
-          if (!grouped[folder]) grouped[folder] = [];
-          grouped[folder].push(...files);
-        });
-      }
-      return grouped;
-    };
+    return { "Documents": files };
+  };
 
-    try {
-      const rootRef =
-        col === "teacherApplications" && uid
-          ? ref(storage, `teacherApplications/${id}/${uid}/documents`)
-          : ref(storage, `${col}/${id}/documents`);
-      return await getAllFiles(rootRef);
-    } catch (err) {
-      console.error("Error fetching documents:", err);
-      return {};
+  /* ---------------- Filters ---------------- */
+  const filteredStudents = students.filter(s => {
+    const name = `${s.firstName} ${s.lastName}`.toLowerCase();
+    const email = (s.parentEmail || "").toLowerCase();
+    const matchesSearch = name.includes(searchTerm.toLowerCase()) || email.includes(searchTerm.toLowerCase());
+    const matchesGrade = gradeFilter === "all" || s.grade === gradeFilter;
+    const matchesStatus = statusFilter === "all" || s.status === statusFilter;
+    return matchesSearch && matchesGrade && matchesStatus;
+  });
+
+  const filteredTeachers = teachers.filter(t => {
+    const name = `${t.firstName} ${t.lastName}`.toLowerCase();
+    const email = (t.email || "").toLowerCase();
+    return name.includes(searchTerm.toLowerCase()) || email.includes(searchTerm.toLowerCase());
+  });
+
+  /* ---------------- UI Helpers ---------------- */
+  const getStatusBadge = (status?: string, paid?: boolean) => {
+    if (paid) return <Badge className="bg-green-100 text-green-800">Paid</Badge>;
+    switch (status) {
+      case "enrolled": return <Badge className="bg-green-100 text-green-800">Enrolled</Badge>;
+      case "pending": return <Badge className="bg-yellow-100 text-yellow-800">Pending</Badge>;
+      case "rejected": return <Badge className="bg-red-100 text-red-800">Rejected</Badge>;
+      case "suspended": return <Badge className="bg-orange-100 text-orange-800">Suspended</Badge>;
+      default: return <Badge className="bg-gray-100 text-gray-800">Unknown</Badge>;
     }
   };
 
-  /* ---------------- Helpers ---------------- */
-  const getStudentStatusColor = (status?: string) => {
-    switch (status) {
-      case "enrolled":
-        return "text-green-600 bg-green-100 px-2 py-0.5 rounded text-xs font-medium";
-      case "pending":
-        return "text-yellow-600 bg-yellow-100 px-2 py-0.5 rounded text-xs font-medium";
-      case "rejected":
-        return "text-red-600 bg-red-100 px-2 py-0.5 rounded text-xs font-medium";
-      case "suspended":
-        return "text-orange-600 bg-orange-100 px-2 py-0.5 rounded text-xs font-medium";
-      default:
-        return "text-gray-500 bg-gray-100 px-2 py-0.5 rounded text-xs";
+  /* ---------------- Modal ---------------- */
+  const openModal = async (item: any, type: "teacher" | "student" | "parent") => {
+    setSelectedItem(item);
+    setSelectedType(type);
+    setShowModal(true);
+    setActiveTab("Details");
+
+    if (type === "teacher") {
+      const docs = await fetchDocuments("teacherApplications", item.id, item.uid);
+      setDocuments(docs);
+    } else if (type === "student") {
+      const docs = await fetchDocuments("registrations", item.id);
+      setDocuments(docs);
+    } else {
+      setDocuments({});
     }
+  };
+
+  const closeModal = () => {
+    setSelectedItem(null);
+    setSelectedType(null);
+    setShowModal(false);
+    setDocuments({});
   };
 
   const handleLogout = async () => {
@@ -389,138 +285,188 @@ const PrincipalDashboard: React.FC = () => {
   };
 
   /* ---------------- Render ---------------- */
-  const renderUsersCard = (
-    title: string,
-    users: (Student | TeacherApplication)[],
-    col: "students" | "teacherApplications"
-  ) => {
-    const filtered = users.filter((u) => {
-      const first =
-        (u as Student).firstName ||
-        (u as Student).learnerData?.firstName ||
-        (u as TeacherApplication).firstName ||
-        "";
-      const last =
-        (u as Student).lastName ||
-        (u as Student).learnerData?.lastName ||
-        (u as TeacherApplication).lastName ||
-        "";
-      const email =
-        (u as Student).parentEmail ||
-        (u as Student).parentData?.email ||
-        (u as TeacherApplication).email ||
-        "";
-      const hay = `${first} ${last} ${email}`.toLowerCase();
-      return hay.includes(searchTerm.toLowerCase());
-    });
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6 space-y-6">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-indigo-900">Welcome, {principalName}</h1>
+          <p className="text-indigo-600 flex items-center gap-2 mt-1">
+            <Clock className="w-4 h-4" />
+            {schoolName} | {time.toLocaleDateString("en-ZA")} {time.toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit" })}
+          </p>
+        </div>
+        <Button variant="destructive" size="sm" onClick={handleLogout}>
+          Logout
+        </Button>
+      </div>
 
-    return (
-      <Card className="bg-white shadow">
-        <CardHeader>
-          <CardTitle>{title}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {filtered.length === 0 && <p className="text-sm text-gray-500">No records.</p>}
-          <ul className="space-y-3">
-            {filtered.map((u) => {
-              const isStudent = col === "students";
-              const name = isStudent
-                ? `${(u as Student).firstName ?? (u as Student).learnerData?.firstName ?? ""} ${
-                    (u as Student).lastName ?? (u as Student).learnerData?.lastName ?? ""
-                  }`.trim() || "—"
-                : `${(u as TeacherApplication).firstName ?? ""} ${(u as TeacherApplication).lastName ?? ""}`.trim();
-              const email = isStudent
-                ? (u as Student).parentEmail ?? (u as Student).parentData?.email ?? "—"
-                : (u as TeacherApplication).email ?? "—";
-              const status = (u as any).status ?? (u as any).applicationStatus ?? "pending";
-
-              return (
-                <li key={u.id} className="p-3 border rounded bg-gray-50">
-                  <div className="mb-2">
-                    <p className="font-medium flex items-center gap-2">
-                      {name}
-                      <span className={getStudentStatusColor(status)}>
-                        {status.charAt(0).toUpperCase() + status.slice(1)}
-                      </span>
-                    </p>
-                    <p className="text-xs text-gray-500">{email}</p>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2">
-                    <Button size="sm" variant="outline" onClick={() => openModal(u, col)}>
-                      Review Details
-                    </Button>
-
-                    {status === "pending" && (
-                      <Button
-                        size="sm"
-                        className="bg-green-600 hover:bg-green-700 text-white"
-                        onClick={() => approve(col, u)}
-                      >
-                        Approve
-                      </Button>
-                    )}
-                    {status !== "rejected" && (
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        onClick={() => reject(col, u.id)}
-                      >
-                        Reject
-                      </Button>
-                    )}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
+      {/* Search & Filters */}
+      <Card className="bg-white shadow-md">
+        <CardContent className="p-4">
+          <div className="flex flex-col md:flex-row gap-4">
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
+              <Input
+                placeholder="Search students, teachers, parents..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+            <Select value={gradeFilter} onValueChange={setGradeFilter}>
+              <SelectTrigger className="w-40">
+                <SelectValue placeholder="Grade" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Grades</SelectItem>
+                {["Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6", "Grade 7", "Grade 8", "Grade 9", "Grade 10", "Grade 11", "Grade 12"].map(g => (
+                  <SelectItem key={g} value={g}>{g}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-40">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="enrolled">Enrolled</SelectItem>
+                <SelectItem value="rejected">Rejected</SelectItem>
+                <SelectItem value="suspended">Suspended</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </CardContent>
       </Card>
-    );
-  };
 
-  /* ---------------- Main Render ---------------- */
-  return (
-    <div className="min-h-screen bg-gray-50 p-6 space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <h1 className="text-2xl font-bold">Welcome, {principalName} 👋</h1>
-        <div className="flex items-center gap-4">
-          <p className="text-gray-600">
-            {schoolName} | {time.toLocaleDateString()} {time.toLocaleTimeString()}
-          </p>
-          <Button variant="destructive" size="sm" onClick={handleLogout}>
-            Logout
-          </Button>
-        </div>
+      {/* Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card className="bg-gradient-to-r from-green-500 to-emerald-600 text-white">
+          <CardContent className="p-4 flex items-center justify-between">
+            <div>
+              <p className="text-sm opacity-90">Total Students</p>
+              <p className="text-2xl font-bold">{students.length}</p>
+            </div>
+            <Users className="w-8 h-8 opacity-70" />
+          </CardContent>
+        </Card>
+        <Card className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white">
+          <CardContent className="p-4 flex items-center justify-between">
+            <div>
+              <p className="text-sm opacity-90">Active Teachers</p>
+              <p className="text-2xl font-bold">{teachers.filter(t => t.status === "approved").length}</p>
+            </div>
+            <CheckCircle className="w-8 h-8 opacity-70" />
+          </CardContent>
+        </Card>
+        <Card className="bg-gradient-to-r from-yellow-500 to-amber-600 text-white">
+          <CardContent className="p-4 flex items-center justify-between">
+            <div>
+              <p className="text-sm opacity-90">Pending Reviews</p>
+              <p className="text-2xl font-bold">{students.filter(s => s.status === "pending").length + teachers.filter(t => t.status === "pending").length}</p>
+            </div>
+            <AlertCircle className="w-8 h-8 opacity-70" />
+          </CardContent>
+        </Card>
+        <Card className="bg-gradient-to-r from-purple-500 to-pink-600 text-white">
+          <CardContent className="p-4 flex items-center justify-between">
+            <div>
+              <p className="text-sm opacity-90">Paid Students</p>
+              <p className="text-2xl font-bold">{Object.values(payments).flat().filter(p => p.paymentStatus === "paid").length}</p>
+            </div>
+            <DollarSign className="w-8 h-8 opacity-70" />
+          </CardContent>
+        </Card>
       </div>
 
-      <div className="flex flex-col md:flex-row gap-4 items-center">
-        <Input
-          type="text"
-          placeholder="Search students, teachers, or parents..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full max-w-md"
-        />
+      {/* Main Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Students */}
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between">
+              Students
+              <Badge variant="secondary">{filteredStudents.length}</Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3 max-h-96 overflow-y-auto">
+              {filteredStudents.map(s => {
+                const paid = payments[s.id]?.some(p => p.paymentStatus === "paid") || false;
+                return (
+                  <div key={s.id} className="p-3 border rounded-lg bg-gray-50 hover:bg-gray-100 transition">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <p className="font-medium">{s.firstName} {s.lastName}</p>
+                        <p className="text-sm text-gray-600">Grade {s.grade}</p>
+                        <div className="flex gap-2 mt-1">
+                          {getStatusBadge(s.status, paid)}
+                          {s.subjects && s.subjects.map(sub => (
+                            <Badge key={sub} variant="outline" className="text-xs">{sub}</Badge>
+                          ))}
+                        </div>
+                      </div>
+                      <Button size="sm" variant="ghost" onClick={() => openModal(s, "student")}>
+                        View
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Teachers */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Teachers</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3 max-h-96 overflow-y-auto">
+              {filteredTeachers.map(t => (
+                <div key={t.id} className="p-3 border rounded-lg bg-blue-50 hover:bg-blue-100 transition">
+                  <p className="font-medium">{t.firstName} {t.lastName}</p>
+                  <p className="text-sm text-gray-600">{t.email}</p>
+                  <div className="flex gap-1 mt-1 flex-wrap">
+                    {t.subjects?.map(sub => (
+                      <Badge key={sub} variant="secondary" className="text-xs">{sub}</Badge>
+                    ))}
+                  </div>
+                  <div className="flex gap-2 mt-2">
+                    {t.status === "pending" && (
+                      <>
+                        <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white" onClick={() => approve("teacherApplications", t)}>
+                          Approve
+                        </Button>
+                        <Button size="sm" variant="destructive" onClick={() => reject("teacherApplications", t.id)}>
+                          Reject
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {renderUsersCard("Students", students, "students")}
-        {renderUsersCard("Teachers", teachers, "teacherApplications")}
-      </div>
-
+      {/* Timetable Manager */}
       <TimetableManager />
 
+      {/* Chat Widget */}
       {auth.currentUser && chatRecipient && (
         <div className="fixed bottom-6 right-6 z-50">
-       
-        <ChatWidget
-          uid={auth.currentUser?.uid || ""}
-          role="principal"
-          initialRecipient={chatRecipient}
-          forceOpen={true}
-          onClose={() => setChatRecipient(null)}
-        />
+          <ChatWidget
+            uid={auth.currentUser.uid}
+            role="principal"
+            initialRecipient={chatRecipient}
+            forceOpen={true}
+            onClose={() => setChatRecipient(null)}
+          />
         </div>
       )}
     </div>
