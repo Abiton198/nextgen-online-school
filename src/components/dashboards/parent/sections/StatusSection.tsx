@@ -119,7 +119,7 @@ export default function StatusSection() {
     if (student.status === "enrolled") {
       return (
         <Button size="sm" className="bg-green-600 hover:bg-green-700">
-          <Link to={`/student-portal/${student.id}`}>Access Portal</Link>
+          <Link to={`/student-dashboard/${student.id}`}>Access Portal</Link>
         </Button>
       );
     }

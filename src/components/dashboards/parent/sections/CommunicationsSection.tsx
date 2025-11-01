@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   collection,
   query,
@@ -9,24 +9,31 @@ import {
   onSnapshot,
   addDoc,
   serverTimestamp,
+  doc,
+  getDoc,
+  setDoc,
   getDocs,
+  Unsubscribe,
 } from "firebase/firestore";
 import { db } from "@/lib/firebaseConfig";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, X, ChevronDown, ChevronRight, MessageCircle, School, User } from "lucide-react";
+import { ArrowLeft, X, ChevronDown, ChevronRight, MessageCircle, School, User, Send, MessageSquare } from "lucide-react";
+import ChatWidget from "@/components/chat/ChatWidget";
 
 interface Student {
   id: string;
-  subjects: string[];
-  curriculum: "CAPS" | "Cambridge";
+  firstName: string;
+  lastName: string;
+  subjects?: string[];
+  grade?: string;
 }
 
 interface Message {
   id: string;
   text: string;
   sender: string;
-  createdAt: any;
+  timestamp: any;
 }
 
 interface Conversation {
@@ -34,6 +41,8 @@ interface Conversation {
   label: string;
   type: "principal" | "admin" | "teacher";
   subject?: string;
+  teacherId?: string;
+  studentName?: string;
 }
 
 interface Announcement {
@@ -47,9 +56,6 @@ export default function CommunicationsSection() {
   const { user } = useAuth();
   const navigate = useNavigate();
 
-  // ──────────────────────────────────────────────────────────
-  // STATE
-  // ──────────────────────────────────────────────────────────
   const [students, setStudents] = useState<Student[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConv, setActiveConv] = useState<string | null>(null);
@@ -57,16 +63,17 @@ export default function CommunicationsSection() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [showWidget, setShowWidget] = useState(false);
 
-  // ──────────────────────────────────────────────────────────
-  // FETCH ENROLLED STUDENTS & BUILD CONVERSATIONS
-  // ──────────────────────────────────────────────────────────
+  const messagesEndRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  /* ---------------- Fetch Students & Build Conversations ---------------- */
   useEffect(() => {
     if (!user?.uid) return;
 
     const fetchStudents = async () => {
       try {
-        // Fetch all students for this parent
         let q = query(collection(db, "students"), where("parentId", "==", user.uid));
         let snap = await getDocs(q);
 
@@ -75,36 +82,58 @@ export default function CommunicationsSection() {
           snap = await getDocs(q);
         }
 
-        if (snap.empty) {
+        if (snap.empty && user?.email) {
           q = query(collection(db, "students"), where("linkedParentEmail", "==", user.email));
           snap = await getDocs(q);
         }
 
-        const studentList = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Student));
+        const studentList = snap.docs.map((d) => ({
+          id: d.id,
+          firstName: d.data().firstName || "Student",
+          lastName: d.data().lastName || "",
+          subjects: d.data().subjects || [],
+          grade: d.data().grade || "",
+        } as Student));
+
         setStudents(studentList);
 
-        // Extract unique subjects
-        const allSubjects = new Set<string>();
-        studentList.forEach((s) => s.subjects?.forEach((sub) => allSubjects.add(sub)));
-
-        // Build dynamic conversation list
         const dynamicConvs: Conversation[] = [
           { id: "principal", label: "Principal", type: "principal" },
           { id: "admin", label: "Admin", type: "admin" },
         ];
 
-        allSubjects.forEach((subject) => {
-          dynamicConvs.push({
-            id: `teacher_${subject}`,
-            label: `${subject} Teacher`,
-            type: "teacher",
-            subject,
-          });
-        });
+        for (const student of studentList) {
+          const studentName = `${student.firstName} ${student.lastName}`.trim();
 
-        setConversations(dynamicConvs);
+          for (const subject of student.subjects || []) {
+            const teacherQ = query(
+              collection(db, "teachers"),
+              where("subject", "==", subject),
+              where("approved", "==", true)
+            );
+            const teacherSnap = await getDocs(teacherQ);
+
+            const teacherId = !teacherSnap.empty ? teacherSnap.docs[0].id : null;
+
+            const convId = teacherId
+              ? `${user.uid}_${teacherId}_${student.id}`
+              : `${user.uid}_teacher_${subject}_${student.id}`;
+
+            dynamicConvs.push({
+              id: convId,
+              label: `${subject} Teacher (${studentName})`,
+              type: "teacher",
+              subject,
+              teacherId,
+              studentName,
+            });
+          }
+        }
+
+        const uniqueConvs = Array.from(new Map(dynamicConvs.map(c => [c.id, c])).values());
+        setConversations(uniqueConvs);
       } catch (err) {
-        console.error("Error fetching students:", err);
+        console.error("Error:", err);
       } finally {
         setLoading(false);
       }
@@ -113,71 +142,98 @@ export default function CommunicationsSection() {
     fetchStudents();
   }, [user?.uid, user?.email]);
 
-  // ──────────────────────────────────────────────────────────
-  // REAL-TIME MESSAGES PER CONVERSATION
-  // ──────────────────────────────────────────────────────────
+  /* ---------------- Real-Time Messages ---------------- */
   useEffect(() => {
     if (!user?.uid || conversations.length === 0) return;
 
-    const unsubscribes = conversations.map((conv) => {
-      const q = query(
-        collection(db, "messages"),
-        where("parentId", "==", user.uid),
-        where("conversationId", "==", conv.id),
-        orderBy("createdAt", "asc")
-      );
+    const unsubscribes: Unsubscribe[] = [];
 
-      return onSnapshot(q, (snap) => {
-        const msgList = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() } as Message));
+    conversations.forEach((conv) => {
+      const messagesRef = collection(db, "conversations", conv.id, "messages");
+      const q = query(messagesRef, orderBy("timestamp", "asc"));
+
+      const unsub = onSnapshot(q, (snap) => {
+        const msgList = snap.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+        } as Message));
+
         setMessages((prev) => ({
           ...prev,
           [conv.id]: msgList,
         }));
+
+        if (activeConv === conv.id) {
+          setTimeout(() => {
+            messagesEndRefs.current[conv.id]?.scrollIntoView({ behavior: "smooth" });
+          }, 100);
+        }
       });
+
+      unsubscribes.push(unsub);
     });
 
-    return () => unsubscribes.forEach((unsub) => unsub());
-  }, [user?.uid, conversations]);
+    return () => unsubscribes.forEach(unsub => unsub());
+  }, [user?.uid, conversations, activeConv]);
 
-  // ──────────────────────────────────────────────────────────
-  // REAL-TIME ANNOUNCEMENTS
-  // ──────────────────────────────────────────────────────────
+  /* ---------------- Real-Time Announcements ---------------- */
   useEffect(() => {
     const q = query(collection(db, "announcements"), orderBy("createdAt", "desc"));
-    const unsubscribe = onSnapshot(q, (snap) => {
-      const list = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() } as Announcement));
+    const unsub = onSnapshot(q, (snap) => {
+      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Announcement));
       setAnnouncements(list);
     });
-    return () => unsubscribe();
+    return () => unsub();
   }, []);
 
-  // ──────────────────────────────────────────────────────────
-  // SEND MESSAGE
-  // ──────────────────────────────────────────────────────────
+  /* ---------------- Send Message ---------------- */
   const sendMessage = async (conv: Conversation) => {
-    if (!newMessage.trim() || !user?.uid) return;
+    if (!newMessage.trim() || !user?.uid || sending) return;
 
+    setSending(true);
     try {
-      await addDoc(collection(db, "messages"), {
-        parentId: user.uid,
-        conversationId: conv.id,
-        sender: user.uid,
-        recipient: conv.type === "teacher" ? `teacher_${conv.subject}` : conv.id,
-        subject: conv.subject || null,
+      const convRef = doc(db, "conversations", conv.id);
+
+      const convSnap = await getDoc(convRef);
+      if (!convSnap.exists()) {
+        const participants = conv.teacherId
+          ? [user.uid, conv.teacherId]
+          : conv.type === "principal"
+            ? [user.uid, "principal"]
+            : [user.uid, "admin"];
+
+        await setDoc(convRef, {
+          participants,
+          studentId: conv.studentName
+            ? students.find(s => `${s.firstName} ${s.lastName}` === conv.studentName)?.id
+            : null,
+          subject: conv.subject,
+          lastMessage: newMessage.trim(),
+          lastMessageTime: serverTimestamp(),
+        });
+      } else {
+        await setDoc(convRef, {
+          lastMessage: newMessage.trim(),
+          lastMessageTime: serverTimestamp(),
+        }, { merge: true });
+      }
+
+      await addDoc(collection(convRef, "messages"), {
         text: newMessage.trim(),
-        createdAt: serverTimestamp(),
+        sender: user.uid,
+        timestamp: serverTimestamp(),
       });
 
       setNewMessage("");
     } catch (err) {
-      console.error("Failed to send message:", err);
-      alert("Failed to send message. Try again.");
+      console.error("Send error:", err);
+      alert("Failed to send. Try again.");
+    } finally {
+      setSending(false);
     }
   };
 
-  // ──────────────────────────────────────────────────────────
-  // LOADING STATE
-  // ──────────────────────────────────────────────────────────
+  /* ---------------- Loading ---------------- */
   if (loading) {
     return (
       <div className="p-6 text-center">
@@ -186,49 +242,42 @@ export default function CommunicationsSection() {
     );
   }
 
-  // ──────────────────────────────────────────────────────────
-  // MAIN RENDER
-  // ──────────────────────────────────────────────────────────
+  /* ---------------- Render ---------------- */
   return (
-    <div className="p-4 max-w-4xl mx-auto space-y-6">
+    <div className="p-4 max-w-4xl mx-auto space-y-6 relative">
 
       {/* Navigation */}
       <div className="sticky top-0 z-10 bg-white border-b flex justify-between items-center px-2 py-3 mb-4">
-        <button
-          onClick={() => navigate(-1)}
-          className="flex items-center gap-1 text-gray-600 hover:text-black"
-        >
+        <button onClick={() => navigate(-1)} className="flex items-center gap-1 text-gray-600 hover:text-black">
           <ArrowLeft size={18} /> Back
         </button>
-        <button
-          onClick={() => navigate("/parent-dashboard")}
-          className="text-gray-600 hover:text-red-600"
-        >
+        <button onClick={() => navigate("/parent-dashboard")} className="text-gray-600 hover:text-red-600">
           <X size={20} />
         </button>
       </div>
 
-      <h1 className="text-2xl font-bold text-gray-800 text-center">
-        Communications Hub
-      </h1>
+      <h1 className="text-2xl font-bold text-gray-800 text-center">Communications Hub</h1>
 
-      {/* Dynamic Conversations */}
+      {/* Enrolled Students */}
+      {students.length > 0 && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+          <p className="text-sm font-medium text-blue-800">
+            Enrolled: {students.map(s => `${s.firstName} ${s.lastName} (${s.grade || "N/A"})`).join(" | ")}
+          </p>
+        </div>
+      )}
+
+      {/* Conversations */}
       <div className="space-y-3">
         {conversations.length === 0 ? (
-          <p className="text-center text-gray-500">
-            No enrolled subjects. Register a student to start communicating.
-          </p>
+          <p className="text-center text-gray-500">No subjects enrolled. Register a student to start.</p>
         ) : (
           conversations.map((conv) => {
             const convMessages = messages[conv.id] || [];
             const isActive = activeConv === conv.id;
 
             return (
-              <div
-                key={conv.id}
-                className="border rounded-lg bg-white shadow-sm overflow-hidden transition-all"
-              >
-                {/* Header */}
+              <div key={conv.id} className="border rounded-lg bg-white shadow-sm overflow-hidden">
                 <button
                   onClick={() => setActiveConv(isActive ? null : conv.id)}
                   className="w-full flex justify-between items-center px-4 py-3 bg-gradient-to-r from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100 transition"
@@ -238,59 +287,73 @@ export default function CommunicationsSection() {
                     {conv.type === "admin" && <User className="w-5 h-5 text-green-600" />}
                     {conv.type === "teacher" && <MessageCircle className="w-5 h-5 text-purple-600" />}
                     <span className="font-semibold text-gray-800">{conv.label}</span>
+                    {convMessages.length > 0 && (
+                      <span className="ml-auto text-xs text-gray-500">
+                        {convMessages.length} message{convMessages.length > 1 ? "s" : ""}
+                      </span>
+                    )}
                   </div>
                   {isActive ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
                 </button>
 
-                {/* Chat Panel */}
                 {isActive && (
                   <div className="p-4 space-y-3 border-t">
-                    {/* Messages */}
-                    <div className="max-h-48 overflow-y-auto space-y-2 p-2 bg-gray-50 rounded border">
+                    <div className="max-h-64 overflow-y-auto space-y-3 p-3 bg-gray-50 rounded-lg border">
                       {convMessages.length > 0 ? (
-                        convMessages.map((msg) => (
-                          <div
-                            key={msg.id}
-                            className={`text-sm p-2 rounded-lg max-w-xs ${
-                              msg.sender === user?.uid
-                                ? "bg-blue-100 text-blue-900 ml-auto"
-                                : "bg-white border text-gray-800"
-                            }`}
-                          >
-                            <p className="font-medium">
-                              {msg.sender === user?.uid ? "You" : conv.label.split(" ")[0]}:
-                            </p>
-                            <p>{msg.text}</p>
-                            {msg.createdAt && (
-                              <p className="text-xs text-gray-500 mt-1">
-                                {new Date(msg.createdAt.toDate()).toLocaleTimeString()}
-                              </p>
-                            )}
-                          </div>
-                        ))
+                        convMessages.map((msg) => {
+                          const isMe = msg.sender === user?.uid;
+                          const time = msg.timestamp
+                            ? new Date(msg.timestamp.toDate()).toLocaleString("en-ZA", {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                                day: "numeric",
+                                month: "short",
+                              })
+                            : "Sending...";
+
+                          return (
+                            <div
+                              key={msg.id}
+                              className={`flex ${isMe ? "justify-end" : "justify-start"}`}
+                            >
+                              <div
+                                className={`max-w-xs px-3 py-2 rounded-lg text-sm shadow-sm ${
+                                  isMe
+                                    ? "bg-blue-600 text-white"
+                                    : "bg-white border text-gray-800"
+                                }`}
+                              >
+                                <p>{msg.text}</p>
+                                <p className={`text-xs mt-1 ${isMe ? "text-blue-100" : "text-gray-500"}`}>
+                                  {time}
+                                </p>
+                              </div>
+                            </div>
+                          );
+                        })
                       ) : (
-                        <p className="text-gray-500 text-center">
-                          Start the conversation!
-                        </p>
+                        <p className="text-center text-gray-500">Start the conversation!</p>
                       )}
+                      <div ref={el => (messagesEndRefs.current[conv.id] = el)} />
                     </div>
 
-                    {/* Input */}
                     <div className="flex gap-2">
                       <input
                         type="text"
-                        placeholder={`Message ${conv.label}...`}
+                        placeholder={`Message ${conv.label.split(" (")[0]}...`}
                         value={newMessage}
                         onChange={(e) => setNewMessage(e.target.value)}
-                        onKeyDown={(e) => e.key === "Enter" && sendMessage(conv)}
+                        onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && sendMessage(conv)}
                         className="flex-1 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        disabled={sending}
                       />
                       <button
                         onClick={() => sendMessage(conv)}
-                        disabled={!newMessage.trim()}
-                        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed transition"
+                        disabled={!newMessage.trim() || sending}
+                        className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg flex items-center gap-1 transition"
                       >
-                        Send
+                        <Send size={16} />
+                        {sending ? "Sending" : "Send"}
                       </button>
                     </div>
                   </div>
@@ -306,32 +369,49 @@ export default function CommunicationsSection() {
         <h2 className="text-lg font-bold text-green-800 mb-3 flex items-center gap-2">
           <School className="w-5 h-5" /> School Announcements
         </h2>
-
         <div className="space-y-3">
           {announcements.length > 0 ? (
             announcements.map((a) => (
-              <div
-                key={a.id}
-                className="bg-white rounded-lg p-3 border shadow-sm"
-              >
+              <div key={a.id} className="bg-white rounded-lg p-3 border shadow-sm">
                 <p className="font-semibold text-gray-800">{a.title}</p>
                 <p className="text-sm text-gray-700 mt-1">{a.content}</p>
                 {a.createdAt && (
                   <p className="text-xs text-gray-500 mt-2">
-                    {new Date(a.createdAt.toDate()).toLocaleDateString()}
+                    {new Date(a.createdAt.toDate()).toLocaleDateString("en-ZA", {
+                      day: "numeric",
+                      month: "long",
+                      year: "numeric",
+                    })}
                   </p>
                 )}
               </div>
             ))
           ) : (
-            <p className="text-gray-500 text-center">
-              No announcements at this time.
-            </p>
+            <p className="text-gray-500 text-center">No announcements.</p>
           )}
         </div>
       </div>
 
-      {/* Help */}
+      {/* Floating Chat Widget Button */}
+      <button
+        onClick={() => setShowWidget(true)}
+        className="fixed bottom-6 right-6 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-full p-4 shadow-xl hover:from-green-600 hover:to-emerald-700 transition transform hover:scale-110 z-50 flex items-center gap-2"
+      >
+        <MessageSquare size={20} />
+        Chat
+      </button>
+
+      {/* Chat Widget (Uses same conversations) */}
+      {showWidget && (
+        <ChatWidget
+          parentId={user?.uid!}
+          parentName={user?.displayName || "Parent"}
+          parentPhoto={user?.photoURL}
+          forceOpen={true}
+          onClose={() => setShowWidget(false)}
+        />
+      )}
+
       <p className="text-center text-xs text-gray-500 mt-6">
         Need help? Call support: <strong>(+27) 65 656 4983</strong>
       </p>

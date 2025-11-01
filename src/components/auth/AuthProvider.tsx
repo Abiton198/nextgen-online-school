@@ -11,7 +11,7 @@ import React, { createContext, useContext, useEffect, useState } from "react";
 interface AppUser {
   uid: string;
   email: string | null;
-  role: "student" | "teacher" | "parent" | "principal" | "admin";
+  role: "parent" | "teacher" | "principal" | "admin"; // student removed
 }
 
 interface AuthContextType {
@@ -37,32 +37,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       try {
-        // Look up role in "users/{uid}"
         const userRef = doc(db, "users", firebaseUser.uid);
         const userSnap = await getDoc(userRef);
 
         if (userSnap.exists()) {
           const data = userSnap.data();
-          setUser({
-            uid: firebaseUser.uid,
-            email: firebaseUser.email,
-            role: data.role || "student", // fallback
-          });
+          const role = data.role;
+
+          // Only allow parent, teacher, principal, admin
+          if (["parent", "teacher", "principal", "admin"].includes(role)) {
+            setUser({
+              uid: firebaseUser.uid,
+              email: firebaseUser.email,
+              role: role as AppUser["role"],
+            });
+          } else {
+            console.warn("Unauthorized role:", role);
+            setUser(null);
+          }
         } else {
-          // Fallback if doc missing
-          setUser({
-            uid: firebaseUser.uid,
-            email: firebaseUser.email,
-            role: "student",
-          });
+          console.warn("No user doc found for UID:", firebaseUser.uid);
+          setUser(null);
         }
       } catch (err) {
-        console.error("Error fetching user role:", err);
-        setUser({
-          uid: firebaseUser.uid,
-          email: firebaseUser.email,
-          role: "student",
-        });
+        console.error("Auth error:", err);
+        setUser(null);
       } finally {
         setLoading(false);
       }

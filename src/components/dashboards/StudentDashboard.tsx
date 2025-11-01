@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useMemo } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider";
 import { db } from "@/lib/firebaseConfig";
 import {
@@ -12,22 +13,39 @@ import {
   orderBy,
   getDocs,
 } from "firebase/firestore";
-import { Card } from "@/components/ui/card";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardContent,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Loader2 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
-import TimetableCard from "./TimetableCard";
+import {
+  Loader2,
+  LogOut,
+  Calendar,
+  Clock,
+  BookOpen,
+  User,
+  ExternalLink,
+  Video,
+  FileText,
+  Moon,
+  Sun,
+  Home,
+} from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 
 /* ============================================================
-   🔹 Type Definitions
+   Types
    ============================================================ */
-interface StudentProfile {
-  firstName?: string;
-  lastName?: string;
-  grade?: string;
-  parentName?: string;
-  points?: number;
-  lessonsCompleted?: number;
+interface Student {
+  id: string;
+  firstName: string;
+  lastName: string;
+  grade: string;
+  subjects: string[];
+  parentId: string;
   email?: string;
 }
 
@@ -35,400 +53,432 @@ interface TimetableEntry {
   id: string;
   grade: string;
   subject: string;
-  date: string;
+  day: string;
   time: string;
   duration: number;
   teacherName: string;
+  curriculum: "CAPS" | "Cambridge";
+}
+
+interface TeacherLink {
+  zoomLink?: string;
+  googleClassroomLink?: string;
 }
 
 /* ============================================================
-   🔹 Helper Function
-   ============================================================ */
-const normalizeGrade = (g?: string) => {
-  if (!g) return "";
-  return g.startsWith("Grade") ? g : `Grade ${g}`;
-};
-
-/* ============================================================
-   🔹 Student Dashboard Component
+   Student Dashboard
    ============================================================ */
 const StudentDashboard: React.FC = () => {
-  const { user, logout } = useAuth();
+  const { studentId } = useParams<{ studentId: string }>();
+  const { logout } = useAuth();
   const navigate = useNavigate();
 
-  const [studentId, setStudentId] = useState<string | null>(null);
-  const [profile, setProfile] = useState<StudentProfile | null>(null);
-  const [loadingProfile, setLoadingProfile] = useState(true);
+  const [student, setStudent] = useState<Student | null>(null);
   const [timetable, setTimetable] = useState<TimetableEntry[]>([]);
-  const [teacherLinks, setTeacherLinks] = useState<
-    Record<string, { googleClassroomLink?: string; zoomLink?: string }>
-  >({});
-  const [activeTab, setActiveTab] = useState<
-    "overview" | "classroom" | "timetable"
-  >("overview");
+  const [teacherLinks, setTeacherLinks] = useState<Record<string, TeacherLink>>({});
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<"timetable" | "classlinks" | "homework">("timetable");
+  const [isDark, setIsDark] = useState(false);
 
   /* ============================================================
-     🔹 Fetch Student Profile
+     Fetch Student Profile
      ============================================================ */
   useEffect(() => {
-    if (!user?.email) return;
-    setLoadingProfile(true);
-
-    const q = query(collection(db, "students"), where("email", "==", user.email));
-    getDocs(q).then((snap) => {
-      if (!snap.empty) {
-        const docSnap = snap.docs[0];
-        setStudentId(docSnap.id);
-        setProfile(docSnap.data() as StudentProfile);
-
-        const unsub = onSnapshot(doc(db, "students", docSnap.id), (s) => {
-          if (s.exists()) setProfile(s.data() as StudentProfile);
-          else setProfile(null);
-          setLoadingProfile(false);
-        });
-        return unsub;
-      } else {
-        setProfile(null);
-        setLoadingProfile(false);
-      }
-    });
-  }, [user?.email]);
-
-  /* ============================================================
-     🔹 Fetch Timetable + Teacher Links
-     ============================================================ */
-  useEffect(() => {
-    if (!profile?.grade) return;
-
-    const normalizedGrade = normalizeGrade(profile.grade);
-    console.log("📘 DEBUG: Fetching timetable for grade:", normalizedGrade);
-
-    try {
-      const qTT = query(
-        collection(db, "timetable"),
-        where("grade", "==", normalizedGrade),
-        orderBy("date"),
-        orderBy("time")
-      );
-
-      const unsubTT = onSnapshot(
-        qTT,
-        async (snap) => {
-          const entries = snap.docs.map((d) => ({
-            id: d.id,
-            ...(d.data() as TimetableEntry),
-          }));
-          setTimetable(entries);
-          console.log("📘 Timetable snapshot:", entries.length, "entries");
-
-          const subjects = Array.from(new Set(entries.map((e) => e.subject.trim())));
-          const links: Record<string, { googleClassroomLink?: string; zoomLink?: string }> = {};
-
-          for (const subject of subjects) {
-            const normalized = subject.toLowerCase().trim();
-            console.log("🔍 Looking for teacher with subject:", normalized);
-
-            try {
-              // Try both possible field types
-              const tqSingle = query(
-                collection(db, "teachers"),
-                where("subject", "==", subject)
-              );
-              const tqArray = query(
-                collection(db, "teachers"),
-                where("subjects", "array-contains", subject)
-              );
-
-              // Run both and merge results
-              const [snapSingle, snapArray] = await Promise.all([
-                getDocs(tqSingle),
-                getDocs(tqArray),
-              ]);
-
-              const combinedDocs = [...snapSingle.docs, ...snapArray.docs];
-
-              if (combinedDocs.length === 0) {
-                console.warn("⚠️ No teacher found for subject:", subject);
-                continue;
-              }
-
-              const data = combinedDocs[0].data();
-              links[subject] = {
-                googleClassroomLink: data.googleClassroomLink,
-                zoomLink: data.zoomLink,
-              };
-
-              console.log("✅ Found teacher link for", subject, "→", links[subject]);
-            } catch (err: any) {
-              console.error("❌ Teacher fetch error for subject:", subject, err.message);
-            }
-          }
-
-          setTeacherLinks(links);
-        },
-        (error) => {
-          console.error("❌ Firestore timetable listener error:", error.message);
-        }
-      );
-
-      return () => unsubTT();
-    } catch (err: any) {
-      console.error("❌ Timetable setup failed:", err.message);
-    }
-  }, [profile?.grade]);
-
-  /* ============================================================
-     🔹 Next Class
-     ============================================================ */
-  const nextClass = useMemo(() => {
-    const now = new Date();
-    const upcoming = timetable
-      .map((t) => ({ ...t, datetime: new Date(`${t.date} ${t.time}`) }))
-      .filter((t) => t.datetime > now)
-      .sort((a, b) => a.datetime.getTime() - b.datetime.getTime());
-    return upcoming[0] || null;
-  }, [timetable]);
-
-  /* ============================================================
-     🔹 Countdown Timer
-     ============================================================ */
-  const [countdown, setCountdown] = useState<string>("");
-
-  useEffect(() => {
-    if (!nextClass) {
-      setCountdown("");
+    if (!studentId) {
+      setLoading(false);
       return;
     }
 
-    const interval = setInterval(() => {
-      const now = new Date();
-      const classTime = new Date(`${nextClass.date} ${nextClass.time}`);
-      const diff = classTime.getTime() - now.getTime();
-
-      if (diff <= 0) {
-        setCountdown("🟢 Class in progress");
-        clearInterval(interval);
+    const unsub = onSnapshot(doc(db, "students", studentId), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data() as Student;
+        setStudent({ ...data, id: snap.id });
       } else {
-        const hours = Math.floor(diff / (1000 * 60 * 60));
-        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-        const seconds = Math.floor((diff % (1000 * 60)) / 1000);
-        const timeStr =
-          hours > 0 ? `${hours}h ${minutes}m ${seconds}s` : `${minutes}m ${seconds}s`;
-        setCountdown(`⏳ Starts in ${timeStr}`);
+        setStudent(null);
       }
-    }, 1000);
+      setLoading(false);
+    });
 
-    return () => clearInterval(interval);
-  }, [nextClass]);
+    return () => unsub();
+  }, [studentId]);
 
   /* ============================================================
-     🔹 Logout
+     Fetch Timetable + Teacher Links
+     ============================================================ */
+  useEffect(() => {
+    if (!student?.grade || !student?.subjects?.length) return;
+
+    const gradeNorm = student.grade.replace(/^grade\s*/i, "").trim();
+
+    const q = query(
+      collection(db, "timetable"),
+      where("grade", "==", student.grade),
+      orderBy("day"),
+      orderBy("time")
+    );
+
+    const unsub = onSnapshot(q, async (snap) => {
+      const entries = snap.docs.map((d) => ({ id: d.id, ...d.data() } as TimetableEntry));
+      setTimetable(entries);
+
+      const links: Record<string, TeacherLink> = {};
+      const subjectSet = new Set(student.subjects);
+
+      for (const subject of subjectSet) {
+        const tq = query(
+          collection(db, "teachers"),
+          where("subject", "==", subject),
+          where("approved", "==", true)
+        );
+        const tsnap = await getDocs(tq);
+        if (!tsnap.empty) {
+          const tdata = tsnap.docs[0].data();
+          links[subject] = {
+            zoomLink: tdata.zoomLink,
+            googleClassroomLink: tdata.googleClassroomLink,
+          };
+        }
+      }
+
+      setTeacherLinks(links);
+    });
+
+    return () => unsub();
+  }, [student?.grade, student?.subjects]);
+
+  /* ============================================================
+     Next Class + Live Indicator
+     ============================================================ */
+  const now = useMemo(() => new Date(), []);
+  const today = useMemo(() => now.toLocaleDateString("en-US", { weekday: "long" }), [now]);
+  const currentTime = useMemo(() => now.toTimeString().slice(0, 5), [now]);
+
+  const nextClass = useMemo(() => {
+    return timetable
+      .filter((c) => c.day === today)
+      .sort((a, b) => a.time.localeCompare(b.time))
+      .find((c) => c.time >= currentTime) || null;
+  }, [timetable, today, currentTime]);
+
+  const liveClass = useMemo(() => {
+    return timetable
+      .filter((c) => c.day === today)
+      .find((c) => {
+        const [h, m] = c.time.split(":");
+        const classStart = new Date();
+        classStart.setHours(parseInt(h), parseInt(m), 0, 0);
+        const classEnd = new Date(classStart.getTime() + c.duration * 60000);
+        return now >= classStart && now <= classEnd;
+      }) || null;
+  }, [timetable, today, now]);
+
+  /* ============================================================
+     Group Timetable by Day
+     ============================================================ */
+  const groupedTimetable = useMemo(() => {
+    const groups: Record<string, TimetableEntry[]> = {};
+    timetable.forEach((entry) => {
+      if (!groups[entry.day]) groups[entry.day] = [];
+      groups[entry.day].push(entry);
+    });
+    return Object.entries(groups).sort(([a], [b]) => {
+      const dayOrder = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+      return dayOrder.indexOf(a) - dayOrder.indexOf(b);
+    });
+  }, [timetable]);
+
+  /* ============================================================
+     Logout & Back to Parent
      ============================================================ */
   const handleLogout = async () => {
     await logout();
-    navigate("/");
+    navigate("/login");
+  };
+
+  const goBackToParent = () => {
+    navigate(`/parent-dashboard`);
   };
 
   /* ============================================================
-     🔹 Guards
+     Loading & Error
      ============================================================ */
-  if (!user)
-    return <div className="min-h-screen flex items-center justify-center">Please sign in.</div>;
-
-  if (loadingProfile)
+  if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-gray-600">
-        <Loader2 className="h-6 w-6 animate-spin mr-2" /> Loading profile...
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+        <div className="text-center p-8">
+          <Loader2 className="h-12 w-12 animate-spin text-indigo-600 mx-auto mb-4" />
+          <p className="text-gray-700 font-medium">Loading your dashboard...</p>
+        </div>
       </div>
     );
+  }
 
-  if (!profile)
+  if (!student) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-red-600">
-        No student profile found. Please contact your school.
+      <div className="min-h-screen bg-gradient-to-br from-red-50 to-pink-100 flex items-center justify-center p-6">
+        <Card className="max-w-md text-center p-8 shadow-lg">
+          <h3 className="text-red-600 font-bold text-xl mb-2">Student Not Found</h3>
+          <p className="text-gray-600 mb-4">Please check the link or contact your parent.</p>
+          <Button onClick={goBackToParent} className="bg-indigo-600">
+            Back to Parent Dashboard
+          </Button>
+        </Card>
       </div>
     );
+  }
 
   /* ============================================================
-     🔹 UI
+     UI
      ============================================================ */
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div className={`min-h-screen ${isDark ? "bg-gray-900 text-white" : "bg-gradient-to-br from-blue-50 to-indigo-100"}`}>
       {/* Header */}
-      <div className="bg-white shadow-sm border-b">
-        <div className="max-w-6xl mx-auto px-4 flex justify-between items-center py-4">
-          <h1 className="text-xl font-bold">Student Dashboard</h1>
-          <Button onClick={handleLogout} className="bg-red-600 hover:bg-red-700">
-            Logout
-          </Button>
+      <header className="bg-white/90 backdrop-blur-sm shadow-sm sticky top-0 z-50">
+        <div className="max-w-6xl mx-auto px-6 py-4 flex justify-between items-center">
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={goBackToParent}
+              className="hover:bg-indigo-100"
+            >
+              <Home size={18} />
+              Back to Parent
+            </Button>
+            <h1 className="text-xl font-bold">
+              {student.firstName}'s Dashboard
+            </h1>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setIsDark(!isDark)}
+              className="hover:bg-gray-100"
+            >
+              {isDark ? <Sun size={18} /> : <Moon size={18} />}
+            </Button>
+            <Button onClick={handleLogout} className="bg-red-600 hover:bg-red-700">
+              <LogOut size={18} />
+            </Button>
+          </div>
         </div>
 
         {/* Tabs */}
-        <div className="flex justify-center space-x-6 border-t bg-gray-100 py-2">
-          {["overview", "classroom", "timetable"].map((tab) => (
+        <nav className={`bg-gradient-to-r ${isDark ? "from-gray-800 to-gray-700" : "from-indigo-600 to-purple-600"} text-white`}>
+          <div className="max-w-6xl mx-auto px-6 flex gap-1">
             <button
-              key={tab}
-              onClick={() => setActiveTab(tab as any)}
-              className={`px-4 py-2 rounded ${
-                activeTab === tab ? "bg-blue-600 text-white" : "text-gray-700 hover:bg-gray-200"
-              }`}
+              onClick={() => setActiveTab("timetable")}
+              className={`flex-1 py-3 font-medium transition ${
+                activeTab === "timetable" ? "bg-white/20" : ""
+              } hover:bg-white/10`}
             >
-              {tab.charAt(0).toUpperCase() + tab.slice(1)}
+              <Calendar className="inline w-5 h-5 mr-2" />
+              Timetable
             </button>
-          ))}
-        </div>
-      </div>
+            <button
+              onClick={() => setActiveTab("classlinks")}
+              className={`flex-1 py-3 font-medium transition ${
+                activeTab === "classlinks" ? "bg-white/20" : ""
+              } hover:bg-white/10`}
+            >
+              <FileText className="inline w-5 h-5 mr-2" />
+              Class Links
+            </button>
+          </div>
+        </nav>
+      </header>
 
-      {/* Main */}
-      <div className="max-w-6xl mx-auto w-full flex-grow p-6">
-        {/* 🔹 Overview */}
-        {activeTab === "overview" && (
-          <Card className="p-6">
-            <h2 className="text-lg font-semibold mb-2">
-              Welcome {profile.firstName} {profile.lastName}
-            </h2>
-            <p className="text-sm text-gray-600">Grade: {profile.grade}</p>
-            <p className="text-sm text-gray-600">
-              Lessons Completed: {profile.lessonsCompleted || 0}
-            </p>
-            <p className="text-sm text-gray-600">Points: {profile.points || 0}</p>
+      {/* Main Content */}
+      <main className="max-w-6xl mx-auto p-6 space-y-6">
+        {/* Live Class Alert */}
+        {liveClass && (
+          <Card className="border-l-4 border-red-500 bg-red-50 shadow-lg animate-pulse">
+            <CardContent className="p-5 flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-red-800 flex items-center gap-2">
+                  <Video className="w-5 h-5 animate-pulse" />
+                  LIVE CLASS: {liveClass.subject}
+                </h3>
+                <p className="text-sm text-gray-700">{liveClass.teacherName}</p>
+              </div>
+              {teacherLinks[liveClass.subject]?.zoomLink ? (
+                <a href={teacherLinks[liveClass.subject].zoomLink} target="_blank" rel="noopener">
+                  <Button className="bg-red-600 hover:bg-red-700 text-white">
+                    Join Now
+                  </Button>
+                </a>
+              ) : (
+                <Button disabled className="bg-gray-400">No Zoom Link</Button>
+              )}
+            </CardContent>
           </Card>
         )}
 
-      
-     {/* 🔹 Classroom Tab */}
-{activeTab === "classroom" && (
-  <div className="space-y-6">
-    <h2 className="text-lg font-semibold text-blue-700">🧑‍🏫 My Classrooms</h2>
-    <p className="text-gray-600 mb-2">
-      Access your subject classrooms and virtual sessions.  
-      If a link isn’t available yet, it will appear as “Pending”.
-    </p>
-
-    {timetable.length === 0 ? (
-      <p className="text-gray-500 italic">No subjects found for your grade.</p>
-    ) : (
-      Array.from(new Map(timetable.map((cls) => [cls.subject, cls])).values()).map((cls) => {
-        const teacher = teacherLinks?.[cls.subject];
-        const classroomLink = teacher?.googleClassroomLink;
-        const zoomLink = teacher?.zoomLink;
-        const hasAnyLink = classroomLink?.trim() || zoomLink?.trim();
-
-        return (
-          <Card
-            key={cls.subject}
-            className={`p-5 border-l-4 ${
-              hasAnyLink ? "border-blue-500" : "border-gray-300"
-            } bg-white shadow-sm hover:shadow-md transition flex flex-col sm:flex-row sm:items-center sm:justify-between`}
-          >
-            <div>
-              <h3 className="font-semibold text-blue-800 text-lg">{cls.subject}</h3>
-              <p className="text-sm text-gray-700">
-                {cls.teacherName} • {cls.grade}
-              </p>
-            </div>
-
-            <div className="flex flex-wrap gap-3 mt-3 sm:mt-0">
-              {classroomLink ? (
-                <a href={classroomLink} target="_blank" rel="noopener noreferrer">
-                  <Button className="bg-green-600 hover:bg-green-700 text-white text-xs">
-                    Google Classroom
-                  </Button>
-                </a>
-              ) : (
-                <Button
-                  disabled
-                  className="bg-gray-300 text-gray-600 text-xs cursor-not-allowed"
-                >
-                  Classroom Pending
-                </Button>
-              )}
-
-              {zoomLink ? (
-                <a href={zoomLink} target="_blank" rel="noopener noreferrer">
-                  <Button className="bg-blue-600 hover:bg-blue-700 text-white text-xs">
-                    Zoom
-                  </Button>
-                </a>
-              ) : (
-                <Button
-                  disabled
-                  className="bg-gray-300 text-gray-600 text-xs cursor-not-allowed"
-                >
-                  Zoom Pending
-                </Button>
-              )}
-            </div>
-          </Card>
-        );
-      })
-    )}
-  </div>
-)}
-
-
-        {/* 🔹 Timetable */}
-        {activeTab === "timetable" && (
-          <div className="space-y-4">
-            {nextClass ? (
-              <Card
-                className={`p-5 border-l-4 shadow-sm ${
-                  countdown.includes("Starts in") &&
-                  countdown.match(/\d+m/) &&
-                  parseInt(countdown.match(/\d+m/)?.[0]) <= 10
-                    ? "border-yellow-500 bg-yellow-50"
-                    : "border-blue-500 bg-blue-50"
-                }`}
-              >
-                <h3 className="font-semibold text-blue-800 mb-1">
-                  🎯 Next Class: {nextClass.subject}
+        {/* Next Class */}
+        {nextClass && !liveClass && (
+          <Card className="border-l-4 border-yellow-500 bg-yellow-50 shadow-lg">
+            <CardContent className="p-5 flex items-center justify-between flex-wrap gap-4">
+              <div>
+                <h3 className="font-bold text-yellow-800 flex items-center gap-2">
+                  <Clock className="w-5 h-5" />
+                  Next Class: {nextClass.subject}
                 </h3>
                 <p className="text-sm text-gray-700">
-                  {new Date(nextClass.date).toLocaleDateString("en-US", {
-                    weekday: "short",
-                    month: "short",
-                    day: "numeric",
-                  })}{" "}
-                  • {nextClass.time} ({nextClass.duration} mins)
+                  {nextClass.day} • {nextClass.time} ({nextClass.duration} min)
                 </p>
-                <p className="text-sm text-gray-700">Teacher: {nextClass.teacherName}</p>
-                <p className="text-sm font-medium mt-1 text-green-700">{countdown}</p>
+              </div>
+              <div className="flex gap-2">
+                {teacherLinks[nextClass.subject]?.zoomLink && (
+                  <a href={teacherLinks[nextClass.subject].zoomLink} target="_blank" rel="noopener">
+                    <Button size="sm" className="bg-yellow-600 hover:bg-yellow-700">
+                      Join Zoom
+                    </Button>
+                  </a>
+                )}
+                {teacherLinks[nextClass.subject]?.googleClassroomLink && (
+                  <a href={teacherLinks[nextClass.subject].googleClassroomLink} target="_blank" rel="noopener">
+                    <Button size="sm" variant="outline">Classroom</Button>
+                  </a>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
-                <div className="flex gap-3 mt-3">
-                  {teacherLinks[nextClass.subject]?.googleClassroomLink && (
-                    <a
-                      href={teacherLinks[nextClass.subject]?.googleClassroomLink}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      <Button className="bg-green-600 hover:bg-green-700 text-white text-xs">
-                        Google Classroom
-                      </Button>
-                    </a>
-                  )}
-                  {teacherLinks[nextClass.subject]?.zoomLink && (
-                    <a
-                      href={teacherLinks[nextClass.subject]?.zoomLink}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      <Button className="bg-blue-600 hover:bg-blue-700 text-white text-xs">
-                        Zoom
-                      </Button>
-                    </a>
-                  )}
-                </div>
+        {/* Timetable Tab */}
+        {activeTab === "timetable" && (
+          <div className="space-y-6">
+            {groupedTimetable.length === 0 ? (
+              <Card className="text-center p-12">
+                <Calendar className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                <p className="text-gray-600 text-lg font-medium">No timetable yet</p>
+                <p className="text-sm text-gray-500">Classes will appear here soon.</p>
               </Card>
             ) : (
-              <p className="text-gray-500 text-sm italic">
-                No upcoming classes found for your grade.
-              </p>
+              groupedTimetable.map(([day, slots]) => (
+                <Card key={day} className="overflow-hidden shadow-lg">
+                  <CardHeader className={`bg-gradient-to-r ${
+                    day === today ? "from-red-500 to-pink-600" : "from-indigo-500 to-purple-600"
+                  } text-white`}>
+                    <CardTitle className="flex items-center gap-2">
+                      <Calendar className="w-5 h-5" />
+                      {day}
+                      {day === today && <span className="ml-2 px-2 py-0.5 bg-white/20 rounded-full text-xs">Today</span>}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    <div className="divide-y">
+                      {slots.map((slot) => {
+                        const links = teacherLinks[slot.subject] || {};
+                        const isLive = liveClass?.id === slot.id;
+                        return (
+                          <div
+                            key={slot.id}
+                            className={`p-5 flex items-center justify-between flex-wrap gap-4 ${
+                              isLive ? "bg-red-50 border-2 border-red-300" : "hover:bg-gray-50"
+                            }`}
+                          >
+                            <div className="flex-1">
+                              <h4 className={`font-semibold flex items-center gap-2 ${
+                                isLive ? "text-red-800" : "text-indigo-800"
+                              }`}>
+                                <BookOpen className="w-4 h-4" />
+                                {slot.subject}
+                                {isLive && <span className="ml-2 px-2 py-0.5 bg-red-600 text-white text-xs rounded-full">LIVE</span>}
+                              </h4>
+                              <p className="text-sm text-gray-700 flex items-center gap-2">
+                                <User className="w-4 h-4" />
+                                {slot.teacherName}
+                              </p>
+                              <p className="text-sm text-gray-700 flex items-center gap-2">
+                                <Clock className="w-4 h-4" />
+                                {slot.time} • {slot.duration} min
+                              </p>
+                            </div>
+                            <div className="flex gap-2">
+                              {links.zoomLink ? (
+                                <a href={links.zoomLink} target="_blank" rel="noopener">
+                                  <Button size="sm" className="bg-blue-600 hover:bg-blue-700">
+                                    <Video size={16} /> Zoom
+                                  </Button>
+                                </a>
+                              ) : (
+                                <Button size="sm" disabled className="bg-gray-400 text-xs">
+                                  Zoom N/A
+                                </Button>
+                              )}
+                              {links.googleClassroomLink ? (
+                                <a href={links.googleClassroomLink} target="_blank" rel="noopener">
+                                  <Button size="sm" variant="outline">Classroom</Button>
+                                </a>
+                              ) : (
+                                <Button size="sm" disabled variant="outline" className="text-xs">
+                                  Classroom N/A
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
             )}
-
-            <TimetableCard grade={normalizeGrade(profile.grade!)} />
           </div>
         )}
-      </div>
+
+        {/* Class Links Tab */}
+        {activeTab === "classlinks" && (
+          <div className="space-y-6">
+            <h2 className="text-xl font-bold text-indigo-800 flex items-center gap-2">
+              <ExternalLink className="w-6 h-6" />
+              My Class Links
+            </h2>
+            {student.subjects.length === 0 ? (
+              <Card className="p-8 text-center">
+                <p className="text-gray-600">No subjects enrolled.</p>
+              </Card>
+            ) : (
+              <div className="grid gap-4 md:grid-cols-2">
+                {student.subjects.map((subject) => {
+                  const links = teacherLinks[subject] || {};
+                  return (
+                    <Card key={subject} className="shadow-md hover:shadow-lg transition">
+                      <CardContent className="p-5">
+                        <h3 className="font-bold text-indigo-800 mb-3">{subject}</h3>
+                        <div className="flex flex-wrap gap-3 justify-center">
+                          {links.zoomLink ? (
+                            <a href={links.zoomLink} target="_blank" rel="noopener">
+                              <Button className="bg-blue-600 hover:bg-blue-700">
+                                <Video size={16} className="mr-1" /> Join Zoom
+                              </Button>
+                            </a>
+                          ) : (
+                            <Button disabled className="bg-gray-400">
+                              Zoom Not Available
+                            </Button>
+                          )}
+                          {links.googleClassroomLink ? (
+                            <a href={links.googleClassroomLink} target="_blank" rel="noopener">
+                              <Button variant="outline">Open Classroom</Button>
+                            </a>
+                          ) : (
+                            <Button disabled variant="outline">
+                              Classroom Not Available
+                            </Button>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </main>
     </div>
   );
 };

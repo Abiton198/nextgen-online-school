@@ -35,7 +35,7 @@ import AboutUs from "@/components/AboutUs";
 import NotFound from "@/pages/NotFound";
 import AppLayout from "@/components/AppLayout";
 
-// 🔥 New Detail Pages (Marketing)
+// Marketing Pages
 import WhyChoose from "./components/about/WhyChoose";
 import LearningPlatform from "./components/about/LearningPlatform";
 import SubjectsOffered from "./components/about/SubjectsOffered";
@@ -52,20 +52,19 @@ const App: React.FC = () => {
     <ThemeProvider defaultTheme="light">
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
-          {/* Toast notifications */}
           <Toaster />
           <Sonner />
 
           <AuthProvider>
             <BrowserRouter>
               <Routes>
-                {/* 🌍 Default Home/Landing Page */}
+                {/* Default Home/Landing Page */}
                 <Route path="/" element={<AppLayout />} />
 
-                {/* ℹ️ Public Pages */}
+                {/* Public Pages */}
                 <Route path="/about" element={<AboutUs />} />
 
-                {/* 🔎 About detail pages */}
+                {/* About Detail Pages */}
                 <Route path="/about/why-choose" element={<WhyChoose />} />
                 <Route path="/about/learning-platform" element={<LearningPlatform />} />
                 <Route path="/about/subjects" element={<SubjectsOffered />} />
@@ -75,21 +74,19 @@ const App: React.FC = () => {
                 <Route path="/about/teaching-staff" element={<TeachingStaff />} />
                 <Route path="/about/accreditation" element={<Accreditation />} />
 
+                {/* Parent Dashboard Layout */}
+                <Route path="/parent" element={<ParentDashboardLayout />}>
+                  <Route path="payments" element={<PaymentsSection />} />
+                  <Route path="status" element={<StatusSection />} />
+                </Route>
 
-
-        {/* 👨‍👩‍👧 Parent Dashboard routes */}
-        <Route path="/parent" element={<ParentDashboardLayout />}>
-          <Route path="payments" element={<PaymentsSection />} />
-          <Route path="status" element={<StatusSection />} />
-        </Route>
-
-                {/* 🔐 Authentication Pages */}
+                {/* Authentication Pages */}
                 <Route path="/login" element={<LoginForm />} />
                 <Route path="/admin-login" element={<AdminLoginForm />} />
                 <Route path="/suspended" element={<SuspendedScreen />} />
                 <Route path="/teacher-application" element={<TeacherApplicationForm />} />
 
-                {/* 🧭 Dashboards (protected by role) */}
+                {/* Protected Dashboards */}
                 <Route
                   path="/admin-dashboard"
                   element={
@@ -103,14 +100,6 @@ const App: React.FC = () => {
                   element={
                     <ProtectedRoute allowedRoles={["teacher"]}>
                       <TeacherDashboard />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/student-dashboard"
-                  element={
-                    <ProtectedRoute allowedRoles={["student"]}>
-                      <StudentDashboard />
                     </ProtectedRoute>
                   }
                 />
@@ -131,10 +120,22 @@ const App: React.FC = () => {
                   }
                 />
 
-                {/* ✅ Optional: If user visits /home, redirect to landing */}
+                {/* Student Dashboard — PUBLIC via Parent Portal */}
+                <Route
+                  path="/student-dashboard/:studentId"
+                  element={<StudentDashboard />}
+                />
+
+                {/* Redirect /student-dashboard (no ID) */}
+                <Route
+                  path="/student-dashboard"
+                  element={<Navigate to="/" replace />}
+                />
+
+                {/* Redirect /home */}
                 <Route path="/home" element={<Navigate to="/" replace />} />
 
-                {/* 🚫 Fallback for invalid URLs */}
+                {/* 404 */}
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </BrowserRouter>
